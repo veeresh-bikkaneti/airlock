@@ -439,6 +439,24 @@ ai-start
 curl http://127.0.0.1:12345/api/tags
 ```
 
+**If Ollama is running but on the wrong port:** `.active-port.json` only gets
+updated by `ai-start`/`ai-stop`. If Ollama was started outside that flow (tray
+autostart, manual `ollama serve`), it binds its default port (11434) while the
+state file still claims whatever port the last `ai-start` used. `ai-health`
+reads the state file, not the real listener, so it will report a clean
+`UNHEALTHY` on a port nothing is bound to. Confirm what Ollama is actually
+listening on before assuming it's down:
+
+```powershell
+Get-NetTCPConnection -State Listen | Where-Object {
+    $_.OwningProcess -in (Get-Process ollama* -ErrorAction SilentlyContinue).Id
+} | Select-Object LocalPort, OwningProcess
+
+# If it's listening on 11434 instead of the state-file port:
+ai-stop
+ai-start
+```
+
 ### Problem: "Cloud fallback not working"
 
 **Symptoms:**
