@@ -1,0 +1,44 @@
+services:
+  hermes-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hermes-agent
+    hostname: hermes-agent
+    read_only: true
+    tmpfs:
+      - /tmp:exec,size=256M
+      - /home/hermes/.pi/agent:exec,size=512M
+    volumes:
+      - ${CAREER_OPS_REPO:-./career-ops}:/workspace:ro
+      - hermes-output:/workspace/output
+    environment:
+      - OLLAMA_HOST=host.docker.internal:11434
+      - OPENAI_API_KEY=ollama
+      - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+      - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY:-}
+      - NODE_ENV=production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - hermes-net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    mem_limit: 4g
+    cpu_shares: 512
+    stdin_open: true
+    tty: true
+
+volumes:
+  hermes-output:
+    driver: local
+
+networks:
+  hermes-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"

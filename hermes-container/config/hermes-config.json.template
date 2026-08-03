@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama (local)",
+      "baseUrl": "http://host.docker.internal:11434/v1",
+      "apiKey": "ollama",
+      "models": {
+        "devstral-small-2:24b": { "name": "Devstral Small 2 (24B)", "contextWindow": 32768, "maxTokens": 16384 },
+        "qwen3-coder:30b": { "name": "Qwen3 Coder (30B)", "contextWindow": 32768, "maxTokens": 16384 },
+        "deepseek-r1:14b": { "name": "DeepSeek R1 (14B)", "contextWindow": 131072, "maxTokens": 32768 },
+        "qwen2.5-coder:7b": { "name": "Qwen2.5 Coder (7B)", "contextWindow": 32768, "maxTokens": 8192 },
+        "qwen3:14b": { "name": "Qwen3 (14B)", "contextWindow": 32768, "maxTokens": 8192 }
+      }
+    }
+  },
+  "defaultProvider": "ollama",
+  "defaultModel": "devstral-small-2:24b",
+  "settings": { "autoCommit": false, "detectUrls": false }
+}

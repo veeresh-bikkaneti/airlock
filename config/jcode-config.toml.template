@@ -1,0 +1,21 @@
+# jcode provider profile for the local Ollama endpoint.
+# Apply with:
+#   jcode provider add local-ollama --base-url "http://127.0.0.1:12345/v1" \
+#     --model "qwen2.5-coder:7b" --no-api-key --auth none \
+#     --set-default --model-catalog --overwrite
+# (writes this block into %USERPROFILE%\.jcode\config.toml — jcode has no per-project config)
+#
+# --set-default   : jcode launches straight into this profile, no cloud-provider/API-key prompts
+# --model-catalog : model list is fetched live from /v1/models, so newly pulled Ollama models
+#                   show up in `jcode model list` without editing this file again
+
+[providers.local-ollama]
+type = "openai-compatible"
+base_url = "http://127.0.0.1:12345/v1"
+auth = "none"
+default_model = "qwen2.5-coder:7b"
+requires_api_key = false
+model_catalog = true
+
+[[providers.local-ollama.models]]
+id = "qwen2.5-coder:7b"

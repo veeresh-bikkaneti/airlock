@@ -1,0 +1,6 @@
+{
+  "openrouter": { "type": "api_key", "key": "" },
+  "openai": { "type": "api_key", "key": "" },
+  "anthropic": { "type": "api_key", "key": "" },
+  "google": { "type": "api_key", "key": "" }
+}

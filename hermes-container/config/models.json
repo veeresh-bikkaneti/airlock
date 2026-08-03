@@ -1,0 +1,57 @@
+{
+  "providers": {
+    "ollama-local": {
+      "name": "Ollama (local)",
+      "baseUrl": "http://host.docker.internal:11434/v1",
+      "apiKey": "ollama",
+      "api": "openai-completions",
+      "models": [
+        { "id": "devstral-small-2:24b", "name": "Devstral Small 2 (24B)", "reasoning": false, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 32768, "maxTokens": 16384 },
+        { "id": "qwen3-coder:30b", "name": "Qwen3 Coder (30B)", "reasoning": false, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 32768, "maxTokens": 16384 },
+        { "id": "deepseek-r1:14b", "name": "DeepSeek R1 (14B)", "reasoning": true, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 131072, "maxTokens": 32768 },
+        { "id": "qwen2.5-coder:7b", "name": "Qwen2.5 Coder (7B)", "reasoning": false, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 32768, "maxTokens": 8192 },
+        { "id": "qwen3:14b", "name": "Qwen3 (14B)", "reasoning": false, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 32768, "maxTokens": 8192 }
+      ]
+    },
+    "nvidia-nim": {
+      "name": "NVIDIA NIM",
+      "baseUrl": "https://integrate.api.nvidia.com/v1",
+      "apiKey": "$NVIDIA_NIM_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        { "id": "nvidia/llama-3.1-nemotron-ultra-253b-v1", "name": "Nemotron Ultra 253B", "reasoning": false, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 131072, "maxTokens": 16384 },
+        { "id": "deepseek-ai/deepseek-v4-pro", "name": "DeepSeek V4 Pro", "reasoning": true, "input": ["text"], "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "contextWindow": 131072, "maxTokens": 32768 }
+      ]
+    },
+    "openrouter": {
+      "name": "OpenRouter (cloud)",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "$OPENROUTER_API_KEY",
+      "api": "openai-completions",
+      "models": []
+    },
+    "openai": {
+      "name": "OpenAI (cloud)",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "$OPENAI_API_KEY",
+      "api": "openai-completions",
+      "models": []
+    },
+    "anthropic": {
+      "name": "Anthropic (cloud)",
+      "baseUrl": "https://api.anthropic.com",
+      "apiKey": "$ANTHROPIC_API_KEY",
+      "api": "anthropic-messages",
+      "models": []
+    },
+    "google": {
+      "name": "Google (cloud)",
+      "baseUrl": "https://generativelanguage.googleapis.com",
+      "apiKey": "$GOOGLE_API_KEY",
+      "api": "google-generative-ai",
+      "models": []
+    }
+  },
+  "defaultProvider": "ollama",
+  "defaultModel": "devstral-small-2:24b"
+}

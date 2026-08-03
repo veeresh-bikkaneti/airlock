@@ -1,0 +1,22 @@
+# Aider configuration for local AI
+# Copy to ~/.aider.conf.yml and edit as needed
+# See: https://aider.chat/docs/config.html
+
+# Uses Ollama via OpenAI-compatible endpoint
+model: openai/qwen2.5-coder:7b
+openai-api-base: http://127.0.0.1:12345/v1
+openai-api-key: ollama
+
+# Safety settings
+auto-commits: false
+edit-format: diff
+detect-urls: false
+gitignore: true
+
+# Performance
+map-tokens: 1024
+cache-prompts: true
+
+# UI
+dark-mode: true
+no-show-model-warnings: true

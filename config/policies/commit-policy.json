@@ -1,0 +1,21 @@
+{
+  "alwaysBlockPatterns": [
+    "*.pii", "resume*", "cover_letter*", "job_profile*",
+    ".env", ".env.*", "*.env",
+    ".aider.conf.yml", ".aider.model.metadata.json",
+    "models.json", "settings.json",
+    "*.log", "secrets*", "*credential*", "*token*",
+    "ollama-logs/**", ".ai-platform/**"
+  ],
+  "requireApprovalPatterns": [
+    "*.md", "prompt*", "notes*", "AGENTS.md",
+    "plan*", "*.txt", "TODO*"
+  ],
+  "autoAllowPatterns": [
+    "*.ts", "*.js", "*.tsx", "*.jsx",
+    "*.json", "*.yml", "*.yaml",
+    "*.ps1", "*.sh", "*.py",
+    "*.css", "*.html", "package.json",
+    "tsconfig.json", "cypress.config.*"
+  ]
+}

@@ -1,0 +1,157 @@
+# Windows Implementation Guide
+
+## Goal
+Set up a local-first AI environment on Windows 11 using PowerShell 7, Ollama, aider, structured logging, and optional cloud provider fallback.
+
+## Prerequisites
+Install these first:
+- Ollama Desktop.
+- Python 3.11 or newer.
+- Git.
+- VS Code.
+- PowerShell 7.
+
+## Verification
+Run these commands in `pwsh`, not Windows PowerShell 5:
+```powershell
+ollama --version
+python --version
+git --version
+code --version
+$PSVersionTable.PSVersion
+```
+Expected result: major PowerShell version is `7`.
+
+## Step 1: Create folders
+```powershell
+New-Item -Path "$HOME\.ai-platform\scripts"  -ItemType Directory -Force | Out-Null
+New-Item -Path "$HOME\.ai-platform\logs"     -ItemType Directory -Force | Out-Null
+New-Item -Path "$HOME\.ai-platform\state"    -ItemType Directory -Force | Out-Null
+New-Item -Path "$HOME\.ai-platform\policies" -ItemType Directory -Force | Out-Null
+New-Item -Path "$HOME\.ai-platform\.env"     -ItemType File -Force | Out-Null
+icacls "$HOME\.ai-platform\.env" /inheritance:r /grant:r "${env:USERNAME}:(R,W)"
+```
+
+### Why this matters
+- `logs` stores runtime and audit records.
+- `state` stores active provider and port metadata.
+- `policies` stores declarative routing and security settings.
+- `.env` exists only for non-secret local settings; do not store real API keys in it.
+
+## Step 2: Pull local models
+```powershell
+ollama pull devstral-small-2:24b
+ollama pull qwen2.5-coder:7b
+ollama list
+```
+Use the larger model as preferred local coding model and the smaller model as a fallback if memory is limited.
+
+## Step 3: Install aider
+```powershell
+python -m pip install aider-install
+uv tool install aider-chat
+aider --version
+```
+Record the installed version in your setup notes.
+
+## Step 4: Install secret vault modules
+```powershell
+Install-Module Microsoft.PowerShell.SecretManagement -Scope CurrentUser -Force
+Install-Module Microsoft.PowerShell.SecretStore      -Scope CurrentUser -Force
+Register-SecretVault -Name AIVault -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
+```
+
+## Step 5: Store provider keys
+Store only providers you plan to use:
+```powershell
+Set-Secret -Vault AIVault -Name OPENROUTER_API_KEY -Secret ""
+Set-Secret -Vault AIVault -Name OPENAI_API_KEY     -Secret ""
+Set-Secret -Vault AIVault -Name ANTHROPIC_API_KEY  -Secret ""
+Set-Secret -Vault AIVault -Name GOOGLE_API_KEY     -Secret ""
+Set-Secret -Vault AIVault -Name AZURE_OPENAI_KEY   -Secret ""
+Set-Secret -Vault AIVault -Name AZURE_OPENAI_URL   -Secret ""
+Get-SecretInfo -Vault AIVault | Sort-Object Name
+```
+Do not place these values in profile files, repository files, or command history exports.
+
+## Step 6: Create provider policy
+Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
+```json
+{
+  "cloudFallbackEnabled": false,
+  "allowSensitiveDataToCloud": false,
+  "preferredLocalProvider": "ollama",
+  "preferredLocalModel": "devstral-small-2:24b",
+  "localFallbackModels": ["qwen2.5-coder:7b"],
+  "cloudProviderPriority": ["openrouter", "openai", "anthropic", "google", "azure-openai"],
+  "defaultCloudModels": {
+    "openrouter": "openai/gpt-4.1-mini",
+    "openai": "gpt-4.1-mini",
+    "anthropic": "claude-3-5-sonnet-latest",
+    "google": "gemini-2.5-pro",
+    "azure-openai": "gpt-4.1-mini"
+  }
+}
+```
+
+## Step 7: Create aider config
+Create `%USERPROFILE%\.aider.conf.yml`:
+```yaml
+model: openai/devstral-small-2:24b
+openai-api-base: http://127.0.0.1:12345/v1
+openai-api-key: ollama
+map-tokens: 1024
+auto-commits: false
+dark-mode: true
+no-show-model-warnings: true
+gitignore: true
+edit-format: diff
+cache-prompts: true
+detect-urls: false
+```
+
+### Why these defaults are safer
+- `auto-commits: false` keeps commit authority with the user.
+- `edit-format: diff` makes review easier.
+- `detect-urls: false` reduces unwanted network access.
+- Loopback `openai-api-base` keeps the default provider local.
+
+## Step 8: Add startup and stop scripts
+Implement the scripts from the module specification artifact so the platform can:
+- Discover or start Ollama.
+- Write structured logs.
+- Select the active provider by policy.
+- Export only session-scoped environment variables.
+- Shut down local services cleanly.
+
+## Step 9: Add profile helpers
+Update your PowerShell profile to expose commands such as:
+- `ai-start`
+- `ai-stop`
+- `ai-port`
+- `ai-code`
+- `ai-provider`
+- `ai-audit-last`
+
+## Step 10: Validate end to end
+```powershell
+ai-start
+ai-provider
+ai-port
+cd C:\your\project
+ai-code
+ai-stop
+```
+Check that:
+- the selected provider is local by default,
+- the endpoint is loopback-only,
+- log files are written,
+- no cloud key is used unless policy enables fallback.
+
+## Daily workflow
+1. Open `pwsh`.
+2. Run `ai-start`.
+3. Move to the project folder.
+4. Run `ai-code`.
+5. Review diffs before accepting changes.
+6. Run `ai-stop` when finished.

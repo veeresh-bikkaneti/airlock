@@ -1,0 +1,56 @@
+{
+  "localModels": {
+    "devstral-small-2:24b": {
+      "size": "~15 GB",
+      "parameters": "24B",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "role": "preferred",
+      "tags": ["coding", "general", "reasoning"],
+      "supportsFunctionCalling": true
+    },
+    "deepseek-r1:14b": {
+      "size": "~9 GB",
+      "parameters": "14B",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "role": "reasoning",
+      "tags": ["reasoning", "deep-think", "math", "logic"],
+      "supportsFunctionCalling": false
+    },
+    "qwen3-coder:30b": {
+      "size": "~18 GB",
+      "parameters": "30B",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "role": "coding",
+      "tags": ["coding", "large", "complex"],
+      "supportsFunctionCalling": true
+    },
+    "qwen2.5-coder:7b": {
+      "size": "~4.7 GB",
+      "parameters": "7B",
+      "contextWindow": 32768,
+      "maxOutputTokens": 8192,
+      "role": "fallback",
+      "tags": ["coding", "fast", "lightweight"],
+      "supportsFunctionCalling": true
+    },
+    "qwen3:14b": {
+      "size": "~9 GB",
+      "parameters": "14B",
+      "contextWindow": 32768,
+      "maxOutputTokens": 8192,
+      "role": "general",
+      "tags": ["general", "balanced"],
+      "supportsFunctionCalling": true
+    }
+  },
+  "fallbackOrder": [
+    "devstral-small-2:24b",
+    "qwen3-coder:30b",
+    "qwen2.5-coder:7b"
+  ],
+  "defaultEndpoint": "http://127.0.0.1:12345/v1",
+  "platform": "ollama"
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "file": "00-Artifact-Index.md",
+    "size_bytes": 1309,
+    "sha256": "5e78dbab8a49252070d3eea9456636170508b9d1cfaef822dade2138c642c7ec"
+  },
+  {
+    "file": "01-Local-AI-Platform-Blueprint.md",
+    "size_bytes": 3635,
+    "sha256": "470fe715e286ac9bc2f1d7f0df8cf02002826d50aa65e5d9dfd90d31e194ef53"
+  },
+  {
+    "file": "02-Windows-Implementation-Guide.md",
+    "size_bytes": 4812,
+    "sha256": "d53e2247554c424b54d806b7debbcc161ffd3a0d892ff8b43f825310a27c2515"
+  },
+  {
+    "file": "03-PowerShell-Module-Spec.md",
+    "size_bytes": 7470,
+    "sha256": "9b6b697bce00be821e40d61a0d7869733188433a893ef9260e3ec724cec96d9b"
+  },
+  {
+    "file": "04-Security-Audit-Runbook.md",
+    "size_bytes": 2874,
+    "sha256": "cf68d6225e08d56d784a4267211035b977af6b0ae22a91db135cc2d997e90b28"
+  },
+  {
+    "file": "05-Provider-Fallback-Matrix.md",
+    "size_bytes": 1973,
+    "sha256": "0b41ec6421f7fc8bee0163539d9c8219c568f7dccf137cd3cf110ac2e4bc2791"
+  }
+]
