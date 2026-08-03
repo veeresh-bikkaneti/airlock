@@ -355,7 +355,7 @@ function global:ai-health {
 
     $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-Ollama-Block-$port" -ErrorAction SilentlyContinue
     $fwColor = if ($fwRule) { "Green" } else { "Yellow" }
-    Write-Host "  Firewall  : $(if ($fwRule) { 'BLOCKED inbound port $port' } else { 'NO RULE - port $port exposed!' })" -ForegroundColor $fwColor
+    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $port" } else { "NO RULE - port $port exposed!" })" -ForegroundColor $fwColor
 
     $os = Get-CimInstance Win32_OperatingSystem
     $freeMemPct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
