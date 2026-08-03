@@ -3,7 +3,7 @@
 # See: https://aider.chat/docs/config.html
 
 # Uses Ollama via OpenAI-compatible endpoint
-model: openai/qwen2.5-coder:7b
+model: openai/devstral-small-2:24b
 openai-api-base: http://127.0.0.1:12345/v1
 openai-api-key: ollama
 

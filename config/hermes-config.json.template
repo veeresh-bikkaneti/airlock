@@ -2,7 +2,7 @@
   "providers": {
     "ollama": {
       "name": "Ollama (local)",
-      "baseUrl": "http://localhost:11434/v1",
+      "baseUrl": "http://localhost:12345/v1",
       "apiKey": "ollama",
       "models": {
         "devstral-small-2:24b": { "name": "Devstral Small 2 (24B)", "contextWindow": 32768, "maxTokens": 16384 },

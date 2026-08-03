@@ -1,7 +1,7 @@
 {
   "api": {
     "ollama": {
-      "baseUrl": "http://localhost:11434/v1",
+      "baseUrl": "http://localhost:12345/v1",
       "apiKey": "ollama",
       "provider": "ollama"
     }

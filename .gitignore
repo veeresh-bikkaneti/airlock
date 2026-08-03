@@ -47,7 +47,6 @@ env/
 
 # Node (if used)
 node_modules/
-package-lock.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -95,3 +94,13 @@ site/
 scripts/*.local.ps1
 config/*.local.json
 .tokensave
+
+# VS Code extension build artifacts
+out/
+*.vsix
+
+# Ruflo/Claude Code tooling (per-repo, not project content)
+.claude-flow/
+.swarm/
+ruflo/
+ruvector.db

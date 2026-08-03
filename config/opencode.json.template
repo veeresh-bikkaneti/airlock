@@ -8,21 +8,13 @@
         "baseURL": "http://127.0.0.1:12345/v1"
       },
       "models": {
+        "devstral-small-2:24b": { "name": "Devstral Small 2 (24B)" },
+        "qwen3-coder:30b": { "name": "Qwen3 Coder (30B)" },
+        "deepseek-r1:14b": { "name": "DeepSeek R1 (14B)" },
         "qwen2.5-coder:7b": { "name": "Qwen2.5 Coder (7B)" },
-        "qwen2.5-coder:14b": { "name": "Qwen2.5 Coder (14B)" },
-        "deepseek-coder-v2:lite": { "name": "DeepSeek Coder V2 (Lite)" },
-        "gemma4:latest": { "name": "Gemma 4" }
+        "qwen3:14b": { "name": "Qwen3 (14B)" }
       }
-    },
-    "nvidia": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "NVIDIA NIM (cloud)",
-      "options": {
-        "baseURL": "https://integrate.api.nvidia.com/v1",
-        "apiKey": "YOUR_NVIDIA_API_KEY_HERE"
-      },
-      "models": {}
     }
   },
-  "model": "ollama/qwen2.5-coder:7b"
+  "model": "ollama/devstral-small-2:24b"
 }

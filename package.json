@@ -1,0 +1,79 @@
+{
+  "name": "local-ai-platform-vscode",
+  "displayName": "Local AI Platform",
+  "description": "Start/stop/monitor your local Ollama AI platform and switch models, from VS Code.",
+  "version": "0.1.0",
+  "publisher": "local-ai-platform",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiPlatform.start",
+        "title": "AI Platform: Start"
+      },
+      {
+        "command": "aiPlatform.stop",
+        "title": "AI Platform: Stop"
+      },
+      {
+        "command": "aiPlatform.health",
+        "title": "AI Platform: Health Check"
+      },
+      {
+        "command": "aiPlatform.selectModel",
+        "title": "AI Platform: Select Model"
+      },
+      {
+        "command": "aiPlatform.switchModel",
+        "title": "AI Platform: Switch Model (no restart)"
+      },
+      {
+        "command": "aiPlatform.code",
+        "title": "AI Platform: Launch Aider (ai-code)"
+      }
+    ],
+    "configuration": {
+      "title": "Local AI Platform",
+      "properties": {
+        "aiPlatform.deployedScriptsPath": {
+          "type": "string",
+          "default": "${env:USERPROFILE}/.ai-platform/scripts",
+          "description": "Path to the deployed local-ai-platform scripts folder (profile-helpers.ps1, Start-AI.ps1, Stop-AI.ps1)."
+        },
+        "aiPlatform.modelsConfigPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to models.json for the model picker. Leave blank to use <deployedScriptsPath>/../config/models.json."
+        },
+        "aiPlatform.healthPort": {
+          "type": "integer",
+          "default": 12345,
+          "description": "Canonical port the platform binds Ollama to."
+        },
+        "aiPlatform.healthPollSeconds": {
+          "type": "integer",
+          "default": 15,
+          "description": "How often the status bar polls /api/tags for health. Set 0 to disable polling."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

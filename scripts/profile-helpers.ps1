@@ -147,18 +147,22 @@ function global:ai-code {
 }
 
 # Convenience wrappers to start/stop the Hermes container (cloud-enabled assistant).
+# Path configurable via $env:HERMES_CONTAINER_PATH (set in your PowerShell profile); falls back to Downloads.
 function global:ai-hermes-start {
-    $script = "$env:USERPROFILE\Downloads\local AI setup\hermes-container\run-hermes.ps1"
+    $base = if ($env:HERMES_CONTAINER_PATH) { $env:HERMES_CONTAINER_PATH } else { "$env:USERPROFILE\Downloads\local AI setup\hermes-container" }
+    $script = Join-Path $base "run-hermes.ps1"
     if (Test-Path $script) {
         & $script @args
     } else {
         Write-Host "Hermes container not found at: $script" -ForegroundColor Red
+        Write-Host "Set `$env:HERMES_CONTAINER_PATH or place it under Downloads\local AI setup\hermes-container" -ForegroundColor Gray
     }
 }
 
 # Stop the Hermes container if it is running.
 function global:ai-hermes-stop {
-    $script = "$env:USERPROFILE\Downloads\local AI setup\hermes-container\stop-hermes.ps1"
+    $base = if ($env:HERMES_CONTAINER_PATH) { $env:HERMES_CONTAINER_PATH } else { "$env:USERPROFILE\Downloads\local AI setup\hermes-container" }
+    $script = Join-Path $base "stop-hermes.ps1"
     if (Test-Path $script) {
         & $script @args
     } else {

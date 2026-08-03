@@ -77,6 +77,10 @@
 #### Pi.dev Agent Configuration
 - Ensure the Pi.dev agent baseUrl points to the same port used by the platform (default **12345**). Update `C:\Users\veere\.pi\agent\models.json` if you change the platform port.
 
+### 🧩 VS Code Extension (`src/extension.ts`)
+
+Thin wrapper over the `ai-*` PowerShell helpers — status bar model indicator plus commands to start, stop, health-check, and switch models without leaving the editor. See [`EXTENSION.md`](EXTENSION.md) for setup and command list.
+
 ### 🤖 Hermes Agent (`hermes-container/`)
 
 **What is Hermes?**
