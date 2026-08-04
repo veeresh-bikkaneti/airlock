@@ -153,19 +153,37 @@ function Get-ModelDiscoverySources {
     # Two sources, two log lines - no plugin/registry framework. Ollama has no public
     # "list all pullable models" API, so the curated config/models.json list is the source of truth;
     # Hugging Face's public search API is a secondary, discovery-only check (no download wired up here).
-    param([Parameter(Mandatory)][string]$ConfigPath)
+    # Story 2b: HF is only queried when Ollama's curated list has no candidate fitting available hardware.
+    param(
+        [Parameter(Mandatory)][string]$ConfigPath,
+        [Parameter(Mandatory)][double]$AvailableGB
+    )
 
+    $curatedHasMatch = $false
     try {
         $modelsConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json
         $names = $modelsConfig.fallbackOrder -join ", "
+        $curatedHasMatch = [bool]($modelsConfig.fallbackOrder | Where-Object {
+            $sizeGB = [double]($modelsConfig.localModels.$_.size -replace '[^0-9.]', '')
+            $AvailableGB -ge ($sizeGB * 1.2)
+        })
         Write-Host "  Discovery: Ollama curated list - $($modelsConfig.fallbackOrder.Count) candidates ($names)" -ForegroundColor Cyan
         Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
             -Message "Ollama curated list (config/models.json): $($modelsConfig.fallbackOrder.Count) candidates - [$names]" `
-            -Detail "Source: config/models.json fallbackOrder"
+            -Detail "Source: config/models.json fallbackOrder; HasFittingMatch=$curatedHasMatch"
     } catch {
         Write-Host "  Discovery: Could not read Ollama curated list from $ConfigPath" -ForegroundColor Yellow
         Write-AuditLog -Action "ModelDiscovery" -Result "WARNING" `
             -Message "Ollama curated list (config/models.json) unreadable" -Detail $_.Exception.Message
+    }
+
+    if ($curatedHasMatch) {
+        # Acquisition fallback order (docs/05-Provider-Fallback-Matrix.md): Ollama first, HF only when no match.
+        Write-Host "  Discovery: Hugging Face GGUF search skipped - Ollama curated list already has a fitting match" -ForegroundColor DarkGray
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Hugging Face GGUF search (secondary source): skipped - Ollama curated list already has a fitting match" `
+            -Detail "Skipped per acquisition fallback order: Ollama curated list first, Hugging Face only when no match"
+        return
     }
 
     try {
@@ -251,12 +269,12 @@ Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
     -Message "Detected $($resources.TotalMemGB) GB RAM, $($resources.CpuCores) CPU cores, $gpuDesc - model size ceiling $([math]::Round($availableGB,1)) GB" `
     -Detail "TotalMemGB=$($resources.TotalMemGB) FreeMemGB=$($resources.FreeMemGB) CpuCores=$($resources.CpuCores) GpuTotalGB=$($resources.GpuTotalGB) GpuFreeGB=$($resources.GpuFreeGB)"
 
-Write-Host ""
-Write-Host "Model discovery..." -ForegroundColor Yellow
-Get-ModelDiscoverySources -ConfigPath (Join-Path $ScriptDir "..\config\models.json")
-
 # Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
 if (-not $PSBoundParameters.ContainsKey('Model')) {
+    Write-Host ""
+    Write-Host "Model discovery..." -ForegroundColor Yellow
+    Get-ModelDiscoverySources -ConfigPath (Join-Path $ScriptDir "..\config\models.json") -AvailableGB $availableGB
+
     $modelsConfigPath = Join-Path $ScriptDir "..\config\models.json"
     if (Test-Path $modelsConfigPath) {
         try {
