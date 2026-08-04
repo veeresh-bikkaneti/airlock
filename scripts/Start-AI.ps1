@@ -396,6 +396,7 @@ Write-Host ""
 # Insert a blank line for readability before model verification.
 Write-Host ""
 Write-Host "Checking model: $Model" -ForegroundColor Yellow
+$modelPullPending = $false
 try {
     $c = [System.Net.Http.HttpClient]::new()
     $c.Timeout = [TimeSpan]::FromSeconds(10)
@@ -408,16 +409,64 @@ try {
         Write-Host "  Size  : $([math]::Round($found.size / 1GB, 2)) GB" -ForegroundColor DarkGray
         Write-AuditLog -Action "ModelCheck" -Result "SUCCESS" -ModelName $Model -Message "Model available" -Detail "Digest: $($found.digest)"
     } else {
-        Write-Host "  Model '$Model' not found locally. Pulling it now..." -ForegroundColor Yellow
-        Write-AuditLog -Action "ModelPull" -Result "STARTED" -ModelName $Model -Message "Auto-pulling missing model"
-        & ollama pull $Model
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  Model '$Model' pulled successfully" -ForegroundColor Green
-            Write-AuditLog -Action "ModelPull" -Result "SUCCESS" -ModelName $Model -Message "Model pulled"
-        } else {
-            Write-Host "  Failed to pull '$Model'. Check network / model name." -ForegroundColor Red
-            Write-AuditLog -Action "ModelPull" -Result "FAILED" -ModelName $Model -Message "ollama pull failed"
+        Write-Host "  Model '$Model' not found locally. Pulling it in the background..." -ForegroundColor Yellow
+
+        # ponytail: Start-Job only survives this PowerShell session — closing the terminal
+        # kills an in-progress pull. Upgrade path if that ever matters: a detached process
+        # (Start-Process) instead of a session-bound job.
+        $job = Start-Job -Name "ModelPull-$Model" -ArgumentList $Model, $LivePort, $LogFile -ScriptBlock {
+            param($Model, $Port, $LogFile)
+
+            function Write-JobAuditLog {
+                param(
+                    [string]$Action,
+                    [string]$Result,
+                    [string]$Message,
+                    [string]$Detail = ""
+                )
+                $entry = [ordered]@{
+                    timestampUtc = [DateTime]::UtcNow.ToString("o")
+                    user         = $env:USERNAME
+                    host         = $env:COMPUTERNAME
+                    action       = $Action
+                    result       = $Result
+                    provider     = "ollama"
+                    model        = $Model
+                    endpoint     = ""
+                    message      = $Message
+                    detail       = $Detail
+                }
+                ($entry | ConvertTo-Json -Compress) | Add-Content -Path $LogFile -Encoding utf8
+            }
+
+            & ollama pull $Model
+            if ($LASTEXITCODE -eq 0) {
+                Write-JobAuditLog -Action "ModelPull" -Result "SUCCESS" -Message "Model pulled in background"
+                try {
+                    # Auto-start: a minimal /api/generate call (no prompt) makes Ollama load
+                    # the model into memory without generating any tokens.
+                    $c = [System.Net.Http.HttpClient]::new()
+                    $c.Timeout = [TimeSpan]::FromSeconds(120)
+                    $body = [System.Net.Http.StringContent]::new(
+                        (@{ model = $Model } | ConvertTo-Json -Compress),
+                        [System.Text.Encoding]::UTF8, "application/json")
+                    $warmResp = $c.PostAsync("http://127.0.0.1:$Port/api/generate", $body).Result
+                    if ($warmResp.IsSuccessStatusCode) {
+                        Write-JobAuditLog -Action "ModelStarted" -Result "SUCCESS" -Message "Model auto-started after background pull"
+                    } else {
+                        Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" -Message "Warm-up call failed" -Detail "HTTP $($warmResp.StatusCode)"
+                    }
+                } catch {
+                    Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" -Message "Warm-up call failed" -Detail $_.Exception.Message
+                }
+            } else {
+                Write-JobAuditLog -Action "ModelPull" -Result "FAILED" -Message "ollama pull failed"
+            }
         }
+
+        $modelPullPending = $true
+        Write-Host "  Pulling '$Model' in the background (job $($job.Id)) — startup will continue without waiting" -ForegroundColor Yellow
+        Write-AuditLog -Action "ModelPull" -Result "STARTED" -ModelName $Model -Message "Pulling '$Model' in the background (job $($job.Id)) — won't block startup"
     }
 } catch {
     Write-Host "  Could not check models — Ollama may still be warming up" -ForegroundColor Yellow
@@ -428,7 +477,11 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  AI PLATFORM READY (Hardened)" -ForegroundColor Green
 Write-Host "  Endpoint: http://127.0.0.1:$LivePort/v1" -ForegroundColor White
-Write-Host "  Model   : $Model" -ForegroundColor White
+if ($modelPullPending) {
+    Write-Host "  Model   : $Model pulling in background — will auto-start when ready; check today's log at $LogFile for progress" -ForegroundColor Yellow
+} else {
+    Write-Host "  Model   : $Model" -ForegroundColor White
+}
 Write-Host "  Bind    : 127.0.0.1 ONLY (no external)" -ForegroundColor White
 Write-Host "  Firewall: Inbound port $LivePort BLOCKED" -ForegroundColor $(if (Test-FirewallRule $LivePort) { "Green" } else { "Yellow" })
 Write-Host "  Logs    : $LogFile" -ForegroundColor Gray
