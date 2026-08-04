@@ -104,3 +104,8 @@ out/
 .swarm/
 ruflo/
 ruvector.db
+
+# Ruflo local secrets and runtime data
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/

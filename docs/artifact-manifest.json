@@ -28,5 +28,10 @@
     "file": "05-Provider-Fallback-Matrix.md",
     "size_bytes": 1973,
     "sha256": "0b41ec6421f7fc8bee0163539d9c8219c568f7dccf137cd3cf110ac2e4bc2791"
+  },
+  {
+    "file": "06-Model-Acquisition-Backlog.md",
+    "size_bytes": 4242,
+    "sha256": "cf8428e38e7d095454d4d179bbf21d1416aa8aa7c8f733d5dcc39e2bb646865e"
   }
 ]

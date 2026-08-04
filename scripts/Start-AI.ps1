@@ -162,10 +162,13 @@ function Test-ResourceAvailability {
         }
     } catch {}
 
+    $cpuCores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+
     $result = [ordered]@{
         TotalMemGB    = $totalMemGB
         FreeMemGB     = $freeMemGB
         MemPctFree    = $memPctFree
+        CpuCores      = $cpuCores
         GpuTotalGB    = if ($gpuInfo) { $gpuInfo.TotalGB } else { "N/A" }
         GpuFreeGB     = if ($gpuInfo) { $gpuInfo.FreeGB } else { "N/A" }
         MemOk         = $memPctFree -ge 20
@@ -206,23 +209,43 @@ if ($resources.GpuTotalGB -ne "N/A" -and -not $resources.GpuOk) {
     Write-AuditLog -Action "ResourceCheck" -Result "WARNING" -Message "Low VRAM" -Detail "$($resources.GpuFreeGB) GB free"
 }
 
+$availableGB = if ($resources.GpuTotalGB -ne "N/A") { $resources.GpuFreeGB } else { $resources.FreeMemGB }
+$gpuDesc = if ($resources.GpuTotalGB -ne "N/A") { "a $($resources.GpuTotalGB) GB GPU" } else { "no dedicated GPU" }
+Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
+    -Message "Detected $($resources.TotalMemGB) GB RAM, $($resources.CpuCores) CPU cores, $gpuDesc - model size ceiling $([math]::Round($availableGB,1)) GB" `
+    -Detail "TotalMemGB=$($resources.TotalMemGB) FreeMemGB=$($resources.FreeMemGB) CpuCores=$($resources.CpuCores) GpuTotalGB=$($resources.GpuTotalGB) GpuFreeGB=$($resources.GpuFreeGB)"
+
 # Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
 if (-not $PSBoundParameters.ContainsKey('Model')) {
     $modelsConfigPath = Join-Path $ScriptDir "..\config\models.json"
     if (Test-Path $modelsConfigPath) {
         try {
             $modelsConfig = Get-Content $modelsConfigPath -Raw | ConvertFrom-Json
-            $availableGB = if ($resources.GpuTotalGB -ne "N/A") { $resources.GpuFreeGB } else { $resources.FreeMemGB }
-            $chosen = $null
-            foreach ($candidate in $modelsConfig.fallbackOrder) {
+            $candidates = foreach ($candidate in $modelsConfig.fallbackOrder) {
                 $sizeGB = [double]($modelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
-                if ($availableGB -ge ($sizeGB * 1.2)) { $chosen = $candidate; break }
+                [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($availableGB -ge ($sizeGB * 1.2)) }
             }
-            if (-not $chosen) { $chosen = $modelsConfig.fallbackOrder[-1] }
-            $Model = $chosen
-            Write-Host "  Auto-selected model: $Model (fits $([math]::Round($availableGB,1)) GB available)" -ForegroundColor Cyan
+            $candidateSummary = ($candidates | ForEach-Object { "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))" }) -join ", "
+
+            # Prefer the largest model that still fits comfortably (with 20% headroom).
+            $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
+            if ($winner) {
+                $Model = $winner.Name
+                $reason = "largest model that fits in $([math]::Round($availableGB,1)) GB with headroom"
+                Write-Host "  Auto-selected model: $Model (fits $([math]::Round($availableGB,1)) GB available)" -ForegroundColor Cyan
+                Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
+                    -Message "$($resources.TotalMemGB) GB RAM, $gpuDesc - selected $Model as the $reason" `
+                    -Detail "Candidates: $candidateSummary"
+            } else {
+                $Model = $modelsConfig.fallbackOrder[-1]
+                Write-Host "  WARNING: No model comfortably fits available hardware; falling back to smallest: $Model" -ForegroundColor Yellow
+                Write-AuditLog -Action "ModelSelection" -Result "WARNING" -ModelName $Model `
+                    -Message "No candidate fit $([math]::Round($availableGB,1)) GB available; falling back to smallest model $Model" `
+                    -Detail "Candidates: $candidateSummary"
+            }
         } catch {
             Write-Host "  Could not read models.json for auto-selection; using default model" -ForegroundColor Yellow
+            Write-AuditLog -Action "ModelSelection" -Result "WARNING" -Message "Could not read models.json for auto-selection; using default model" -Detail $_.Exception.Message
         }
     }
 }

@@ -21,6 +21,11 @@
 | Anthropic | `ANTHROPIC_API_KEY` | `https://api.anthropic.com` | May need provider-specific client settings. |
 | Google | `GOOGLE_API_KEY` | `https://generativelanguage.googleapis.com` | Use adapter or provider-aware client when needed. |
 | Azure OpenAI | `AZURE_OPENAI_KEY`, `AZURE_OPENAI_URL` | tenant-specific Azure endpoint | Requires deployment-specific configuration. |
+| NVIDIA NIM | `NIM_API_KEY` | `https://integrate.api.nvidia.com/v1` | PLACEHOLDER — not configured. Confirm key name and priority before enabling. |
+| Together AI | `TOGETHER_API_KEY` | `https://api.together.xyz/v1` | PLACEHOLDER — not configured. |
+| Groq | `GROQ_API_KEY` | `https://api.groq.com/openai/v1` | PLACEHOLDER — not configured. |
+| Mistral | `MISTRAL_API_KEY` | `https://api.mistral.ai/v1` | PLACEHOLDER — not configured. |
+| Cohere | `COHERE_API_KEY` | `https://api.cohere.ai/v1` | PLACEHOLDER — not configured. |
 
 ## Recommended Priority
 1. Ollama local.
@@ -29,6 +34,8 @@
 4. Anthropic.
 5. Google.
 6. Azure OpenAI.
+
+Placeholder providers (NVIDIA NIM, Together AI, Groq, Mistral, Cohere) are documented but not in the priority order or fallback logic yet — pending key availability and a priority decision.
 
 ## Rationale
 - Local preserves privacy and reduces accidental data exposure.
