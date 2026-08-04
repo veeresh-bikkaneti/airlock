@@ -475,7 +475,11 @@ try {
 # Final status summary for the user, showing endpoint, model, and security posture.
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "  AI PLATFORM READY (Hardened)" -ForegroundColor Green
+if ($modelPullPending) {
+    Write-Host "  AI PLATFORM STARTING (model pulling in background)" -ForegroundColor Yellow
+} else {
+    Write-Host "  AI PLATFORM READY (Hardened)" -ForegroundColor Green
+}
 Write-Host "  Endpoint: http://127.0.0.1:$LivePort/v1" -ForegroundColor White
 if ($modelPullPending) {
     Write-Host "  Model   : $Model pulling in background — will auto-start when ready; check today's log at $LogFile for progress" -ForegroundColor Yellow
