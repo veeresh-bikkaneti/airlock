@@ -37,6 +37,12 @@
 
 Placeholder providers (NVIDIA NIM, Together AI, Groq, Mistral, Cohere) are documented but not in the priority order or fallback logic yet — pending key availability and a priority decision.
 
+## Model Acquisition Fallback
+This governs how a *model* is discovered/acquired, distinct from the provider fallback above (which governs where a *chat completion request* goes).
+
+1. Ollama curated list (`config/models.json` `fallbackOrder`) — checked first; this is the source of truth for pullable models since Ollama has no public "list all pullable models" API.
+2. Hugging Face GGUF search (`huggingface.co/api/models`) — used only when Ollama has no suitable match; secondary source, discovery only.
+
 ## Rationale
 - Local preserves privacy and reduces accidental data exposure.
 - A broker such as OpenRouter can simplify multi-model fallback.

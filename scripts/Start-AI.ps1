@@ -148,6 +148,42 @@ function Set-FirewallGuard {
     }
 }
 
+function Get-ModelDiscoverySources {
+    # Story 1: discover what's pullable before Test-ResourceAvailability's selection logic scores candidates.
+    # Two sources, two log lines - no plugin/registry framework. Ollama has no public
+    # "list all pullable models" API, so the curated config/models.json list is the source of truth;
+    # Hugging Face's public search API is a secondary, discovery-only check (no download wired up here).
+    param([Parameter(Mandatory)][string]$ConfigPath)
+
+    try {
+        $modelsConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+        $names = $modelsConfig.fallbackOrder -join ", "
+        Write-Host "  Discovery: Ollama curated list - $($modelsConfig.fallbackOrder.Count) candidates ($names)" -ForegroundColor Cyan
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Ollama curated list (config/models.json): $($modelsConfig.fallbackOrder.Count) candidates - [$names]" `
+            -Detail "Source: config/models.json fallbackOrder"
+    } catch {
+        Write-Host "  Discovery: Could not read Ollama curated list from $ConfigPath" -ForegroundColor Yellow
+        Write-AuditLog -Action "ModelDiscovery" -Result "WARNING" `
+            -Message "Ollama curated list (config/models.json) unreadable" -Detail $_.Exception.Message
+    }
+
+    try {
+        $hfUrl = "https://huggingface.co/api/models?search=gguf&filter=gguf&sort=downloads&direction=-1&limit=5"
+        $hfResults = Invoke-RestMethod -Uri $hfUrl -TimeoutSec 10
+        $hfNames = ($hfResults | Select-Object -First 5 -ExpandProperty id) -join ", "
+        Write-Host "  Discovery: Hugging Face GGUF search - $($hfResults.Count) result(s)" -ForegroundColor Cyan
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Hugging Face GGUF search (secondary source): $($hfResults.Count) result(s) - [$hfNames]" `
+            -Detail "Endpoint: $hfUrl"
+    } catch {
+        # Never block startup on this - HF is a secondary source only.
+        Write-Host "  Discovery: Hugging Face unreachable (offline?), skipping - secondary source only" -ForegroundColor Yellow
+        Write-AuditLog -Action "ModelDiscovery" -Result "WARNING" `
+            -Message "Hugging Face GGUF search unreachable; continuing with Ollama curated list only" -Detail $_.Exception.Message
+    }
+}
+
 function Test-ResourceAvailability {
     $os = Get-CimInstance Win32_OperatingSystem
     $totalMemGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
@@ -214,6 +250,10 @@ $gpuDesc = if ($resources.GpuTotalGB -ne "N/A") { "a $($resources.GpuTotalGB) GB
 Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
     -Message "Detected $($resources.TotalMemGB) GB RAM, $($resources.CpuCores) CPU cores, $gpuDesc - model size ceiling $([math]::Round($availableGB,1)) GB" `
     -Detail "TotalMemGB=$($resources.TotalMemGB) FreeMemGB=$($resources.FreeMemGB) CpuCores=$($resources.CpuCores) GpuTotalGB=$($resources.GpuTotalGB) GpuFreeGB=$($resources.GpuFreeGB)"
+
+Write-Host ""
+Write-Host "Model discovery..." -ForegroundColor Yellow
+Get-ModelDiscoverySources -ConfigPath (Join-Path $ScriptDir "..\config\models.json")
 
 # Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
 if (-not $PSBoundParameters.ContainsKey('Model')) {
