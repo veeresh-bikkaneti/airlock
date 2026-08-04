@@ -148,6 +148,60 @@ function Set-FirewallGuard {
     }
 }
 
+function Get-ModelDiscoverySources {
+    # Story 1: discover what's pullable before Test-ResourceAvailability's selection logic scores candidates.
+    # Two sources, two log lines - no plugin/registry framework. Ollama has no public
+    # "list all pullable models" API, so the curated config/models.json list is the source of truth;
+    # Hugging Face's public search API is a secondary, discovery-only check (no download wired up here).
+    # Story 2b: HF is only queried when Ollama's curated list has no candidate fitting available hardware.
+    param(
+        [Parameter(Mandatory)][string]$ConfigPath,
+        [Parameter(Mandatory)][double]$AvailableGB
+    )
+
+    $curatedHasMatch = $false
+    try {
+        $modelsConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+        $names = $modelsConfig.fallbackOrder -join ", "
+        $curatedHasMatch = [bool]($modelsConfig.fallbackOrder | Where-Object {
+            $sizeGB = [double]($modelsConfig.localModels.$_.size -replace '[^0-9.]', '')
+            $AvailableGB -ge ($sizeGB * 1.2)
+        })
+        Write-Host "  Discovery: Ollama curated list - $($modelsConfig.fallbackOrder.Count) candidates ($names)" -ForegroundColor Cyan
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Ollama curated list (config/models.json): $($modelsConfig.fallbackOrder.Count) candidates - [$names]" `
+            -Detail "Source: config/models.json fallbackOrder; HasFittingMatch=$curatedHasMatch"
+    } catch {
+        Write-Host "  Discovery: Could not read Ollama curated list from $ConfigPath" -ForegroundColor Yellow
+        Write-AuditLog -Action "ModelDiscovery" -Result "WARNING" `
+            -Message "Ollama curated list (config/models.json) unreadable" -Detail $_.Exception.Message
+    }
+
+    if ($curatedHasMatch) {
+        # Acquisition fallback order (docs/05-Provider-Fallback-Matrix.md): Ollama first, HF only when no match.
+        Write-Host "  Discovery: Hugging Face GGUF search skipped - Ollama curated list already has a fitting match" -ForegroundColor DarkGray
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Hugging Face GGUF search (secondary source): skipped - Ollama curated list already has a fitting match" `
+            -Detail "Skipped per acquisition fallback order: Ollama curated list first, Hugging Face only when no match"
+        return
+    }
+
+    try {
+        $hfUrl = "https://huggingface.co/api/models?search=gguf&filter=gguf&sort=downloads&direction=-1&limit=5"
+        $hfResults = Invoke-RestMethod -Uri $hfUrl -TimeoutSec 10
+        $hfNames = ($hfResults | Select-Object -First 5 -ExpandProperty id) -join ", "
+        Write-Host "  Discovery: Hugging Face GGUF search - $($hfResults.Count) result(s)" -ForegroundColor Cyan
+        Write-AuditLog -Action "ModelDiscovery" -Result "SUCCESS" `
+            -Message "Hugging Face GGUF search (secondary source): $($hfResults.Count) result(s) - [$hfNames]" `
+            -Detail "Endpoint: $hfUrl"
+    } catch {
+        # Never block startup on this - HF is a secondary source only.
+        Write-Host "  Discovery: Hugging Face unreachable (offline?), skipping - secondary source only" -ForegroundColor Yellow
+        Write-AuditLog -Action "ModelDiscovery" -Result "WARNING" `
+            -Message "Hugging Face GGUF search unreachable; continuing with Ollama curated list only" -Detail $_.Exception.Message
+    }
+}
+
 function Test-ResourceAvailability {
     $os = Get-CimInstance Win32_OperatingSystem
     $totalMemGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
@@ -217,6 +271,10 @@ Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
 
 # Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
 if (-not $PSBoundParameters.ContainsKey('Model')) {
+    Write-Host ""
+    Write-Host "Model discovery..." -ForegroundColor Yellow
+    Get-ModelDiscoverySources -ConfigPath (Join-Path $ScriptDir "..\config\models.json") -AvailableGB $availableGB
+
     $modelsConfigPath = Join-Path $ScriptDir "..\config\models.json"
     if (Test-Path $modelsConfigPath) {
         try {
