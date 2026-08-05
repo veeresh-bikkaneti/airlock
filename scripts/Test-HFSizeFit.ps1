@@ -7,6 +7,15 @@ $testCases = @(
     @{ SizeBytes = 7516192768; AvailableGB = 9; ShouldFit = $true; Desc = "7GB file, 9GB available (fits)" }
     @{ SizeBytes = 10737418240; AvailableGB = 12; ShouldFit = $true; Desc = "10GB file, 12GB available (fits)" }
     @{ SizeBytes = 10737418240; AvailableGB = 11; ShouldFit = $false; Desc = "10GB file, 11GB available (no headroom)" }
+    # Edge cases: exact boundary and fractional boundary
+    @{ SizeBytes = 10737418240; AvailableGB = 12.0; ShouldFit = $true; Desc = "10GB file, 12.0GB available (exact 1.2x boundary, should fit)" }
+    @{ SizeBytes = 10737418240; AvailableGB = 11.99; ShouldFit = $false; Desc = "10GB file, 11.99GB available (just under 1.2x boundary, should not fit)" }
+    @{ SizeBytes = 10737418240; AvailableGB = 12.001; ShouldFit = $true; Desc = "10GB file, 12.001GB available (just over 1.2x boundary, should fit)" }
+    @{ SizeBytes = 1073741824; AvailableGB = 1.2; ShouldFit = $true; Desc = "1GB file, 1.2GB available (exact boundary for 1GB)" }
+    @{ SizeBytes = 1073741824; AvailableGB = 1.19; ShouldFit = $false; Desc = "1GB file, 1.19GB available (just under boundary for 1GB)" }
+    # Very small file edge case
+    @{ SizeBytes = 104857600; AvailableGB = 1; ShouldFit = $true; Desc = "100MB file, 1GB available (very small, always fits)" }
+    @{ SizeBytes = 104857600; AvailableGB = 0.2; ShouldFit = $true; Desc = "100MB file, 0.2GB available (very small with headroom)" }
 )
 
 $allPass = $true
