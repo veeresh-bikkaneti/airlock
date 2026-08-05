@@ -189,11 +189,6 @@ Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
     -Message "Detected $($resources.TotalMemGB) GB RAM, $($resources.CpuCores) CPU cores, $gpuDesc - model size ceiling $([math]::Round($availableGB,1)) GB" `
     -Detail "TotalMemGB=$($resources.TotalMemGB) FreeMemGB=$($resources.FreeMemGB) CpuCores=$($resources.CpuCores) GpuTotalGB=$($resources.GpuTotalGB) GpuFreeGB=$($resources.GpuFreeGB)"
 
-# Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
-if (-not $PSBoundParameters.ContainsKey('Model')) {
-    $Model = Select-BestModel -AvailableGB $availableGB -Resources $resources -GpuDesc $gpuDesc -ScriptDir $ScriptDir
-}
-
 Write-Host ""
 Write-Host "Single-instance enforcement..." -ForegroundColor Yellow
 $existingPort = $null
@@ -294,6 +289,11 @@ if ($StrictPort -and $LivePort -ne $DefaultPort -and $Port -eq 0) {
 }
 
 Write-AuditLog -Action "OllamaDetected" -Result "SUCCESS" -Message "Ollama ready" -Endpoint "http://127.0.0.1:$LivePort/v1" -Detail "Port: $LivePort"
+
+# Auto-select a model that fits available hardware, unless the caller pinned one explicitly with -Model.
+if (-not $PSBoundParameters.ContainsKey('Model')) {
+    $Model = Select-BestModel -AvailableGB $availableGB -Resources $resources -GpuDesc $gpuDesc -ScriptDir $ScriptDir -LivePort $LivePort
+}
 
 $env:OLLAMA_HOST     = "127.0.0.1:$LivePort"
 $env:OPENAI_API_KEY  = "ollama"

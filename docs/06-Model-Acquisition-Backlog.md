@@ -52,6 +52,12 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Priority: **P1**
 - Implemented: `Get-HuggingFaceGGUFCandidate` (`scripts/Get-ModelAcquisition.ps1:88-151`) queries HF's `/api/models` endpoint for GGUF files, gets sizes via `Content-Length` HEAD requests when needed, and filters by 20% headroom. `Start-HuggingFaceImport` (`scripts/Get-ModelAcquisition.ps1:153-278`) launches a background job that downloads the file, creates a Modelfile, runs `ollama create` to import, and warm-starts the model. Model names prefixed with `hf-` (e.g., `hf-anthropic-qwen`) identify HF imports; `Start-ModelAcquisitionPull` skips registry pull for these. Falls back to smallest curated model if HF search/download/import fails at any point.
 
+### 4c. Fallback when a background HuggingFace import fails after selection — **Status: Backlog**
+**As a** user **I want** the platform to fall back to a curated model **so that** a failed HuggingFace download or `ollama create` doesn't leave me with no running model at all.
+- Today `Start-HuggingFaceImport` runs as a fire-and-forget background job; if the download or `ollama create` import fails, the failure is only visible in the audit log — the user is told their model is "pending" and nothing ever starts.
+- Needs the platform to detect job failure/timeout and retry with the next-best curated model, or clearly surface the failure instead of silently leaving the user without a working model.
+- Priority: **P2**
+
 ### 5. Verbose, human-readable logging throughout — **Status: Done**
 **As a** user **I want** clear logs of every step **so that** I can see what's happening and trust the automation.
 - Reuse the logging shape from [`01-Local-AI-Platform-Blueprint.md`](01-Local-AI-Platform-Blueprint.md#logging-model) (UTC timestamp, action, result, provider, model, message).
