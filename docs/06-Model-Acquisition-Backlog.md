@@ -58,6 +58,16 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Needs the platform to detect job failure/timeout and retry with the next-best curated model, or clearly surface the failure instead of silently leaving the user without a working model.
 - Priority: **P2**
 
+### 6. Auto-install Ollama itself when missing — **Status: In Progress**
+**As a** user **I want** double-clicking `Start-AI.bat` to work even if I've never installed Ollama **so that** setup is genuinely zero-install, not "zero-install except the one thing you have to do first."
+- Detect Ollama missing (not on PATH, not at the default per-user install path).
+- Install via `winget install --id Ollama.Ollama -e --silent`, no interactive prompt, matching the no-prompt precedent for model pulls in ADR-001.
+- Refresh `$env:Path` for the current process after install so `ollama` calls work without a shell restart.
+- Fall back to today's manual-install error message if `winget` itself isn't available.
+- New `-NoAutoInstallOllama` switch opts out for managed/locked-down machines.
+- Priority: **P1**
+- Design: [`ADR-002-ollama-auto-install.md`](adr/ADR-002-ollama-auto-install.md).
+
 ### 5. Verbose, human-readable logging throughout — **Status: Done**
 **As a** user **I want** clear logs of every step **so that** I can see what's happening and trust the automation.
 - Reuse the logging shape from [`01-Local-AI-Platform-Blueprint.md`](01-Local-AI-Platform-Blueprint.md#logging-model) (UTC timestamp, action, result, provider, model, message).
