@@ -24,14 +24,20 @@ Only two things, both one-time:
 
 ## Running it
 
-From the repo root, in `pwsh`:
+**Double-click `Start-AI.bat`** in the repo root. That's the whole interaction — no terminal to open, no command to type.
+
+A console window opens and tells you in plain language what's happening: hardware detected, model chosen and why, download/pull progress, and when the model is ready. When it's done, press any key to close the window — the platform keeps running in the background.
+
+First run on a machine with no models pulled yet will take longer (it's downloading). Every run after that is fast, because the model is already local.
+
+If `Start-AI.bat` tells you PowerShell 7 isn't installed, run the one-line install it prints (`winget install --id Microsoft.PowerShell -e`), then double-click the file again.
+
+### If you prefer the terminal
+
+`Start-AI.bat` just wraps this — run it directly if you want more control over flags:
 ```powershell
 .\scripts\Start-AI.ps1
 ```
-
-That's it. Watch the console output — it tells you in plain language what's happening: hardware detected, model chosen and why, download/pull progress, and when the model is ready.
-
-First run on a machine with no models pulled yet will take longer (it's downloading). Every run after that is fast, because the model is already local.
 
 ## Common options
 
@@ -44,11 +50,7 @@ First run on a machine with no models pulled yet will take longer (it's download
 
 ## Stopping it
 
-```powershell
-.\scripts\Stop-AI.ps1
-```
-
-Add `-CleanFirewall` if you want the firewall rule `ai-start` created removed too.
+**Double-click `Stop-AI.bat`**, or run `.\scripts\Stop-AI.ps1` yourself. Add `-CleanFirewall` if you want the firewall rule `ai-start` created removed too.
 
 ## Everyday shortcuts (optional)
 
