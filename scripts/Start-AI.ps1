@@ -183,7 +183,7 @@ if ($resources.GpuTotalGB -ne "N/A" -and -not $resources.GpuOk) {
     Write-AuditLog -Action "ResourceCheck" -Result "WARNING" -Message "Low VRAM" -Detail "$($resources.GpuFreeGB) GB free"
 }
 
-$availableGB = if ($resources.GpuTotalGB -ne "N/A") { $resources.GpuFreeGB } else { $resources.FreeMemGB }
+$availableGB = Get-ModelSizingCeilingGB -Resources $resources
 $gpuDesc = if ($resources.GpuTotalGB -ne "N/A") { "a $($resources.GpuTotalGB) GB GPU" } else { "no dedicated GPU" }
 Write-AuditLog -Action "HardwareProfile" -Result "SUCCESS" `
     -Message "Detected $($resources.TotalMemGB) GB RAM, $($resources.CpuCores) CPU cores, $gpuDesc - model size ceiling $([math]::Round($availableGB,1)) GB" `

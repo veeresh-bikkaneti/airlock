@@ -85,6 +85,18 @@ function Test-ResourceAvailability {
     return $result
 }
 
+function Get-ModelSizingCeilingGB {
+    # Fixed sizing logic: model ceiling is always system RAM (FreeMemGB), regardless of GPU presence.
+    # GPU info is computed and logged as informational/speed context only.
+    # Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM,
+    # so GPU only affects inference speed, not whether a model can run at all.
+    # See: ADR-001-model-acquisition-placement.md decision point 3; backlog story 2.
+    param(
+        [Parameter(Mandatory)][object]$Resources
+    )
+    return $Resources.FreeMemGB
+}
+
 function Select-BestModel {
     param(
         [Parameter(Mandatory)][double]$AvailableGB,

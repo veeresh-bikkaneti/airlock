@@ -4,6 +4,9 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $modelsConfig = Get-Content (Join-Path $ScriptDir "..\config\models.json") -Raw | ConvertFrom-Json
 
+# Load model acquisition module for Get-ModelSizingCeilingGB
+. (Join-Path $ScriptDir "Get-ModelAcquisition.ps1")
+
 function Select-ModelForMemory([double]$availableGB) {
     $candidates = foreach ($candidate in $modelsConfig.fallbackOrder) {
         $sizeGB = [double]($modelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
@@ -31,5 +34,40 @@ foreach ($c in $cases) {
         Write-Host "PASS: $($c.gb)GB -> $result" -ForegroundColor Green
     }
 }
+
+# Test sizing ceiling: verify it always uses FreeMemGB regardless of GPU presence.
+# Regression test for fix: sizing should ignore GPU VRAM and always use system RAM.
+Write-Host ""
+Write-Host "Testing model sizing ceiling (GPU vs RAM priority)..." -ForegroundColor Cyan
+
+$sizingTests = @(
+    @{
+        name   = "4GB GPU free, 32GB RAM free (should return 32, not 4)"
+        resources = @{ FreeMemGB = 32; GpuTotalGB = 4; GpuFreeGB = 4 }
+        expect = 32
+    }
+    @{
+        name   = "No GPU, 16GB RAM free (should return 16)"
+        resources = @{ FreeMemGB = 16; GpuTotalGB = "N/A"; GpuFreeGB = "N/A" }
+        expect = 16
+    }
+    @{
+        name   = "8GB GPU free, 8GB RAM free (should return 8, same value either way)"
+        resources = @{ FreeMemGB = 8; GpuTotalGB = 8; GpuFreeGB = 8 }
+        expect = 8
+    }
+)
+
+foreach ($test in $sizingTests) {
+    $result = Get-ModelSizingCeilingGB -Resources $test.resources
+    if ($result -ne $test.expect) {
+        Write-Host "FAIL: $($test.name) -> got $result, expected $($test.expect)" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: $($test.name) -> $result GB" -ForegroundColor Green
+    }
+}
+
 if ($failures -gt 0) { exit 1 }
+Write-Host ""
 Write-Host "All model-selection checks passed" -ForegroundColor Green
