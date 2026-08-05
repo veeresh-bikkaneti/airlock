@@ -16,14 +16,14 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Priority: **P0**
 - Implemented: `Get-ModelDiscoverySources` (`scripts/Start-AI.ps1:151`) checks the curated `config/models.json` list first and queries the Hugging Face GGUF search API as a secondary source, logging both. Ollama has no public "list all pullable tags" API, so the "registry" side is a maintained curated list rather than a live query — acceptable per [`05-Provider-Fallback-Matrix.md`](05-Provider-Fallback-Matrix.md#model-acquisition-fallback), but worth knowing it's not live.
 
-### 2. Assess hardware capability — **Status: Done, one known gap**
+### 2. Assess hardware capability — **Status: Done**
 **As a** user **I want** the platform to detect my CPU/GPU/RAM/VRAM **so that** it only considers models likely to run acceptably.
 - Detect total RAM, available VRAM (if a GPU is present), CPU core count.
 - Map hardware profile to a max supportable model size/quantization level (e.g. Q4_K_M 7B needs ~6GB RAM).
 - Log the detected hardware profile and the resulting size ceiling.
 - Priority: **P0** (blocks story 3)
-- Implemented: `Test-ResourceAvailability` (`scripts/Start-AI.ps1:205`) reads RAM via `Win32_OperatingSystem`, VRAM via `nvidia-smi`, cores via `Win32_ComputerSystem`.
-- **Known gap:** `$availableGB` (`scripts/Start-AI.ps1:266`) uses `GpuFreeGB` as the size ceiling whenever *any* NVIDIA GPU is present, even if RAM is much larger — a 4GB GPU + 32GB RAM box gets sized off the 4GB, though Ollama can offload the rest to CPU/RAM. Also NVIDIA-only (no AMD/Intel GPU detection). Not fixed here since it's a sizing-policy call, not a blocker for the rest of this backlog — flagged for a follow-up story if it causes under-sized picks in practice.
+- Implemented: `Test-ResourceAvailability` (`scripts/Get-ModelAcquisition.ps1:59`) reads RAM via `Win32_OperatingSystem`, VRAM via `nvidia-smi`, cores via `Win32_ComputerSystem`.
+- **Fixed:** Model sizing now uses system RAM (FreeMemGB) as the ceiling regardless of GPU presence. GPU info is computed and logged as informational/speed context only. Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM, so GPU only affects inference speed, not whether a model can run. Sizing logic extracted to `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`) for testability. Regression test confirms 4GB GPU + 32GB RAM box gets sized to 32GB, not 4GB. See ADR-001 decision point 3.
 
 ### 3. Prioritize the best model when multiple fit — **Status: Done**
 **As a** user **I want** the platform to pick the single best-fitting model when several candidates qualify **so that** I get good quality without manual comparison.
@@ -69,4 +69,4 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 ## Open questions
 - ~~Where does the hardware-to-model-size mapping table live~~ — resolved: hardcoded in `config/models.json` (`localModels` sizes + `fallbackOrder`).
 - ~~Should the user be able to override the auto-selected model~~ — resolved: yes, the `-Model` parameter on `Start-AI.ps1` skips auto-selection entirely (`scripts/Start-AI.ps1:273`).
-- New: should model sizing prefer RAM over VRAM when RAM is larger and the model can run CPU-only? (see story 2's known gap)
+- ~~Should model sizing prefer RAM over VRAM when RAM is larger~~ — resolved: yes, always prefer RAM; Ollama offloads to CPU/RAM automatically. Fixed in `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`).

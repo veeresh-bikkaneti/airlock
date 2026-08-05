@@ -43,7 +43,7 @@ Decisions folded into this placement, previously undocumented:
 
 1. **Ollama's "registry" is `config/models.json`'s curated `fallbackOrder`, not a live API call.** Ollama has no public "list all pullable tags" endpoint, so the curated list is the source of truth. Documented in [`05-Provider-Fallback-Matrix.md`](../05-Provider-Fallback-Matrix.md#model-acquisition-fallback).
 2. **Hugging Face is discovery-only.** `Get-ModelDiscoverySources` queries HF's GGUF search API and logs what it finds, but nothing downloads from it yet — deliberately scoped down per backlog story 2b, rather than adding remote-download complexity before it's needed. Story 4b in the backlog tracks closing this gap.
-3. **Sizing prioritizes GPU free VRAM over RAM whenever any GPU is present** (`Start-AI.ps1:266`). Accepted as a known simplification, not fixed here — see backlog story 2's flagged gap.
+3. **Sizing uses system RAM (FreeMemGB) as the ceiling, regardless of GPU presence.** GPU info is computed and logged as informational/speed context only. Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM, so GPU only affects inference speed, not whether a model can run. Fixed via `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`); see backlog story 2's resolution.
 4. **Background pull is session-scoped** (`Start-Job`, not a detached process) — closing the terminal kills an in-progress pull. Already marked in-code as a `ponytail:` comment with its upgrade path (`Start-Process`).
 
 ## Consequences
