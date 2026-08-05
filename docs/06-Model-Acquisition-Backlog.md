@@ -58,7 +58,7 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Needs the platform to detect job failure/timeout and retry with the next-best curated model, or clearly surface the failure instead of silently leaving the user without a working model.
 - Priority: **P2**
 
-### 6. Auto-install Ollama itself when missing — **Status: In Progress**
+### 6. Auto-install Ollama itself when missing — **Status: Done**
 **As a** user **I want** double-clicking `Start-AI.bat` to work even if I've never installed Ollama **so that** setup is genuinely zero-install, not "zero-install except the one thing you have to do first."
 - Detect Ollama missing (not on PATH, not at the default per-user install path).
 - Install via `winget install --id Ollama.Ollama -e --silent`, no interactive prompt, matching the no-prompt precedent for model pulls in ADR-001.
@@ -67,6 +67,7 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - New `-NoAutoInstallOllama` switch opts out for managed/locked-down machines.
 - Priority: **P1**
 - Design: [`ADR-002-ollama-auto-install.md`](adr/ADR-002-ollama-auto-install.md).
+- Implemented: `Install-OllamaIfMissing` (`scripts/Get-ModelAcquisition.ps1:5-67`) checks PATH and default install path, then uses `winget install` if Ollama is missing and winget is available. Integrated into `scripts/Start-AI.ps1` with a call after the PowerShell version check (lines 171-177) and guarded by the new `-NoAutoInstallOllama` switch. Audit logging added for all install outcomes (STARTED/SUCCESS/FAILED).
 
 ### 5. Verbose, human-readable logging throughout — **Status: Done**
 **As a** user **I want** clear logs of every step **so that** I can see what's happening and trust the automation.

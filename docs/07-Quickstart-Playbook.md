@@ -5,7 +5,7 @@ A beginner-friendly guide to running local-ai-platform. No Ollama installed, no 
 ## What this platform does for you
 
 You run one script. It figures out the rest:
-1. Checks if Ollama is installed and running (starts it if not).
+1. Installs Ollama if missing (one-time via winget), then checks if it's running (starts it if not).
 2. Reads how much RAM/VRAM your machine has.
 3. Picks the best model that actually fits your hardware — from a curated list first, then Hugging Face if nothing curated fits.
 4. Pulls/downloads that model in the background if it isn't already local.
@@ -14,13 +14,14 @@ You run one script. It figures out the rest:
 
 ## Prerequisites
 
-Only two things, both one-time:
+Only one thing, one-time:
 - **PowerShell 7** (`pwsh`), not the old Windows PowerShell 5.1. Check with:
   ```powershell
   $PSVersionTable.PSVersion
   ```
   Major version must be `7`. If not, install it from `winget install Microsoft.PowerShell`.
-- **Ollama** installed (the script will tell you if it's missing — see [`02-Windows-Implementation-Guide.md`](02-Windows-Implementation-Guide.md) for the install step). You do **not** need to pull any models yourself.
+
+Ollama is installed automatically on first run if missing — you do **not** need to install it yourself.
 
 ## Running it
 
@@ -46,6 +47,7 @@ If `Start-AI.bat` tells you PowerShell 7 isn't installed, run the one-line insta
 .\scripts\Start-AI.ps1 -Port 5000                # use a specific port instead of auto-picking one
 .\scripts\Start-AI.ps1 -Force                    # kill any existing instance and start clean
 .\scripts\Start-AI.ps1 -SkipVault                # skip the secret-vault check (local-only session)
+.\scripts\Start-AI.ps1 -NoAutoInstallOllama      # skip auto-install of Ollama (manage it yourself)
 ```
 
 ## Stopping it
@@ -77,7 +79,7 @@ Every run writes a JSON-lines audit log to `%USERPROFILE%\.ai-platform\logs\<dat
 
 ## If something goes wrong
 
-- **"Ollama not found"** — install it, see [`02-Windows-Implementation-Guide.md`](02-Windows-Implementation-Guide.md).
+- **Ollama installation fails** — the script will print an error with a manual install link (https://ollama.com/download). This can happen on locked-down machines where `winget` isn't available or isn't allowed to install software. You can use `-NoAutoInstallOllama` to skip auto-install if you manage Ollama separately.
 - **Script won't parse / weird syntax errors** — you're probably running it under Windows PowerShell 5.1 instead of PowerShell 7. Use `pwsh .\scripts\Start-AI.ps1`, not `powershell .\scripts\Start-AI.ps1`.
 - **Port already in use** — run with `-Force` to kill the existing instance, or `-Port` to pick a different one.
 - **Model pull/download stuck or failed** — check the audit log for the exact step it failed at; background pulls are session-scoped, so closing the terminal mid-download will kill the job (known limitation).

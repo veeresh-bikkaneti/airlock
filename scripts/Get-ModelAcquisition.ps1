@@ -2,6 +2,70 @@
 # Called by scripts/Start-AI.ps1 after Write-AuditLog is defined
 # Requires: Write-AuditLog (from Start-AI.ps1)
 
+function Install-OllamaIfMissing {
+    # Check if ollama is available on PATH or at the default per-user install location.
+    # If not found and winget is available, install via winget. Otherwise, log failure and return $false.
+
+    # Check if ollama is already on PATH.
+    if (Get-Command ollama -ErrorAction SilentlyContinue) {
+        return $true
+    }
+
+    # Check default per-user install path.
+    $ollamaDefaultPath = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
+    if (Test-Path $ollamaDefaultPath) {
+        $ollamaDir = Split-Path -Parent $ollamaDefaultPath
+        $env:Path = "$ollamaDir;$env:Path"
+        return $true
+    }
+
+    # Ollama not found anywhere. Check if winget is available.
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        # winget not available: log failure and print error with manual install link.
+        Write-AuditLog -Action "OllamaInstall" -Result "FAILED" -Message "Ollama not found and winget unavailable"
+        Write-Host "" -ForegroundColor Red
+        Write-Host "ERROR: Ollama not found and winget is not available." -ForegroundColor Red
+        Write-Host "Please install Ollama manually from: https://ollama.com/download" -ForegroundColor Red
+        Write-Host "" -ForegroundColor Red
+        return $false
+    }
+
+    # winget is available: proceed with installation.
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "Ollama not found — installing via winget (one-time, may take a minute)..." -ForegroundColor Yellow
+    Write-AuditLog -Action "OllamaInstall" -Result "STARTED" -Message "Installing Ollama via winget"
+
+    # Run winget install.
+    & winget install --id Ollama.Ollama -e --silent --accept-package-agreements --accept-source-agreements
+    $wingetExitCode = $LASTEXITCODE
+
+    if ($wingetExitCode -ne 0) {
+        Write-AuditLog -Action "OllamaInstall" -Result "FAILED" -Message "winget install failed" -Detail "Exit code: $wingetExitCode"
+        Write-Host "" -ForegroundColor Red
+        Write-Host "ERROR: winget install for Ollama failed (exit code: $wingetExitCode)." -ForegroundColor Red
+        Write-Host "Please install Ollama manually from: https://ollama.com/download" -ForegroundColor Red
+        Write-Host "" -ForegroundColor Red
+        return $false
+    }
+
+    # Installation succeeded: re-check if ollama is now available.
+    if (Test-Path $ollamaDefaultPath) {
+        $ollamaDir = Split-Path -Parent $ollamaDefaultPath
+        $env:Path = "$ollamaDir;$env:Path"
+        Write-Host "Ollama installed successfully via winget." -ForegroundColor Green
+        Write-AuditLog -Action "OllamaInstall" -Result "SUCCESS" -Message "Ollama installed via winget"
+        return $true
+    }
+
+    # Unexpected: winget reported success but ollama exe not found at expected path.
+    Write-AuditLog -Action "OllamaInstall" -Result "FAILED" -Message "winget install reported success but Ollama executable not found at expected path"
+    Write-Host "" -ForegroundColor Red
+    Write-Host "ERROR: Ollama installation reported success, but the executable was not found at the expected location." -ForegroundColor Red
+    Write-Host "Please install Ollama manually from: https://ollama.com/download" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    return $false
+}
+
 function Get-ModelDiscoverySources {
     # Story 1: discover what's pullable before Test-ResourceAvailability's selection logic scores candidates.
     # Two sources, two log lines - no plugin/registry framework. Ollama has no public

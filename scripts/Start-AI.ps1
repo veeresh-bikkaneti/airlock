@@ -1,11 +1,12 @@
 # Start-AI.ps1 — Start local AI platform with Ollama (hardened single-instance)
-# Usage: .\Start-AI.ps1 [-Model <name>] [-Port <port>] [-SkipVault] [-Force] [-StrictPort]
+# Usage: .\Start-AI.ps1 [-Model <name>] [-Port <port>] [-SkipVault] [-Force] [-StrictPort] [-NoAutoInstallOllama]
 param(
     [string]$Model = "qwen2.5-coder:7b",
     [int]$Port = 0,
     [switch]$SkipVault,
     [switch]$Force,
-    [switch]$StrictPort
+    [switch]$StrictPort,
+    [switch]$NoAutoInstallOllama
 )
 
 $ErrorActionPreference = "Stop"
@@ -166,6 +167,14 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 Write-AuditLog -Action "PowerShellCheck" -Result "SUCCESS" -Message "PowerShell $($PSVersionTable.PSVersion)"
+
+if (-not $NoAutoInstallOllama) {
+    if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
+        if (-not (Install-OllamaIfMissing)) {
+            exit 1
+        }
+    }
+}
 
 # Perform a quick system resource check to ensure we have enough RAM and (optional) GPU memory before loading a large model.
 Write-Host "Resource check..." -ForegroundColor Yellow
