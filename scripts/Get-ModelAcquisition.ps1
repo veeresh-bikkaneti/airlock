@@ -222,7 +222,8 @@ function Start-HuggingFaceImport {
             New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
         }
 
-        $filepath = Join-Path $downloadDir $Cand.Filename
+        $safeFilename = (Split-Path -Leaf $Cand.Filename) -replace '[^a-zA-Z0-9._-]', ''
+        $filepath = Join-Path $downloadDir $safeFilename
 
         try {
             # Download the GGUF file.
@@ -246,6 +247,7 @@ function Start-HuggingFaceImport {
                     -Message "Importing GGUF into Ollama: $Model"
 
                 & ollama create $Model -f $modelfilePath
+                Remove-Item -Path $modelfilePath -Force -ErrorAction SilentlyContinue
                 if ($LASTEXITCODE -eq 0) {
                     Write-JobAuditLog -Action "HuggingFaceImport" -Result "SUCCESS" `
                         -Message "Model imported successfully: $Model"
@@ -274,10 +276,12 @@ function Start-HuggingFaceImport {
                         -Message "ollama create failed for $Model"
                 }
             } else {
+                Remove-Item -Path $filepath -Force -ErrorAction SilentlyContinue
                 Write-JobAuditLog -Action "HuggingFaceDownload" -Result "FAILED" `
                     -Message "Download failed or file is empty" -Detail "Path: $filepath"
             }
         } catch {
+            Remove-Item -Path $filepath -Force -ErrorAction SilentlyContinue
             Write-JobAuditLog -Action "HuggingFaceDownload" -Result "FAILED" `
                 -Message "Error downloading GGUF from HuggingFace" -Detail $_.Exception.Message
         }
@@ -295,7 +299,8 @@ function Select-BestModel {
         [Parameter(Mandatory)][double]$AvailableGB,
         [Parameter(Mandatory)][object]$Resources,
         [Parameter(Mandatory)][string]$GpuDesc,
-        [Parameter(Mandatory)][string]$ScriptDir
+        [Parameter(Mandatory)][string]$ScriptDir,
+        [Parameter(Mandatory)][int]$LivePort
     )
 
     Write-Host ""
@@ -330,10 +335,7 @@ function Select-BestModel {
                 $hfCandidate = Get-HuggingFaceGGUFCandidate -AvailableGB $AvailableGB -LogFile $logFile
 
                 if ($hfCandidate) {
-                    # ponytail: LivePort isn't known yet here (Select-BestModel runs before Start-AI.ps1's
-                    # port detection) so warm-start hardcodes the Ollama default. Upgrade path: only matters
-                    # if the user's on a non-default port when the HF import job finishes.
-                    $Model = Start-HuggingFaceImport -Candidate $hfCandidate -LivePort 11434 -LogFile $logFile
+                    $Model = Start-HuggingFaceImport -Candidate $hfCandidate -LivePort $LivePort -LogFile $logFile
                     Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
                         -Message "Selected HuggingFace model $($hfCandidate.RepoId) ($($hfCandidate.SizeGB) GB) - importing in background" `
                         -Detail "Candidates (curated): $candidateSummary"
