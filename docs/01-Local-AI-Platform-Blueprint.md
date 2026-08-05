@@ -11,17 +11,30 @@ Build a Windows 11 AI workspace that prefers local execution through Ollama, exp
 - Logging, approvals, and secret hygiene are first-class design requirements.
 
 ## Architecture
-```text
-User
-  -> PowerShell 7 profile helpers
-  -> Local orchestration scripts
-  -> Provider router
-      -> Local: Ollama / localhost only
-      -> Cloud fallback: OpenRouter, OpenAI, Anthropic, Google, Azure OpenAI
-  -> AI coding client (for example aider)
-  -> Project repository with manual review gates
-  -> Logs + audit records + secret vault
+```mermaid
+flowchart LR
+    U([User]) --> PH[PowerShell profile helpers]
+    PH --> SA[Start-AI.ps1]
+
+    subgraph MA["Model acquisition pre-flight — ADR-001"]
+        direction LR
+        HW["Hardware assessment<br/>Story 2"] --> DISC["Discovery<br/>Ollama curated list + HF<br/>Story 1, 2b"]
+        DISC --> SEL["Select best fit<br/>Story 3"]
+        SEL --> PULL["Background pull + warm-start<br/>Story 4, 4b"]
+    end
+
+    SA --> MA
+    MA --> PR{Provider router}
+    PR -->|local model present| LOCAL["Local: Ollama<br/>localhost only"]
+    PR -->|no local / policy allows| CLOUD["Cloud fallback:<br/>OpenRouter, OpenAI, Anthropic,<br/>Google, Azure OpenAI"]
+    LOCAL --> CLIENT[AI coding client]
+    CLOUD --> CLIENT
+    CLIENT --> REPO[Project repo + review gates]
+    REPO --> LOGS[(Logs + audit + secret vault)]
 ```
+Story 5 (verbose logging) is not a stage above — it's the audit trail (`Write-AuditLog`) running through every box, including inside the background pull job.
+
+Model acquisition guarantees the "Local: Ollama" branch has a model to route to; it does not change routing itself. See [`adr/ADR-001-model-acquisition-placement.md`](adr/ADR-001-model-acquisition-placement.md) for why it's placed here instead of as a separate service or a Provider Router extension.
 
 ## Trust Model
 ### Local path
