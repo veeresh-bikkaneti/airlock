@@ -8,13 +8,13 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 
 ## Stories
 
-### 1. Detect available quantized models — **Status: Partial**
+### 1. Detect available quantized models — **Status: Done**
 **As a** user **I want** the platform to check Ollama and Hugging Face for quantized/compressed model builds **so that** I don't have to know model names or formats.
 - Query Ollama's model library/registry for available tags.
 - Query Hugging Face for GGUF (or other quantized) repos as a secondary source.
 - Log each source checked and what was found.
 - Priority: **P0**
-- Implemented: `Get-ModelDiscoverySources` (`scripts/Start-AI.ps1:151`) checks the curated `config/models.json` list first and queries the Hugging Face GGUF search API as a secondary source, logging both. Ollama has no public "list all pullable tags" API, so the "registry" side is a maintained curated list rather than a live query — acceptable per [`05-Provider-Fallback-Matrix.md`](05-Provider-Fallback-Matrix.md#model-acquisition-fallback), but worth knowing it's not live.
+- Implemented: `Get-ModelDiscoverySources` (`scripts/Get-ModelAcquisition.ps1:5-57`) checks the curated `config/models.json` list first and queries the Hugging Face GGUF search API as a secondary source, logging both. HF acquisition is now wired: `Get-HuggingFaceGGUFCandidate` queries individual repos for file details and filters by size. Ollama has no public "list all pullable tags" API, so the "registry" side is a maintained curated list rather than a live query — acceptable per [`05-Provider-Fallback-Matrix.md`](05-Provider-Fallback-Matrix.md#model-acquisition-fallback).
 
 ### 2. Assess hardware capability — **Status: Done**
 **As a** user **I want** the platform to detect my CPU/GPU/RAM/VRAM **so that** it only considers models likely to run acceptably.
@@ -38,20 +38,19 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Priority: **P1**
 - Implemented: [`05-Provider-Fallback-Matrix.md`](05-Provider-Fallback-Matrix.md#model-acquisition-fallback) has the row, and `Get-ModelDiscoverySources` gates the HF query behind the curated list having no fit, matching the doc.
 
-### 4. Background pull and run, no manual steps — **Status: Partial**
+### 4. Background pull and run, no manual steps — **Status: Done**
 **As a** user **I want** the chosen model pulled and started automatically **so that** I never run `ollama pull` or `ollama run` myself.
 - Trigger `ollama pull <model>` (or HF download + Ollama import) as a background/async operation so the app doesn't block.
 - Auto-start the model once pulled, matching existing provider-selection flow in the blueprint.
 - Handle already-pulled models as a no-op (skip re-download).
 - Priority: **P0**
-- Implemented: `scripts/Start-AI.ps1:454-531` runs `ollama pull` in a background `Start-Job`, warms the model with a no-prompt `/api/generate` call once pulled, and skips already-pulled models.
-- **Not implemented:** the "or HF download + Ollama import" path. Hugging Face is discovery-only (confirmed in `05-Provider-Fallback-Matrix.md:44`) — when no curated Ollama model fits, the code still pulls the smallest curated model rather than fetching anything from HF. See new story 4b below.
+- Implemented: `scripts/Get-ModelAcquisition.ps1:350-437` runs `ollama pull` in a background `Start-Job` for curated models, or launches `Start-HuggingFaceImport` for HF-sourced models. Both warm the model with a no-prompt `/api/generate` call and skip already-available models. `Start-ModelAcquisitionPull` (lines 343-437) detects HF models by name prefix and skips registry pull for them.
 
-### 4b. Wire up Hugging Face acquisition (new)
+### 4b. Wire up Hugging Face acquisition — **Status: Done**
 **As a** user **I want** a model actually downloaded from Hugging Face when nothing in the curated Ollama list fits **so that** the "check HF" story pays off instead of just logging a source that never supplies a model.
-- Download the winning HF GGUF repo's file and `ollama create` an import from it (or equivalent), reusing the same background-job + audit-log pattern as story 4.
-- Until this exists, keep the current behavior (fall back to smallest curated Ollama model) as the honest fallback — don't silently pretend HF acquisition is live.
+- Download the winning HF GGUF repo's file and `ollama create` an import from it, reusing the same background-job + audit-log pattern as story 4.
 - Priority: **P1**
+- Implemented: `Get-HuggingFaceGGUFCandidate` (`scripts/Get-ModelAcquisition.ps1:88-151`) queries HF's `/api/models` endpoint for GGUF files, gets sizes via `Content-Length` HEAD requests when needed, and filters by 20% headroom. `Start-HuggingFaceImport` (`scripts/Get-ModelAcquisition.ps1:153-278`) launches a background job that downloads the file, creates a Modelfile, runs `ollama create` to import, and warm-starts the model. Model names prefixed with `hf-` (e.g., `hf-anthropic-qwen`) identify HF imports; `Start-ModelAcquisitionPull` skips registry pull for these. Falls back to smallest curated model if HF search/download/import fails at any point.
 
 ### 5. Verbose, human-readable logging throughout — **Status: Done**
 **As a** user **I want** clear logs of every step **so that** I can see what's happening and trust the automation.

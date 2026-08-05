@@ -42,7 +42,7 @@ It is not a separate acquisition service, and it does not extend the Provider Ro
 Decisions folded into this placement, previously undocumented:
 
 1. **Ollama's "registry" is `config/models.json`'s curated `fallbackOrder`, not a live API call.** Ollama has no public "list all pullable tags" endpoint, so the curated list is the source of truth. Documented in [`05-Provider-Fallback-Matrix.md`](../05-Provider-Fallback-Matrix.md#model-acquisition-fallback).
-2. **Hugging Face is discovery-only.** `Get-ModelDiscoverySources` queries HF's GGUF search API and logs what it finds, but nothing downloads from it yet — deliberately scoped down per backlog story 2b, rather than adding remote-download complexity before it's needed. Story 4b in the backlog tracks closing this gap.
+2. **Hugging Face acquisition is wired.** `Get-ModelDiscoverySources` queries HF's GGUF search API and logs what it finds. When no curated Ollama model fits available hardware, `Get-HuggingFaceGGUFCandidate` queries individual HF repos for GGUF file details and sizes (via `Content-Length` HEAD requests when needed), and `Start-HuggingFaceImport` downloads the best-fitting file and imports it into Ollama via `ollama create`. Falls back to smallest curated model if HF search/download/import fails at any point. Implemented per backlog story 4b.
 3. **Sizing uses system RAM (FreeMemGB) as the ceiling, regardless of GPU presence.** GPU info is computed and logged as informational/speed context only. Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM, so GPU only affects inference speed, not whether a model can run. Fixed via `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`); see backlog story 2's resolution.
 4. **Background pull is session-scoped** (`Start-Job`, not a detached process) — closing the terminal kills an in-progress pull. Already marked in-code as a `ponytail:` comment with its upgrade path (`Start-Process`).
 
@@ -54,8 +54,7 @@ Decisions folded into this placement, previously undocumented:
 - No new entrypoint: users still just run `ai-start`.
 
 **Negative**
-- `scripts/Start-AI.ps1` is 557 lines, already over this project's own 500-line-per-file rule (`CLAUDE.md`), and acquisition logic (~380 lines: discovery, sizing, selection, background pull) is most of that growth. Story 4b (HF download + `ollama create` import) will add more to the same file.
-- **Action item:** before story 4b lands, split acquisition (`Get-ModelDiscoverySources`, `Test-ResourceAvailability`, the auto-select block, the background-pull block) out of `Start-AI.ps1` into its own module, e.g. `scripts/Get-ModelAcquisition.ps1`, dot-sourced by `Start-AI.ps1`. Not done as part of this ADR since it's a pure refactor with no behavior change — tracked here so it isn't lost.
+- (Previously: `scripts/Start-AI.ps1` exceeded 500-line rule, with acquisition logic as most of the growth. **Action item resolved:** acquisition logic has been split into `scripts/Get-ModelAcquisition.ps1` (containing `Get-ModelDiscoverySources`, `Test-ResourceAvailability`, `Select-BestModel`, `Get-HuggingFaceGGUFCandidate`, `Start-HuggingFaceImport`, and `Start-ModelAcquisitionPull`), dot-sourced by `Start-AI.ps1`.)
 
 **Neutral**
 - This repo has no `src/<context>/domain/` structure (it's PowerShell scripts + docs, not a layered app), so there's no bounded-context mapping to maintain here beyond this ADR and the blueprint's architecture diagram.
