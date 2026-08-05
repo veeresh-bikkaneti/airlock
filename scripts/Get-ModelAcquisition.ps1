@@ -318,6 +318,9 @@ function Select-BestModel {
                 $hfCandidate = Get-HuggingFaceGGUFCandidate -AvailableGB $AvailableGB -LogFile $logFile
 
                 if ($hfCandidate) {
+                    # ponytail: LivePort isn't known yet here (Select-BestModel runs before Start-AI.ps1's
+                    # port detection) so warm-start hardcodes the Ollama default. Upgrade path: only matters
+                    # if the user's on a non-default port when the HF import job finishes.
                     $Model = Start-HuggingFaceImport -Candidate $hfCandidate -LivePort 11434 -LogFile $logFile
                     Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
                         -Message "Selected HuggingFace model $($hfCandidate.RepoId) ($($hfCandidate.SizeGB) GB) - importing in background" `
