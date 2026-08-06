@@ -37,7 +37,7 @@ function global:ai-port {
         try {
             $c = [System.Net.Http.HttpClient]::new()
             $c.Timeout = [TimeSpan]::FromSeconds(5)
-            if ($c.GetAsync("http://127.0.0.1:$($data.port)/api/tags").Result.IsSuccessStatusCode) {
+            if ($c.GetAsync("http://127.0.0.1:$($data.port)/v1/models").Result.IsSuccessStatusCode) {
                 Write-Host "Status: HEALTHY" -ForegroundColor Green
             } else {
                 Write-Host "Status: UNREACHABLE" -ForegroundColor Red
