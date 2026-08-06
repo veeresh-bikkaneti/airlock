@@ -15,6 +15,13 @@ $PlatformDir = "$env:USERPROFILE\.ai-platform"   # Base directory for the platfo
 $LogDir = "$PlatformDir\logs"                # Location of audit logs
 $StateDir = "$PlatformDir\state"              # Where session state files live
 $LogFile = Join-Path $LogDir ((Get-Date).ToString('yyyy-MM-dd') + '.jsonl')
+$ActiveProviderPath = "$StateDir\active-provider.json"
+$ActiveBackend = "ollama"
+if (Test-Path $ActiveProviderPath) {
+    try {
+        $ActiveBackend = (Get-Content $ActiveProviderPath -Raw | ConvertFrom-Json).provider
+    } catch { $ActiveBackend = "ollama" }
+}
 
 # ------------------------------------------------------------
 # Helper: Structured audit logging (mirrors Start-AI)
@@ -52,49 +59,61 @@ Write-Host "========================================" -ForegroundColor Yellow
 Write-AuditLog -Action "PlatformShutdown" -Result "STARTED" -Message "Shutting down"
 
 # ------------------------------------------------------------
-# 1️⃣ Identify and kill any running Ollama processes (UI app + server)
+# 1️⃣ Stop the active backend (Ollama process kill, or vLLM container stop)
 # ------------------------------------------------------------
-$appProcs  = Get-Process -Name "ollama app" -ErrorAction SilentlyContinue   # System‑tray UI process
-$serveProcs = Get-Process -Name "ollama" -ErrorAction SilentlyContinue | Where-Object { $_.Path -notlike "*ollama app*" } # Server process
-$allProcs = @($appProcs) + @($serveProcs) | Where-Object { $_ -ne $null }
-
-if ($allProcs.Count -gt 0) {
-    $pids = ($allProcs | ForEach-Object { $_.Id }) -join ','
-    Write-Host "  Found $($allProcs.Count) Ollama process(es): PID $pids" -ForegroundColor Yellow
-
-    # Stop the tray UI first – it would otherwise respawn the server
-    foreach ($p in $appProcs) {
-        Write-Host "  Stopping ollama app (PID $($p.Id))" -ForegroundColor Yellow
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Milliseconds 500
-
-    # Then stop the server processes
-    foreach ($p in $serveProcs) {
-        Write-Host "  Stopping ollama serve (PID $($p.Id))" -ForegroundColor Yellow
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-    }
-
-    # Give the OS a moment – sometimes a child process lingers
-    Start-Sleep 3
-    $survivors = Get-Process -Name "ollama*" -ErrorAction SilentlyContinue
-    if ($survivors) {
-        Write-Host "  Force‑terminating surviving processes..." -ForegroundColor Red
-        taskkill /F /IM "ollama app.exe" 2>$null | Out-Null
-        taskkill /F /IM "ollama.exe" 2>$null | Out-Null
-        Start-Sleep 2
-    }
-
-    $final = Get-Process -Name "ollama*" -ErrorAction SilentlyContinue
-    if ($final) {
-        Write-Host "  ERROR: Could not kill all Ollama processes (PIDs: $($final.Id -join ','))" -ForegroundColor Red
-        Write-AuditLog -Action "OllamaStop" -Result "FAILED" -Message "Ollama processes survived" -Detail "PIDs: $($final.Id -join ',')"
+if ($ActiveBackend -eq "vllm") {
+    $running = docker ps --filter "name=ai-platform-vllm" --format "{{.Names}}" 2>$null
+    if ($running -eq "ai-platform-vllm") {
+        Write-Host "  Stopping vLLM container" -ForegroundColor Yellow
+        docker rm -f ai-platform-vllm 2>$null | Out-Null
+        Write-Host "  vLLM container stopped" -ForegroundColor Green
+        Write-AuditLog -Action "VLLMStop" -Result "SUCCESS" -Message "vLLM container stopped"
     } else {
-        Write-Host "  All Ollama processes stopped" -ForegroundColor Green
-        Write-AuditLog -Action "OllamaStop" -Result "SUCCESS" -Message "All Ollama processes stopped" -Detail "PIDs: $pids"
+        Write-Host "  No running vLLM container found" -ForegroundColor Gray
     }
 } else {
-    Write-Host "  No Ollama processes found" -ForegroundColor Gray
+    $appProcs  = Get-Process -Name "ollama app" -ErrorAction SilentlyContinue   # System‑tray UI process
+    $serveProcs = Get-Process -Name "ollama" -ErrorAction SilentlyContinue | Where-Object { $_.Path -notlike "*ollama app*" } # Server process
+    $allProcs = @($appProcs) + @($serveProcs) | Where-Object { $_ -ne $null }
+
+    if ($allProcs.Count -gt 0) {
+        $pids = ($allProcs | ForEach-Object { $_.Id }) -join ','
+        Write-Host "  Found $($allProcs.Count) Ollama process(es): PID $pids" -ForegroundColor Yellow
+
+        # Stop the tray UI first – it would otherwise respawn the server
+        foreach ($p in $appProcs) {
+            Write-Host "  Stopping ollama app (PID $($p.Id))" -ForegroundColor Yellow
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 500
+
+        # Then stop the server processes
+        foreach ($p in $serveProcs) {
+            Write-Host "  Stopping ollama serve (PID $($p.Id))" -ForegroundColor Yellow
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        }
+
+        # Give the OS a moment – sometimes a child process lingers
+        Start-Sleep 3
+        $survivors = Get-Process -Name "ollama*" -ErrorAction SilentlyContinue
+        if ($survivors) {
+            Write-Host "  Force‑terminating surviving processes..." -ForegroundColor Red
+            taskkill /F /IM "ollama app.exe" 2>$null | Out-Null
+            taskkill /F /IM "ollama.exe" 2>$null | Out-Null
+            Start-Sleep 2
+        }
+
+        $final = Get-Process -Name "ollama*" -ErrorAction SilentlyContinue
+        if ($final) {
+            Write-Host "  ERROR: Could not kill all Ollama processes (PIDs: $($final.Id -join ','))" -ForegroundColor Red
+            Write-AuditLog -Action "OllamaStop" -Result "FAILED" -Message "Ollama processes survived" -Detail "PIDs: $($final.Id -join ',')"
+        } else {
+            Write-Host "  All Ollama processes stopped" -ForegroundColor Green
+            Write-AuditLog -Action "OllamaStop" -Result "SUCCESS" -Message "All Ollama processes stopped" -Detail "PIDs: $pids"
+        }
+    } else {
+        Write-Host "  No Ollama processes found" -ForegroundColor Gray
+    }
 }
 
 # ------------------------------------------------------------
@@ -118,7 +137,7 @@ Write-Host "  Session state cleared" -ForegroundColor Green
 # 4️⃣ (Optional) Remove the firewall rule that blocked inbound access to Ollama
 # ------------------------------------------------------------
 if ($CleanFirewall) {
-    $rules = Get-NetFirewallRule -DisplayName "AI-Platform-Ollama-Block-*" -ErrorAction SilentlyContinue
+    $rules = Get-NetFirewallRule -DisplayName "AI-Platform-*-Block-*" -ErrorAction SilentlyContinue
     if ($rules) {
         foreach ($rule in $rules) {
             Write-Host "  Removing firewall rule: $($rule.DisplayName)" -ForegroundColor Yellow
