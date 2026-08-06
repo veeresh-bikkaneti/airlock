@@ -4,7 +4,7 @@
 
 | Scenario | Local available | Cloud fallback enabled | Secret available | Result |
 |---|---:|---:|---:|---|
-| Normal operation | Yes | No | N/A | Use local Ollama provider. |
+| Normal operation | Yes | No | N/A | Use local provider (Ollama or vLLM, per `preferredLocalProvider`). |
 | Local down, strict policy | No | No | Yes/No | Stop with clear error; do not use cloud. |
 | Local down, cloud allowed, OpenRouter key exists | No | Yes | Yes | Use OpenRouter and log fallback reason. |
 | Local down, OpenRouter missing, OpenAI key exists | No | Yes | Yes | Use OpenAI if it is next in priority order. |
@@ -16,6 +16,7 @@
 | Provider | Key name | Endpoint | Notes |
 |---|---|---|---|
 | Ollama | none; use placeholder `ollama` for OpenAI-compatible clients | `http://127.0.0.1:<port>/v1` | Primary local path. |
+| vLLM | none; use placeholder `ollama` for OpenAI-compatible clients | `http://127.0.0.1:<port>/v1` | Optional alt local path — requires NVIDIA GPU + Docker Desktop. Chosen via `preferredLocalProvider: "vllm"` in provider-policy.json. |
 | OpenRouter | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` | Good multi-model broker option. |
 | OpenAI | `OPENAI_API_KEY` | `https://api.openai.com/v1` | Common fallback for OpenAI-compatible tooling. |
 | Anthropic | `ANTHROPIC_API_KEY` | `https://api.anthropic.com` | May need provider-specific client settings. |
