@@ -74,6 +74,27 @@ function Set-FirewallGuard {
     }
 }
 
+function Write-VLLMState {
+    param([Parameter(Mandatory)][int]$Port)
+    $portState = [ordered]@{
+        started = [DateTime]::UtcNow.ToString("o")
+        port    = $Port
+        model   = $DefaultModel
+        ollamaHost = "127.0.0.1:$Port"
+    }
+    $portState | ConvertTo-Json | Set-Content "$PlatformDir\.active-port.json" -Encoding utf8NoBOM
+
+    $providerState = [ordered]@{
+        provider = "vllm"
+        model    = $DefaultModel
+        endpoint = "http://127.0.0.1:$Port/v1"
+        source   = "local"
+        reason   = "Local vLLM provider selected"
+        selected = [DateTime]::UtcNow.ToString("o")
+    }
+    $providerState | ConvertTo-Json | Set-Content "$StateDir\active-provider.json" -Encoding utf8NoBOM
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  AI Platform Starting (vLLM backend)" -ForegroundColor Cyan
@@ -99,6 +120,8 @@ if ($existing -eq $ContainerName) {
         docker rm -f $ContainerName 2>$null | Out-Null
     } elseif (Test-VLLMPort $TargetPort) {
         Write-Host "  vLLM already running and healthy on port $TargetPort" -ForegroundColor Green
+        Set-FirewallGuard -Port $TargetPort
+        Write-VLLMState -Port $TargetPort
         Write-AuditLog -Action "VLLMDetected" -Result "SUCCESS" -Message "Reused existing healthy container" -Endpoint "http://127.0.0.1:$TargetPort/v1"
         exit 0
     } else {
@@ -137,24 +160,7 @@ if (-not $healthy) {
 }
 
 Set-FirewallGuard -Port $TargetPort
-
-$portState = [ordered]@{
-    started = [DateTime]::UtcNow.ToString("o")
-    port    = $TargetPort
-    model   = $DefaultModel
-    ollamaHost = "127.0.0.1:$TargetPort"
-}
-$portState | ConvertTo-Json | Set-Content "$PlatformDir\.active-port.json" -Encoding utf8NoBOM
-
-$providerState = [ordered]@{
-    provider = "vllm"
-    model    = $DefaultModel
-    endpoint = "http://127.0.0.1:$TargetPort/v1"
-    source   = "local"
-    reason   = "Local vLLM provider selected"
-    selected = [DateTime]::UtcNow.ToString("o")
-}
-$providerState | ConvertTo-Json | Set-Content "$StateDir\active-provider.json" -Encoding utf8NoBOM
+Write-VLLMState -Port $TargetPort
 
 Write-AuditLog -Action "VLLMStart" -Result "SUCCESS" -Message "vLLM ready" -ModelName $DefaultModel -Endpoint "http://127.0.0.1:$TargetPort/v1"
 

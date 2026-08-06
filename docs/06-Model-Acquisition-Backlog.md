@@ -86,3 +86,25 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - ~~Where does the hardware-to-model-size mapping table live~~ — resolved: hardcoded in `config/models.json` (`localModels` sizes + `fallbackOrder`).
 - ~~Should the user be able to override the auto-selected model~~ — resolved: yes, the `-Model` parameter on `Start-AI.ps1` skips auto-selection entirely (`scripts/Start-AI.ps1:273`).
 - ~~Should model sizing prefer RAM over VRAM when RAM is larger~~ — resolved: yes, always prefer RAM; Ollama offloads to CPU/RAM automatically. Fixed in `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`).
+
+## vLLM Backend Choice (ADR-003) — Review Follow-ups
+Swarm review (Sonnet orchestrator + Haiku expert reviewers) of the vLLM/Ollama backend chooser feature, 2026-08-06. Two real bugs found and fixed on `feat/ollama-auto-install`; two lower-severity gaps deferred below.
+
+**Fixed this pass:**
+- `Stop-AI.ps1` audit log hardcoded `provider: "ollama"` regardless of which backend was actually stopped — now reads the detected `$ActiveBackend`.
+- `Start-VLLM.ps1`'s "reuse existing healthy container" fast path exited without writing `active-port.json`/`active-provider.json`, so `Stop-AI.ps1` would default to Ollama and leave a reused vLLM container running untouched. Extracted `Write-VLLMState` so both the fresh-launch and reuse paths persist state identically.
+
+### 7. Harden Stop-AI.ps1 against a stale active-provider.json — **Status: Backlog**
+**As a** user **I want** `ai-stop` to stop whichever backend is actually running **so that** a stale or missing state file (e.g. after a crash or manual `docker kill`) can't leave a backend orphaned.
+- Today `Stop-AI.ps1` trusts `active-provider.json` alone; if it's stale, it can try to stop the wrong backend.
+- Needs `Stop-AI.ps1` to also probe reality (`docker ps` for the vLLM container name, `Get-Process ollama*`) rather than relying solely on the state file.
+- Priority: **P2**
+
+### 8. Generalize `ai-health` for the vLLM backend — **Status: Backlog**
+**As a** user **I want** `ai-health` to report correctly regardless of which backend is active **so that** I get a real health picture, not an Ollama-only one.
+- `ai-health` (`scripts/profile-helpers.ps1`) checks an Ollama-specific process count, an Ollama-only firewall rule name (`AI-Platform-Ollama-Block-*`), and Ollama's `/api/tags` endpoint — none of which apply when vLLM is active.
+- Needs backend-aware branching (read `active-provider.json`, check the right process/container and firewall rule name per backend) — not a one-line endpoint swap.
+- Priority: **P2**
+
+## Full-repo review — deferred
+Whole-repo swarm review requested by the user; deferred until usage limit resets. Scope: entire `local-ai-platform` codebase, not just this feature.

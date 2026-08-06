@@ -39,7 +39,7 @@ function Write-AuditLog {
         host         = $env:COMPUTERNAME
         action       = $Action
         result       = $Result
-        provider     = "ollama"
+        provider     = $ActiveBackend
         model        = ""
         endpoint     = ""
         message      = $Message
