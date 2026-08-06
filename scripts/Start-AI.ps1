@@ -21,6 +21,14 @@ foreach ($dir in @($LogDir, $StateDir, $ConfigDir)) {
     if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
 }
 
+$ProviderPolicyPath = Join-Path $ConfigDir "provider-policy.json"
+if (-not (Test-Path $ProviderPolicyPath)) {
+    $TemplatePolicyPath = Join-Path (Split-Path -Parent $ScriptDir) "config\policies\provider-policy.json"
+    if (Test-Path $TemplatePolicyPath) {
+        Copy-Item $TemplatePolicyPath $ProviderPolicyPath
+    }
+}
+
 $LogFile = Join-Path $LogDir ((Get-Date).ToString('yyyy-MM-dd') + '.jsonl')
 
 function Write-AuditLog {
@@ -167,6 +175,57 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 Write-AuditLog -Action "PowerShellCheck" -Result "SUCCESS" -Message "PowerShell $($PSVersionTable.PSVersion)"
+
+# --- Backend selection (Ollama vs vLLM) — runs once, persisted to provider-policy.json ---
+. "$PSScriptRoot\Get-BackendCapability.ps1"
+
+function Get-PreferredBackend {
+    param([Parameter(Mandatory)][string]$PolicyPath)
+    if (-not (Test-Path $PolicyPath)) { return $null }
+    $policy = Get-Content $PolicyPath -Raw | ConvertFrom-Json
+    if ($policy.PSObject.Properties.Name -contains 'preferredLocalProvider') {
+        return $policy.preferredLocalProvider
+    }
+    return $null
+}
+
+function Set-PreferredBackend {
+    param(
+        [Parameter(Mandatory)][string]$PolicyPath,
+        [Parameter(Mandatory)][ValidateSet('ollama', 'vllm')][string]$Backend
+    )
+    $policy = Get-Content $PolicyPath -Raw | ConvertFrom-Json
+    $policy.preferredLocalProvider = $Backend
+    $policy | ConvertTo-Json -Depth 10 | Set-Content $PolicyPath -Encoding utf8NoBOM
+}
+
+$Backend = Get-PreferredBackend -PolicyPath $ProviderPolicyPath
+if ($Backend -notin @('ollama', 'vllm')) {
+    $capability = Get-BackendCapability
+    if ($capability.VLLMViable) {
+        Write-Host ""
+        Write-Host "NVIDIA GPU + Docker detected. Choose your local backend:" -ForegroundColor Cyan
+        Write-Host "  [O] Ollama - works everywhere, broad model support (default)" -ForegroundColor Gray
+        Write-Host "  [V] vLLM   - NVIDIA GPU required, faster for concurrent requests" -ForegroundColor Gray
+        $choice = Read-Host "Choice [O/v]"
+        $Backend = if ($choice -in @('V', 'v')) { "vllm" } else { "ollama" }
+    } else {
+        $Backend = "ollama"
+    }
+    Set-PreferredBackend -PolicyPath $ProviderPolicyPath -Backend $Backend
+    Write-AuditLog -Action "BackendSelected" -Result "SUCCESS" -Provider $Backend -Message "Backend choice persisted to provider-policy.json"
+}
+
+if ($Backend -eq "vllm") {
+    Write-Host "Handing off to vLLM startup..." -ForegroundColor Cyan
+    & "$ScriptDir\Start-VLLM.ps1" -Port $Port -Force:$Force
+    if ($LASTEXITCODE -eq 0) {
+        exit 0
+    }
+    Write-Host "vLLM failed to start — falling back to Ollama." -ForegroundColor Yellow
+    Write-AuditLog -Action "BackendFallback" -Result "WARNING" -Provider "vllm" -Message "vLLM start failed, falling back to Ollama"
+}
+# --- End backend selection. Everything below this point is the existing Ollama flow, unchanged. ---
 
 if (-not $NoAutoInstallOllama) {
     if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
