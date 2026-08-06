@@ -49,3 +49,59 @@ This governs how a *model* is discovered/acquired, distinct from the provider fa
 - A broker such as OpenRouter can simplify multi-model fallback.
 - Direct providers remain available when a broker is not desired.
 - Azure OpenAI is often enterprise-specific and should remain explicitly configured.
+
+---
+
+## Local Backend Selection (Ollama vs vLLM)
+
+When you run `ai-start`, the platform decides which backend to use:
+
+```mermaid
+flowchart LR
+    A[Start-AI.ps1] --> B{First run?}
+    B -->|Yes| C[Seed provider-policy.json]
+    B -->|No| D[Read stored choice]
+    C --> E[Check vLLM viable:<br/>NVIDIA GPU + Docker?]
+    D --> F{Valid backend<br/>stored?}
+    F -->|Yes| G{Which backend?}
+    F -->|No/Invalid| E
+    E --> H{GPU + Docker<br/>running?}
+    H -->|Yes| I["Prompt user:<br/>'O' = Ollama<br/>'V' = vLLM"]
+    H -->|No| J[Default to Ollama]
+    I --> K{User chooses}
+    K -->|Ollama| L[Persist 'ollama']
+    K -->|vLLM| M[Persist 'vllm']
+    J --> L
+    L --> N["Start-AI.ps1<br/>continues:<br/>Ollama flow"]
+    G -->|Ollama| N
+    M --> O["Hand off to<br/>Start-VLLM.ps1"]
+    O --> P[docker run<br/>vllm/vllm-openai]
+    P --> Q{Container<br/>healthy?}
+    Q -->|Yes| R["Active: vLLM<br/>on 127.0.0.1:12345"]
+    Q -->|No| S["Fall back<br/>to Ollama"]
+    S --> N
+    N --> T["Active: Ollama<br/>on 127.0.0.1:12345"]
+
+    style N fill:#9f9
+    style R fill:#9f9
+    style T fill:#9f9
+    style O fill:#ff9
+    style P fill:#ff9
+```
+
+### Key points:
+
+- **On first run:** If you have an NVIDIA GPU and Docker Desktop is running, you'll be prompted once to choose Ollama or vLLM.
+- **On subsequent runs:** Your choice is stored in `provider-policy.json` under `preferredLocalProvider` — no prompt appears.
+- **vLLM requirements:** NVIDIA GPU (checked via `nvidia-smi`) AND Docker Desktop running. If either is missing, you won't be offered the vLLM choice.
+- **Fallback:** If you choose vLLM but it fails to start (health check timeout after 120s), the platform automatically falls back to starting Ollama instead.
+- **Same endpoint:** Both backends expose `http://127.0.0.1:12345/v1` (OpenAI-compatible API), so downstream tools (`aider`, `opencode`, `ai-code`) need zero changes.
+
+### When to use each:
+
+| Backend | Best for | Requirements |
+|---------|----------|--------------|
+| **Ollama** | General use, works everywhere, broad model support | Windows 11, Ollama installed |
+| **vLLM** | Batch/concurrent inference, token throughput optimization | NVIDIA GPU, Docker Desktop + WSL2, NVIDIA Container Toolkit |
+
+When in doubt, choose Ollama — it's the safe default and works on any Windows machine.

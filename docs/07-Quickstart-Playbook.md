@@ -21,7 +21,7 @@ Only one thing, one-time:
   ```
   Major version must be `7`. If not, install it from `winget install Microsoft.PowerShell`.
 
-Ollama is installed automatically on first run if missing — you do **not** need to install it yourself.
+Ollama is installed automatically on first run if missing — you do **not** need to install it yourself. This step can take several minutes (download + install via winget) with little visible progress in our console — that's normal, let it finish.
 
 ## Running it
 
@@ -32,6 +32,19 @@ A console window opens and tells you in plain language what's happening: hardwar
 First run on a machine with no models pulled yet will take longer (it's downloading). Every run after that is fast, because the model is already local.
 
 If `Start-AI.bat` tells you PowerShell 7 isn't installed, run the one-line install it prints (`winget install --id Microsoft.PowerShell -e`), then double-click the file again.
+
+### Backend selection (first run only, if you have an NVIDIA GPU)
+
+If your machine has an NVIDIA GPU and Docker Desktop is running, the startup script will prompt you **once** on first run:
+
+```
+NVIDIA GPU + Docker detected. Choose your local backend:
+  [O] Ollama - works everywhere, broad model support (default)
+  [V] vLLM   - NVIDIA GPU required, faster for concurrent requests
+Choice [O/v]
+```
+
+Type `V` for vLLM (higher throughput for batch requests) or just press Enter for Ollama (safe default, always works). Your choice is saved, so this prompt won't appear again on future runs.
 
 ### If you prefer the terminal
 
@@ -48,6 +61,20 @@ If `Start-AI.bat` tells you PowerShell 7 isn't installed, run the one-line insta
 .\scripts\Start-AI.ps1 -Force                    # kill any existing instance and start clean
 .\scripts\Start-AI.ps1 -SkipVault                # skip the secret-vault check (local-only session)
 .\scripts\Start-AI.ps1 -NoAutoInstallOllama      # skip auto-install of Ollama (manage it yourself)
+```
+
+### Changing your backend choice after first run
+
+Your backend choice (Ollama or vLLM) is persisted in `%USERPROFILE%\.ai-platform\config\provider-policy.json` under `preferredLocalProvider`. To switch:
+
+```powershell
+# Edit the file directly
+notepad "$env:USERPROFILE\.ai-platform\config\provider-policy.json"
+# Change "preferredLocalProvider": "ollama" to "vllm" or vice versa, then save
+
+# Delete the choice to be prompted again (if you want to reconsider)
+Remove-Item "$env:USERPROFILE\.ai-platform\config\provider-policy.json" -Force
+# Next run of ai-start will prompt again if vLLM is viable
 ```
 
 ## Stopping it

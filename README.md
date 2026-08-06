@@ -157,60 +157,151 @@ cd ../local-ai-platform/hermes-container
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart TB
+flowchart TD
     subgraph "User Layer"
-        A[PowerShell Profile] --> B[ai-start / ai-stop]
-        A --> C[ai-code / ai-switch]
-        A --> D[ai-health / ai-audit-last]
+        A[PowerShell Profile] -->|ai-start| B[Start-AI.ps1]
+        A -->|ai-stop| C[Stop-AI.ps1]
+        A -->|ai-code/ai-switch| D[profile-helpers.ps1]
+        A -->|ai-port/ai-provider| D
     end
 
-    subgraph "Orchestration Layer"
-        B --> E[Start-AI.ps1]
-        C --> F[profile-helpers.ps1]
-        E --> G{Single Instance Check}
-        G -->|Clean| H[Start Ollama on 12345]
-        G -->|Conflict| I[Kill rogue processes]
-        I --> H
-        H --> J[Set Env: OLLAMA_HOST, OPENAI_BASE_URL]
-        H --> K[Create Firewall Rule]
-        H --> L[Write .active-port.json]
-        H --> M[Write audit log]
+    subgraph "Backend Selection"
+        B --> E[First run or provider-policy.json missing?]
+        E -->|Yes| F[Get-BackendCapability]
+        E -->|No| G[Read preferredLocalProvider]
+        F --> H{NVIDIA GPU + Docker?}
+        H -->|Yes| I["Prompt: Ollama or vLLM?"]
+        H -->|No| J[Default to Ollama]
+        I --> K[Persist choice to provider-policy.json]
+        G --> K
+        J --> K
+    end
+
+    subgraph "Backend Launch"
+        K --> L{Which backend?}
+        L -->|Ollama| M[Start-AI.ps1 continues<br/>Single Instance Check<br/>Start Ollama on 12345]
+        L -->|vLLM| N[Hand off to Start-VLLM.ps1<br/>docker run vllm/vllm-openai<br/>Poll health check]
+        N --> O{Container healthy?}
+        O -->|No| P[Fall back to Ollama]
+        P --> M
+        O -->|Yes| Q["Both converge on<br/>127.0.0.1:12345/v1"]
     end
 
     subgraph "Local Inference"
-        H --> N[Ollama Server 127.0.0.1:12345]
-        N --> O[Model: devstral-small-2:24b]
-        N --> P[Model: qwen3-coder:30b]
-        N --> Q[Model: deepseek-r1:14b]
-        N --> R[Model: qwen2.5-coder:7b]
+        M --> Q
+        Q --> R["OpenAI-compatible API"]
+        R --> S[Models available]
     end
 
-    subgraph "Cloud Fallback (Opt-in)"
-        F --> S{Policy Check}
-        S -->|Allowed| T[SecretVault Lookup]
-        T -->|Key Found| U[OpenRouter / OpenAI / Anthropic]
-        T -->|Key Missing| V[Fail Closed]
-        S -->|Blocked| V
+    subgraph "Security & Observability"
+        M --> T[Set Firewall Guard<br/>AI-Platform-Backend-Block-12345]
+        M --> U[Write .active-port.json<br/>state/active-provider.json]
+        M --> V[Write audit log<br/>logs/YYYY-MM-DD.jsonl]
+    end
+
+    subgraph "Cloud Fallback (Policy-gated)"
+        D --> W{Policy Check}
+        W -->|Allowed| X[SecretVault Lookup]
+        X -->|Key Found| Y["OpenRouter / OpenAI<br/>/ Anthropic / others"]
+        X -->|Key Missing| Z[Fail Closed]
+        W -->|Blocked| Z
     end
 
     subgraph "AI Clients"
-        W[aider] --> X{Resolver}
-        Y[opencode] --> X
-        Z[Claude Code] --> X
-        X -->|Local| N
-        X -->|Cloud| U
+        S --> AA["aider<br/>Claude Code<br/>opencode/custom clients"]
+        Y --> AA
+        AA -->|All talk to| AB["http://127.0.0.1:12345/v1<br/>(regardless of backend)"]
     end
 
-    subgraph "Audit & Observability"
-        M --> AA[logs/YYYY-MM-DD.jsonl]
-        F --> AB[ai-audit-last]
-        F --> AC[ai-health]
-    end
+    style B fill:#f9f,stroke:#333,stroke-width:4px
+    style C fill:#f9f,stroke:#333,stroke-width:4px
+    style Q fill:#9f9,stroke:#333,stroke-width:2px
+    style Y fill:#ff9,stroke:#333,stroke-width:2px
+    style V fill:#99f,stroke:#333,stroke-width:2px
+```
 
-    style E fill:#f9f,stroke:#333,stroke-width:4px
-    style N fill:#9f9,stroke:#333,stroke-width:2px
-    style U fill:#ff9,stroke:#333,stroke-width:2px
-    style AA fill:#99f,stroke:#333,stroke-width:2px
+### Backend Selection Flowchart
+
+```mermaid
+flowchart LR
+    A[Start-AI.ps1] --> B{First run?}
+    B -->|Yes| C[Seed provider-policy.json<br/>from template]
+    B -->|No| D[Read existing<br/>provider-policy.json]
+    C --> E[Check vLLM viability]
+    D --> F{Valid backend<br/>stored?}
+    F -->|Yes, Ollama| G[Launch Ollama]
+    F -->|Yes, vLLM| H[Launch vLLM]
+    F -->|No/Invalid| E
+    E --> I{NVIDIA GPU<br/>+ Docker running?}
+    I -->|Yes| J["Prompt user:<br/>Ollama or vLLM?"]
+    I -->|No| K[Default: Ollama]
+    J --> L{User choice}
+    L -->|Ollama| M[Persist 'ollama'<br/>to policy]
+    L -->|vLLM| N[Persist 'vllm'<br/>to policy]
+    K --> M
+    M --> G
+    N --> H
+    H --> O{Health check<br/>passes?}
+    O -->|Yes| P["Active: vLLM<br/>on 127.0.0.1:12345"]
+    O -->|No| Q["Fall back to Ollama"]
+    G --> R["Active: Ollama<br/>on 127.0.0.1:12345"]
+    Q --> R
+
+    style G fill:#9f9
+    style P fill:#9f9
+    style R fill:#9f9
+    style H fill:#ff9
+```
+
+### Start/Stop State Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant AI as Start-AI.ps1
+    participant vLLM as Start-VLLM.ps1
+    participant Ollama as Ollama
+    participant Files as State Files
+    
+    User->>AI: ai-start
+    AI->>Files: Check .active-port.json
+    Files-->>AI: Not found (first run)
+    AI->>AI: Read provider-policy.json
+    AI->>AI: Backend selection logic
+    
+    alt vLLM chosen
+        AI->>vLLM: Hand off to Start-VLLM.ps1
+        vLLM->>vLLM: docker run vllm/vllm-openai
+        vLLM->>vLLM: Poll /health endpoint
+        vLLM->>Files: Write .active-port.json<br/>Write active-provider.json
+        Files-->>AI: State written
+        vLLM-->>AI: Exit 0
+    else Ollama chosen (or vLLM fallback)
+        AI->>Ollama: Start-AI.ps1 continues
+        Ollama->>Ollama: Single instance check
+        Ollama->>Ollama: Start ollama serve
+        Ollama->>Files: Write .active-port.json<br/>Write active-provider.json
+        Files-->>AI: State written
+    end
+    
+    AI->>Files: Write audit log (SUCCESS)
+    AI-->>User: Platform ready
+    
+    User->>User: Use local endpoint
+    User->>User: http://127.0.0.1:12345/v1
+    
+    User->>User: ai-stop
+    alt active-provider.json says vllm
+        User->>vLLM: Stop-AI.ps1 detects vLLM
+        vLLM->>vLLM: docker rm -f ai-platform-vllm
+    else active-provider.json says ollama
+        User->>Ollama: Stop-AI.ps1 kills Ollama
+        Ollama->>Ollama: Kill olllama app & serve processes
+    end
+    
+    User->>Files: Delete .active-port.json<br/>Delete active-provider.json
+    Files-->>User: State cleared
+    User-->>User: Session ended
 ```
 
 ---

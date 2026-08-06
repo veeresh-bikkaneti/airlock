@@ -104,6 +104,8 @@ out/
 .swarm/
 ruflo/
 ruvector.db
+agentdb.rvf
+agentdb.rvf.idmap.json
 
 # Ruflo local secrets and runtime data
 .claude-flow/data/

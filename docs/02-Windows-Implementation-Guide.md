@@ -1,7 +1,7 @@
 # Windows Implementation Guide
 
 ## Goal
-Set up a local-first AI environment on Windows 11 using PowerShell 7, Ollama, aider, structured logging, and optional cloud provider fallback.
+Set up a local-first AI environment on Windows 11 using PowerShell 7, Ollama (or vLLM for NVIDIA GPUs), aider, structured logging, and optional cloud provider fallback.
 
 ## Prerequisites
 Install these first:
@@ -74,6 +74,24 @@ Get-SecretInfo -Vault AIVault | Sort-Object Name
 ```
 Do not place these values in profile files, repository files, or command history exports.
 
+## Optional: vLLM Backend for NVIDIA GPUs
+
+**If you have an NVIDIA GPU** and want higher throughput for concurrent requests, `Start-AI.ps1` can use **vLLM** (via Docker) instead of Ollama. This is entirely optional:
+
+- **Ollama** (default): Works on any Windows machine (CPU or GPU), broad model compatibility.
+- **vLLM** (opt-in): Requires NVIDIA GPU + Docker Desktop + WSL2 backend. Faster for batch/concurrent inference.
+
+On first run, if your machine has an NVIDIA GPU and Docker Desktop is running, you'll be prompted to choose. Your choice is persisted to `provider-policy.json` — you won't be asked again unless you delete that file.
+
+### Prerequisites for vLLM path:
+- NVIDIA GPU with CUDA support (check: `nvidia-smi`)
+- Docker Desktop running with WSL2 backend
+- NVIDIA Container Toolkit configured
+
+If vLLM fails to start (e.g., GPU passthrough issue), the platform automatically falls back to Ollama.
+
+Both backends expose the same endpoint: `http://127.0.0.1:12345/v1`. No client changes needed.
+
 ## Step 6: Create provider policy
 Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
 ```json
@@ -93,6 +111,8 @@ Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
   }
 }
 ```
+
+**Note:** `preferredLocalProvider` defaults to `"ollama"`. On first run with an NVIDIA GPU + Docker, `Start-AI.ps1` will prompt you to choose between `"ollama"` (always works) and `"vllm"` (faster for concurrent requests). Your choice is auto-saved here.
 
 ## Step 7: Create aider config
 Create `%USERPROFILE%\.aider.conf.yml`:
