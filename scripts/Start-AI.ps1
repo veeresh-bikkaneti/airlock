@@ -22,7 +22,8 @@ foreach ($dir in @($LogDir, $StateDir, $ConfigDir)) {
 }
 
 $ProviderPolicyPath = Join-Path $ConfigDir "provider-policy.json"
-if (-not (Test-Path $ProviderPolicyPath)) {
+$IsFreshInstall = -not (Test-Path $ProviderPolicyPath)
+if ($IsFreshInstall) {
     $TemplatePolicyPath = Join-Path (Split-Path -Parent $ScriptDir) "config\policies\provider-policy.json"
     if (Test-Path $TemplatePolicyPath) {
         Copy-Item $TemplatePolicyPath $ProviderPolicyPath
@@ -200,7 +201,7 @@ function Set-PreferredBackend {
 }
 
 $Backend = Get-PreferredBackend -PolicyPath $ProviderPolicyPath
-if ($Backend -notin @('ollama', 'vllm')) {
+if ($IsFreshInstall -or $Backend -notin @('ollama', 'vllm')) {
     $capability = Get-BackendCapability
     if ($capability.VLLMViable) {
         Write-Host ""
