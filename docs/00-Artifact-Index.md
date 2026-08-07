@@ -1,4 +1,4 @@
-# Local AI Platform Artifact Index
+# Airlock Artifact Index
 
 ## Purpose
 This artifact bundle defines a **local-first** AI platform for Windows 11 with PowerShell 7, strong security defaults, auditable workflows, and optional cloud fallback only when the user provides an API key.

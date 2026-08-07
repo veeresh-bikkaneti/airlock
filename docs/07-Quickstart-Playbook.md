@@ -1,6 +1,6 @@
 # Quickstart Playbook
 
-A beginner-friendly guide to running local-ai-platform. No Ollama installed, no model pulled, no idea if your PC can handle it? That's the point — you don't need to know any of that up front.
+A beginner-friendly guide to running Airlock. No Ollama installed, no model pulled, no idea if your PC can handle it? That's the point — you don't need to know any of that up front.
 
 ## What this platform does for you
 

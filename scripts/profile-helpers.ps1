@@ -376,7 +376,7 @@ function global:ai-health {
 }
 
 # Helper summary printed at end of source – omitted to avoid parsing issues in this context
-# Write-Host "  ai-start         Start Ollama and local AI platform (single-instance)" -ForegroundColor Gray
+# Write-Host "  ai-start         Start Ollama and Airlock (single-instance)" -ForegroundColor Gray
 # Write-Host "  ai-stop          Shut down platform (kills all Ollama, cleans state)" -ForegroundColor Gray
 # Write-Host "  ai-port          Check Ollama status" -ForegroundColor Gray
 # Write-Host "  ai-health        Full health check (processes, API, firewall, resources)" -ForegroundColor Gray

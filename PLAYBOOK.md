@@ -1,4 +1,4 @@
-# Local AI Platform Playbook
+# Airlock Playbook
 
 **Step-by-step workflows for secure, local-first AI development with optional cloud fallback.**
 
@@ -28,8 +28,8 @@
 # - Git: https://git-scm.com/
 
 # 2. Clone the platform
-git clone https://github.com/YOUR_USERNAME/local-ai-platform.git
-cd local-ai-platform
+git clone https://github.com/YOUR_USERNAME/airlock.git
+cd airlock
 
 # 3. Deploy to home directory
 New-Item -Path "$env:USERPROFILE\.ai-platform\scripts" -ItemType Directory -Force

@@ -1,4 +1,4 @@
-# Local AI Platform — VS Code Extension
+# Airlock — VS Code Extension
 
 Thin wrapper over this repo's own `ai-*` PowerShell helpers (`scripts/`).
 Doesn't reimplement start/stop/health/model logic — just calls it.

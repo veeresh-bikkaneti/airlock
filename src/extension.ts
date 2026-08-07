@@ -8,12 +8,12 @@ let statusBar: vscode.StatusBarItem;
 let pollTimer: NodeJS.Timeout | undefined;
 
 function getScriptsPath(): string {
-    const configured = vscode.workspace.getConfiguration('aiPlatform').get<string>('deployedScriptsPath') || '';
+    const configured = vscode.workspace.getConfiguration('airlock').get<string>('deployedScriptsPath') || '';
     return configured.replace(/\$\{env:([^}]+)\}/g, (_, name) => process.env[name] || '');
 }
 
 function getModelsConfigPath(): string {
-    const explicit = vscode.workspace.getConfiguration('aiPlatform').get<string>('modelsConfigPath');
+    const explicit = vscode.workspace.getConfiguration('airlock').get<string>('modelsConfigPath');
     if (explicit) { return explicit; }
     return path.join(getScriptsPath(), '..', 'config', 'models.json');
 }
@@ -24,7 +24,7 @@ function getActivePortPath(): string {
 
 function getTerminal(): vscode.Terminal {
     if (!terminal || terminal.exitStatus !== undefined) {
-        terminal = vscode.window.createTerminal('AI Platform');
+        terminal = vscode.window.createTerminal('Airlock');
     }
     return terminal;
 }
@@ -49,7 +49,7 @@ function checkHealth(port: number): Promise<boolean> {
 }
 
 async function refreshStatusBar() {
-    let port = vscode.workspace.getConfiguration('aiPlatform').get<number>('healthPort') || 12345;
+    let port = vscode.workspace.getConfiguration('airlock').get<number>('healthPort') || 12345;
     let model: string | undefined;
     const activePortPath = getActivePortPath();
     if (fs.existsSync(activePortPath)) {
@@ -63,13 +63,13 @@ async function refreshStatusBar() {
     }
     const healthy = await checkHealth(port);
     const label = model ? `${model} (:${port})` : `:${port}`;
-    statusBar.text = healthy ? `$(check) AI Platform: ${label}` : `$(circle-slash) AI Platform: stopped`;
+    statusBar.text = healthy ? `$(check) Airlock: ${label}` : `$(circle-slash) Airlock: stopped`;
     statusBar.color = healthy ? undefined : new vscode.ThemeColor('errorForeground');
 }
 
 function startPolling() {
     if (pollTimer) { clearInterval(pollTimer); }
-    const seconds = vscode.workspace.getConfiguration('aiPlatform').get<number>('healthPollSeconds') ?? 15;
+    const seconds = vscode.workspace.getConfiguration('airlock').get<number>('healthPollSeconds') ?? 15;
     refreshStatusBar();
     if (seconds > 0) {
         pollTimer = setInterval(refreshStatusBar, seconds * 1000);
@@ -79,7 +79,7 @@ function startPolling() {
 async function selectModel() {
     const configPath = getModelsConfigPath();
     if (!fs.existsSync(configPath)) {
-        vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set aiPlatform.modelsConfigPath.`);
+        vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set airlock.modelsConfigPath.`);
         return;
     }
     let config: any;
@@ -103,7 +103,7 @@ async function selectModel() {
 async function switchModel() {
     const configPath = getModelsConfigPath();
     if (!fs.existsSync(configPath)) {
-        vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set aiPlatform.modelsConfigPath.`);
+        vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set airlock.modelsConfigPath.`);
         return;
     }
     let config: any;
@@ -131,17 +131,17 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusBar);
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('aiPlatform.start', () => { runHelper('ai-start -StrictPort'); setTimeout(refreshStatusBar, 5000); }),
-        vscode.commands.registerCommand('aiPlatform.stop', () => { runHelper('ai-stop'); setTimeout(refreshStatusBar, 2000); }),
-        vscode.commands.registerCommand('aiPlatform.health', () => { runHelper('ai-health'); refreshStatusBar(); }),
-        vscode.commands.registerCommand('aiPlatform.code', () => runHelper('ai-code')),
-        vscode.commands.registerCommand('aiPlatform.selectModel', selectModel),
-        vscode.commands.registerCommand('aiPlatform.switchModel', switchModel),
+        vscode.commands.registerCommand('airlock.start', () => { runHelper('ai-start -StrictPort'); setTimeout(refreshStatusBar, 5000); }),
+        vscode.commands.registerCommand('airlock.stop', () => { runHelper('ai-stop'); setTimeout(refreshStatusBar, 2000); }),
+        vscode.commands.registerCommand('airlock.health', () => { runHelper('ai-health'); refreshStatusBar(); }),
+        vscode.commands.registerCommand('airlock.code', () => runHelper('ai-code')),
+        vscode.commands.registerCommand('airlock.selectModel', selectModel),
+        vscode.commands.registerCommand('airlock.switchModel', switchModel),
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('aiPlatform')) { startPolling(); }
+            if (e.affectsConfiguration('airlock')) { startPolling(); }
         })
     );
-    statusBar.command = 'aiPlatform.health';
+    statusBar.command = 'airlock.health';
 
     startPolling();
 }

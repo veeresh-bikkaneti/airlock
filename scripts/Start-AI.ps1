@@ -1,4 +1,4 @@
-# Start-AI.ps1 — Start local AI platform with Ollama (hardened single-instance)
+# Start-AI.ps1 — Start Airlock with Ollama (hardened single-instance)
 # Usage: .\Start-AI.ps1 [-Model <name>] [-Port <port>] [-SkipVault] [-Force] [-StrictPort] [-NoAutoInstallOllama]
 param(
     [string]$Model = "qwen2.5-coder:7b",

@@ -1,9 +1,9 @@
 {
-  "name": "local-ai-platform-vscode",
-  "displayName": "Local AI Platform",
-  "description": "Start/stop/monitor your local Ollama AI platform and switch models, from VS Code.",
+  "name": "airlock-vscode",
+  "displayName": "Airlock",
+  "description": "Start/stop/monitor your local Ollama/vLLM AI platform and switch models, from VS Code.",
   "version": "0.1.0",
-  "publisher": "local-ai-platform",
+  "publisher": "airlock",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -17,49 +17,49 @@
   "contributes": {
     "commands": [
       {
-        "command": "aiPlatform.start",
-        "title": "AI Platform: Start"
+        "command": "airlock.start",
+        "title": "Airlock: Start"
       },
       {
-        "command": "aiPlatform.stop",
-        "title": "AI Platform: Stop"
+        "command": "airlock.stop",
+        "title": "Airlock: Stop"
       },
       {
-        "command": "aiPlatform.health",
-        "title": "AI Platform: Health Check"
+        "command": "airlock.health",
+        "title": "Airlock: Health Check"
       },
       {
-        "command": "aiPlatform.selectModel",
-        "title": "AI Platform: Select Model"
+        "command": "airlock.selectModel",
+        "title": "Airlock: Select Model"
       },
       {
-        "command": "aiPlatform.switchModel",
-        "title": "AI Platform: Switch Model (no restart)"
+        "command": "airlock.switchModel",
+        "title": "Airlock: Switch Model (no restart)"
       },
       {
-        "command": "aiPlatform.code",
-        "title": "AI Platform: Launch Aider (ai-code)"
+        "command": "airlock.code",
+        "title": "Airlock: Launch Aider (ai-code)"
       }
     ],
     "configuration": {
-      "title": "Local AI Platform",
+      "title": "Airlock",
       "properties": {
-        "aiPlatform.deployedScriptsPath": {
+        "airlock.deployedScriptsPath": {
           "type": "string",
           "default": "${env:USERPROFILE}/.ai-platform/scripts",
-          "description": "Path to the deployed local-ai-platform scripts folder (profile-helpers.ps1, Start-AI.ps1, Stop-AI.ps1)."
+          "description": "Path to the deployed Airlock scripts folder (profile-helpers.ps1, Start-AI.ps1, Stop-AI.ps1)."
         },
-        "aiPlatform.modelsConfigPath": {
+        "airlock.modelsConfigPath": {
           "type": "string",
           "default": "",
           "description": "Path to models.json for the model picker. Leave blank to use <deployedScriptsPath>/../config/models.json."
         },
-        "aiPlatform.healthPort": {
+        "airlock.healthPort": {
           "type": "integer",
           "default": 12345,
           "description": "Canonical port the platform binds Ollama to."
         },
-        "aiPlatform.healthPollSeconds": {
+        "airlock.healthPollSeconds": {
           "type": "integer",
           "default": 15,
           "description": "How often the status bar polls /api/tags for health. Set 0 to disable polling."

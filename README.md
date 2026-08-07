@@ -1,6 +1,8 @@
-# Local AI Platform
+# Airlock
 
 **A hardened, single-instance AI infrastructure for Windows with Ollama, PowerShell, and optional cloud fallback.**
+
+One door open at a time — exactly one local model backend running, walled off from the outside, everything logged.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PowerShell 7+](https://img.shields.io/badge/PowerShell-7+-green.svg)](https://github.com/PowerShell/PowerShell)
@@ -141,7 +143,7 @@ cd career-ops
 # (This repo is the ONLY thing Hermes can see)
 
 # 3. Start Hermes
-cd ../local-ai-platform/hermes-container
+cd ../airlock/hermes-container
 .\run-hermes.ps1
 
 # 4. Hermes generates job applications in output/
@@ -373,24 +375,26 @@ erDiagram
 - [Python 3.11+](https://www.python.org/) (for aider)
 - [Git](https://git-scm.com/)
 
-### Installation (1-click)
+### Installation (1-line)
 
 ```powershell
-# 1. Clone or download this repo
-git clone https://github.com/YOUR_USERNAME/local-ai-platform.git
-cd local-ai-platform
-
-# 2. Deploy — this one script does everything: copies scripts/config to
-#    ~/.ai-platform, and wires profile-helpers.ps1 into your PowerShell profile
-.\setup.ps1
-
-# 3. Restart PowerShell (or run `. $PROFILE`) so the ai-* commands are available
+irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex
 ```
 
-`ollama pull <model>` isn't a required manual step — `ai-start` auto-detects your hardware and pulls the best-fitting model in the background the first time you run it (see [`06-Model-Acquisition-Backlog.md`](docs/06-Model-Acquisition-Backlog.md)). Pull one yourself first only if you want a specific model pinned via `ai-start -Model <name>`.
+This clones the repo to `~/.airlock-src` and runs `setup.ps1`, which copies scripts/config to `~/.ai-platform` and wires `profile-helpers.ps1` into your PowerShell profile. Restart PowerShell (or run `. $PROFILE`) afterward so the `ai-*` commands are available.
+
+Like any `irm | iex` one-liner (rustup, Scoop, oh-my-posh use the same pattern), this runs code before you've read it — that's the convenience trade-off. If you'd rather review first, clone and inspect, then run `setup.ps1` yourself:
+
+```powershell
+git clone https://github.com/veeresh-bikkaneti/airlock.git
+cd airlock
+.\setup.ps1
+```
+
+`ollama pull <model>` isn't a required manual step either way — `ai-start` auto-detects your hardware and pulls the best-fitting model in the background the first time you run it (see [`06-Model-Acquisition-Backlog.md`](docs/06-Model-Acquisition-Backlog.md)). Pull one yourself first only if you want a specific model pinned via `ai-start -Model <name>`.
 
 <details>
-<summary>Manual install (if you'd rather not run setup.ps1)</summary>
+<summary>Fully manual install (no setup.ps1)</summary>
 
 ```powershell
 New-Item -Path "$env:USERPROFILE\.ai-platform\scripts" -ItemType Directory -Force
@@ -517,11 +521,12 @@ ai-start
 ## 📊 Architecture Files
 
 ```
-local-ai-platform/
+airlock/
 ├── README.md                     # This file
 ├── PLAYBOOK.md                   # Step-by-step operational playbook
 ├── LICENSE                       # MIT License
-├── setup.ps1                     # One-command installer (deploys to ~/.ai-platform)
+├── install.ps1                   # 1-line remote installer (irm ... | iex): clones + runs setup.ps1
+├── setup.ps1                     # Local installer (deploys to ~/.ai-platform)
 ├── Start-AI.bat / Stop-AI.bat    # Double-click wrappers around the .ps1 scripts
 ├── main.py                       # Demo script for testing the OpenAI-compatible endpoint
 ├── requirements.txt              # Python dependencies for main.py

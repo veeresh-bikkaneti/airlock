@@ -1,4 +1,4 @@
-# Stop-AI.ps1 — Shut down local AI platform (hardened single-instance)
+# Stop-AI.ps1 — Shut down Airlock (hardened single-instance)
 # Usage: .\Stop-AI.ps1 [-KeepLogs] [-CleanFirewall]
 #   -KeepLogs         : Preserve the audit logs (default keeps them)
 #   -CleanFirewall    : Remove the inbound‑blocking firewall rule created by ai-start

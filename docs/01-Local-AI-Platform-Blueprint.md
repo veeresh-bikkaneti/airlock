@@ -1,4 +1,4 @@
-# Local AI Platform Blueprint
+# Airlock Blueprint
 
 ## Objective
 Build a Windows 11 AI workspace that prefers local execution through Ollama, exposes a stable OpenAI-compatible endpoint for tools, preserves auditability, and falls back to cloud providers only when a valid API key is present and policy allows it.
