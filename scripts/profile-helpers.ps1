@@ -321,6 +321,96 @@ function global:ai-config {
     }
 }
 
+# Start the opt-in memory-service (vector DB + RAG + short/long-term memory).
+function global:ai-memory-start {
+    & "$env:USERPROFILE\.ai-platform\scripts\Start-MemoryService.ps1" @args
+}
+
+# Stop the memory-service.
+function global:ai-memory-stop {
+    & "$env:USERPROFILE\.ai-platform\scripts\Stop-MemoryService.ps1" @args
+}
+
+# Show memory-service health (process, API, firewall).
+function global:ai-memory-status {
+    $file = "$env:USERPROFILE\.ai-platform\.memory-port.json"
+    if (-not (Test-Path $file)) {
+        Write-Host "memory-service not running. Run ai-memory-start first." -ForegroundColor Yellow
+        return
+    }
+    $state = Get-Content $file -Raw | ConvertFrom-Json
+
+    Write-Host "Memory Service Status" -ForegroundColor Cyan
+    Write-Host "======================" -ForegroundColor DarkCyan
+
+    $proc = Get-Process -Id $state.pid -ErrorAction SilentlyContinue
+    Write-Host "  Process   : $(if ($proc) { "RUNNING (PID $($state.pid))" } else { "NOT RUNNING (stale state)" })" -ForegroundColor $(if ($proc) { "Green" } else { "Red" })
+
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(5)
+        $resp = $c.GetAsync("http://127.0.0.1:$($state.port)/health").Result
+        Write-Host "  API       : $(if ($resp.IsSuccessStatusCode) { "HEALTHY (port $($state.port))" } else { "UNHEALTHY (HTTP $($resp.StatusCode))" })" -ForegroundColor $(if ($resp.IsSuccessStatusCode) { "Green" } else { "Red" })
+    } catch {
+        Write-Host "  API       : UNREACHABLE (port $($state.port))" -ForegroundColor Red
+    }
+
+    $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-Memory-Block-$($state.port)" -ErrorAction SilentlyContinue
+    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $($state.port)" } else { "NO RULE - port $($state.port) exposed!" })" -ForegroundColor $(if ($fwRule) { "Green" } else { "Yellow" })
+
+    $providerFile = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
+    $routedThroughMemory = $false
+    if (Test-Path $providerFile) {
+        $providerState = Get-Content $providerFile -Raw | ConvertFrom-Json
+        $routedThroughMemory = $providerState.endpoint -like "*:$($state.port)/*"
+    }
+    Write-Host "  Routing   : $(if ($routedThroughMemory) { "ACTIVE - clients proxied through memory-service" } else { "INACTIVE - run ai-memory-on to route clients through it" })" -ForegroundColor $(if ($routedThroughMemory) { "Green" } else { "Gray" })
+}
+
+# Route the active provider's clients through memory-service (RAG + short/long-term memory).
+function global:ai-memory-on {
+    $memFile = "$env:USERPROFILE\.ai-platform\.memory-port.json"
+    if (-not (Test-Path $memFile)) {
+        Write-Host "memory-service not running. Run ai-memory-start first." -ForegroundColor Red
+        return
+    }
+    $providerFile = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
+    if (-not (Test-Path $providerFile)) {
+        Write-Host "No active session. Run ai-start first." -ForegroundColor Red
+        return
+    }
+    $memState = Get-Content $memFile -Raw | ConvertFrom-Json
+    $providerState = Get-Content $providerFile -Raw | ConvertFrom-Json
+    $providerState | Add-Member -NotePropertyName "directEndpoint" -NotePropertyValue $providerState.endpoint -Force
+    $providerState.endpoint = "http://127.0.0.1:$($memState.port)/v1"
+    $providerState.reason = "Routed through memory-service for RAG + short/long-term memory"
+    $providerState | ConvertTo-Json | Set-Content $providerFile -Encoding utf8NoBOM
+
+    $env:OPENAI_BASE_URL = $providerState.endpoint
+    Write-Host "Memory ON — clients now route through memory-service at $($providerState.endpoint)" -ForegroundColor Green
+}
+
+# Revert the active provider's clients back to talking directly to the local backend.
+function global:ai-memory-off {
+    $providerFile = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
+    if (-not (Test-Path $providerFile)) {
+        Write-Host "No active session." -ForegroundColor Red
+        return
+    }
+    $providerState = Get-Content $providerFile -Raw | ConvertFrom-Json
+    if (-not $providerState.directEndpoint) {
+        Write-Host "Memory routing was not active." -ForegroundColor Gray
+        return
+    }
+    $providerState.endpoint = $providerState.directEndpoint
+    $providerState.reason = "Memory routing disabled — direct to local backend"
+    $providerState.PSObject.Properties.Remove("directEndpoint")
+    $providerState | ConvertTo-Json | Set-Content $providerFile -Encoding utf8NoBOM
+
+    $env:OPENAI_BASE_URL = $providerState.endpoint
+    Write-Host "Memory OFF — clients back to direct endpoint $($providerState.endpoint)" -ForegroundColor Green
+}
+
 function global:ai-health {
     $portFile = "$env:USERPROFILE\.ai-platform\.active-port.json"
     if (-not (Test-Path $portFile)) {
