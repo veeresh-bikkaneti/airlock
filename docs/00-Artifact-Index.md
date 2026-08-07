@@ -11,6 +11,7 @@ This artifact bundle defines a **local-first** AI platform for Windows 11 with P
 - `05-Provider-Fallback-Matrix.md` — local-first routing rules and cloud provider fallback behavior.
 - `06-Model-Acquisition-Backlog.md` — backlog for automatic model discovery, hardware-aware selection, and background pull/run.
 - `07-Quickstart-Playbook.md` — beginner-friendly usage guide: run `Start-AI.ps1`, no manual Ollama/model setup needed.
+- `COMPONENTS.md` — beginner-friendly component overview: what each file/folder does and why it exists.
 
 ## Design Principles
 1. Local AI first; cloud only by explicit opt-in.

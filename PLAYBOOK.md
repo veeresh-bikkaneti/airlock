@@ -18,40 +18,27 @@
 
 ## Getting Started
 
-### First-Time Setup (5 minutes)
+### First-Time Setup (1-line installer)
 
 ```powershell
-# 1. Install prerequisites
-# - PowerShell 7+: https://github.com/PowerShell/PowerShell
-# - Ollama: https://ollama.ai
-# - Python 3.11+: https://www.python.org/
-# - Git: https://git-scm.com/
+# One-line installer (recommended)
+irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex
+```
 
-# 2. Clone the platform
-git clone https://github.com/YOUR_USERNAME/airlock.git
+This clones the repo to `~/.airlock-src`, runs `setup.ps1`, and wires `profile-helpers.ps1` into your PowerShell profile. Restart PowerShell (or run `. $PROFILE`) to load the `ai-*` commands.
+
+Prefer to review first? Clone and run `setup.ps1` yourself:
+
+```powershell
+git clone https://github.com/veeresh-bikkaneti/airlock.git
 cd airlock
-
-# 3. Deploy to home directory
-New-Item -Path "$env:USERPROFILE\.ai-platform\scripts" -ItemType Directory -Force
-Copy-Item .\scripts\* "$env:USERPROFILE\.ai-platform\scripts\" -Force
-Copy-Item .\config\* "$env:USERPROFILE\.ai-platform\config\" -Force -Recurse
-
-# 4. Add to PowerShell profile
-Add-Content $PROFILE ". `"$env:USERPROFILE\.ai-platform\scripts\profile-helpers.ps1`""
-
-# 5. Restart PowerShell
+.\setup.ps1
 ```
 
 ### Verify Installation
 
 ```powershell
-# Check helpers loaded
-ai-start  # Should show usage, not error
-
-# Pull your first model
-ollama pull devstral-small-2:24b
-
-# Start the platform
+# Start the platform (auto-pulls a model on first run based on hardware)
 ai-start
 
 # Expected output:
@@ -60,8 +47,17 @@ ai-start
 #   Endpoint: http://127.0.0.1:12345/v1
 #   Model   : devstral-small-2:24b
 #   Bind    : 127.0.0.1 ONLY (no external)
-#   Firewall: Inbound port 12345 BLOCKED
+#   Firewall: Inbound port 12345 BLOCKED (admin) / NO RULE (defense-in-depth, loopback-only)
 # ========================================
+# Note: Firewall status is conditional. If you're running as admin, the platform
+# creates a BLOCK rule. If not, no rule is created, but the listener is still
+# loopback-only and unreachable from outside.
+
+# Check health
+ai-health
+
+# Start coding with aider
+ai-code
 ```
 
 ---
@@ -78,9 +74,9 @@ ai-start
 ai-health
 
 # Expected: All green indicators
-# - Processes: 2 (app + serve)
+# - Processes: 2 (app + serve) if Ollama, 1 Docker container if vLLM
 # - API: HEALTHY
-# - Firewall: BLOCKED
+# - Firewall: BLOCKED (if admin) or NO RULE (defense-in-depth: loopback-only listener)
 # - RAM: >20% free
 # - VRAM: >4GB free
 ```
@@ -199,6 +195,15 @@ Edit `config/models.json` to add custom models:
 }
 ```
 
+### Backend Selection (Optional vLLM for GPU Owners)
+
+If you have an NVIDIA GPU and Docker Desktop running, `ai-start` will prompt you once to choose between **Ollama** or **vLLM**. Your choice is persisted to `config/policies/provider-policy.json` so future starts use the same backend.
+
+- **Ollama**: Straightforward, no Docker required, good for most use cases.
+- **vLLM**: Higher throughput for batch/parallel requests, Docker-based, NVIDIA GPU only.
+
+See [`docs/07-Quickstart-Playbook.md`](docs/07-Quickstart-Playbook.md) for detailed backend comparison and performance tuning.
+
 ---
 
 ## Cloud Fallback Setup
@@ -267,6 +272,35 @@ ai-code
 | **Anthropic** | Claude 3.5, reasoning | $$$ | Good |
 | **Google** | Gemini, fast inference | $$ | Medium |
 | **Azure OpenAI** | Enterprise compliance | $$$$ | Excellent |
+
+---
+
+## Memory Service (Optional Vector DB + RAG)
+
+The memory service adds persistent retrieval-augmented generation (RAG) and session memory on top of your backend model.
+
+### Enable Memory Service
+
+```powershell
+# Start the memory service (FastAPI + Chroma vector DB + LangGraph)
+ai-memory-start
+
+# Check status (processes, API health, firewall, routing)
+ai-memory-status
+
+# Route clients through memory (retrieve → inject → forward to backend)
+ai-memory-on
+
+# Stop routing through memory and revert to direct backend calls
+ai-memory-off
+
+# Stop the memory service
+ai-memory-stop
+```
+
+### Important: Ollama-Only Constraint
+
+Memory service **only works with Ollama** — it needs Ollama's `/api/embeddings` endpoint to generate embeddings for vector storage. If you're using vLLM as your active backend, the memory service degrades to a no-op (logs a warning, retrieval/persist skipped) rather than crashing or falling back to an external embedding API. Switch to Ollama if you need memory features.
 
 ---
 
@@ -464,11 +498,8 @@ Cloud fallback failed even though policy allows it
 # Check policy
 ai-policy
 
-# Verify secrets
+# Verify secrets and API keys
 ai-auth
-
-# Test vault connection
-Get-SecretVault -Name AIVault
 
 # Check logs for specific error
 ai-audit-last
@@ -528,6 +559,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
+      # Note: ollama/setup@v1 below is illustrative pseudocode — verify the actual
+      # GitHub Action name before using in production CI. This is not a confirmed real action.
       - name: Setup Ollama
         uses: ollama/setup@v1
       
@@ -560,16 +593,18 @@ ai-hermes-stop
 
 ### Custom Model Fine-tuning
 
-```bash
-# Fine-tune a model on your codebase
+Ollama does not have a built-in `ollama fine-tune` command. Instead, fine-tune models externally using tools like Unsloth or Axolotl, then import the result:
 
-# 1. Prepare dataset
+```bash
+# Create a Modelfile pointing to your fine-tuned GGUF model
+cat > Modelfile << EOF
+FROM /path/to/your-finetuned-model.gguf
+EOF
+
+# Import it into Ollama
 ollama create my-custom-model -f Modelfile
 
-# 2. Train
-ollama fine-tune my-custom-model --data ./training-data/
-
-# 3. Test
+# Test
 ollama run my-custom-model "Explain this code pattern"
 ```
 
@@ -625,7 +660,18 @@ ollama create devstral-small-2:24b -f ~/.ollama/modelfile
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing`)
+5. Open a Pull Request
+
+### Development Guidelines
+
+- Always test with `ai-start -Force` before committing
+- Ensure no secrets in code (use `config/auth.json.template` etc. for examples — never commit the filled-in versions)
+- Add audit logging for new actions
+- Update `docs/` for significant changes
 
 ---
 
