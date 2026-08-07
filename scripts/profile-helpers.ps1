@@ -356,7 +356,7 @@ function global:ai-memory-status {
     }
 
     $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-Memory-Block-$($state.port)" -ErrorAction SilentlyContinue
-    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $($state.port)" } else { "NO RULE - port $($state.port) exposed!" })" -ForegroundColor $(if ($fwRule) { "Green" } else { "Yellow" })
+    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $($state.port)" } else { "NO RULE on port $($state.port) (defense-in-depth only — listener is loopback-only, not externally reachable either way)" })" -ForegroundColor $(if ($fwRule) { "Green" } else { "Yellow" })
 
     $providerFile = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
     $routedThroughMemory = $false
