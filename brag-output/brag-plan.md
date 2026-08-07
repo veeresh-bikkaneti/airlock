@@ -32,7 +32,7 @@ Entry → key action → result, and this time the "key action" beat is itself t
 - Interpretation: still restrained and real. Deliberately extended past this format's normal 15-25s guidance (to ~31s) because the model-sizing decision is the actual core insight and deserves full-sentence explanation with real reading time, not compressed labels. Everything else stays lean so the extra length buys depth in one place, not padding everywhere.
 
 ## Format: landscape — 1920x1080
-## Duration: 35.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed twice: first from an initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4 — the regenerated Kokoro VO4 clip runs 6.9s, longer than the original 3-beat scene budgeted for)
+## Duration: ~41.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed three times: initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4, then again when Scene 6 — the 3D system visualizer bonus beat — was inserted before the outro on 2026-08-07)
 
 ## Visual identity (from the project)
 - Background: near-black terminal (`#0C0C0C`, matches Windows Terminal's default dark theme)
@@ -102,7 +102,17 @@ Audio-coupled idea: confirm chime on the banner completing; distinct "message re
 Music: small lift here, still restrained, not a swell.
 Transition mood: clean crossfade → Scene 6.
 
-### Scene 6 — Outro — 4s
+### Scene 6 — Bonus: the system in 3D — 6s
+Clean cut away from the terminal. The real `tools/3d-system-visualizer` scene fills the frame — the actual captured node graph (Client → API Gateway → Auth/Inventory/Orders/Notification/Payments services → Ledger DB → Partner Webhook), on the same near-black background as the terminal so the cut doesn't feel like a different product. A slow camera drift/zoom over the real captured frame, with a small animated dot traveling the real edge path — recreating exactly what the tool's "Place order (happy path)" workflow button does, not an invented animation.
+Beat 1 (~2.5s): Text: "There's more than the terminal." Visual: the node graph fades in.
+Beat 2 (~3.5s): Text: "A 3D map of how every piece actually talks to each other — free, in `tools/`." Visual: the workflow dot travels Client → API Gateway → Orders Service → Payments Service → Ledger DB, matching the real captured run.
+Sequential/interaction: yes — 2 beats, dot motion is continuous under beat 2.
+Audio intent: light, curious aside — not a second peak, Scene 5 already was that.
+Audio-coupled idea: soft tick as the dot passes each node (same tick family as Scenes 2/4, so it doesn't introduce a new sound).
+Music: stays low, no lift (this scene is a bonus beat, not another highlight).
+Transition mood: clean cut → Scene 7.
+
+### Scene 7 — Outro — 4s
 Clean dark card: "Airlock" wordmark, then "Sealed. Tested. Then opened.", then "github.com/veeresh-bikkaneti/airlock" in small type.
 Sequential/interaction: none — three lines settle in with a brief stagger, then hold.
 Audio intent: quiet close, the metaphor lands.
@@ -122,6 +132,7 @@ Added 2026-08-07 per explicit request. Six lines, one per scene, natural spoken 
 3. (Scene 3 — centerpiece) "Picking the right model size is normally a guess. Airlock measures your real memory first, scores every model against it, and picks the biggest one that actually fits."
 4. (Scene 4 — lockdown) "Then it locks everything down — one instance, port blocked, fully logged. On Ollama, it even remembers your session."
 5. (Scene 5 — proof) "And it proves itself — a real response, before you ever touch it."
-6. (Scene 6 — outro) "Airlock. Sealed, tested, then opened."
+6. (Scene 6 — 3D visualizer bonus) "And there's more than the terminal — a 3D map of how every piece talks to each other, free in the repo."
+7. (Scene 7 — outro) "Airlock. Sealed, tested, then opened."
 
-~80 words total (added memory-service line on 2026-08-07), targets ~33-35s at natural pace (2.5 words/sec) with room for pauses — actual scene lengths follow whatever Kokoro actually renders.
+~95 words total (added 3D visualizer line on 2026-08-07), targets ~38-41s at natural pace (2.5 words/sec) with room for pauses — actual scene lengths follow whatever Kokoro actually renders.
