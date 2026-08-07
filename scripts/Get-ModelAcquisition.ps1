@@ -32,7 +32,7 @@ function Install-OllamaIfMissing {
 
     # winget is available: proceed with installation.
     Write-Host "" -ForegroundColor Yellow
-    Write-Host "Ollama not found — installing via winget (one-time, may take a minute)..." -ForegroundColor Yellow
+    Write-Host "Ollama not found — installing via winget (one-time, can take several minutes — please wait, don't close this window)..." -ForegroundColor Yellow
     Write-AuditLog -Action "OllamaInstall" -Result "STARTED" -Message "Installing Ollama via winget"
 
     # Run winget install.

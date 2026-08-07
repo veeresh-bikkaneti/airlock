@@ -111,3 +111,6 @@ agentdb.rvf.idmap.json
 .claude-flow/data/
 .claude-flow/logs/
 .claude-flow/sessions/
+
+# Claude Code local tooling config (agent templates, local settings) - not product content
+.claude/

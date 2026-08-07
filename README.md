@@ -53,10 +53,12 @@
 |------|---------|---------------|
 | **`models.json`** | Registry of local models (sizes, capabilities, fallback order) | Tools know which model to use for coding vs. reasoning vs. fast tasks |
 | **`provider-policy.json`** | Routing rules (local-first, cloud fallback, data privacy) | Explicit control over when/whether data leaves your machine |
-| **`.env.template`** | Template for environment variables (API keys, endpoints) | Shows what's needed without exposing real secrets |
-| **`auth.json.template`** | Template for cloud provider API keys | Separates secrets from code; keys stored in PowerShell vault, not Git |
+| **`auth.json.template`** | Template for cloud provider API keys | Separates secrets from code; run `ai-auth-set <provider> <key>` to fill it in — never commit the real `auth.json` |
 | **`opencode.json.template`** | Template for opencode.ai agent configuration | Pre-configures agents to use local Ollama endpoint |
-| **`.aider.conf.yml.template`** | Template for aider (AI coding tool) configuration | Pre-configures aider to use Ollama backend |
+| **`claude-settings.json.template`** | Template for Claude Code settings pointed at the local endpoint | Pre-configures Claude Code to use the platform's port |
+| **`hermes-config.json.template`** | Template for the Hermes container's agent config | Configures Hermes's cloud-model settings before first run |
+| **`jcode-config.toml.template`** | Template for the jcode agent configuration | Pre-configures jcode to use the local Ollama endpoint |
+| **`pi-models.json.template`** | Template for Pi.dev's model registry | Mirrors `models.json` for the Pi.dev agent |
 
 ### 🛡️ Policies (`config/policies/`)
 
@@ -75,9 +77,12 @@
 | **`03-PowerShell-Module-Spec.md`** | API reference for `ai-*` commands |
 | **`04-Security-Audit-Runbook.md`** | How to audit logs, rotate keys, respond to incidents |
 | **`05-Provider-Fallback-Matrix.md`** | Decision matrix for when to use local vs. cloud |
+| **`06-Model-Acquisition-Backlog.md`** | Zero-touch model auto-selection/pull backlog and review history |
+| **`07-Quickstart-Playbook.md`** | Step-by-step operational playbook (start, switch models, troubleshoot) |
+| **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option) |
 
 #### Pi.dev Agent Configuration
-- Ensure the Pi.dev agent baseUrl points to the same port used by the platform (default **12345**). Update `C:\Users\veere\.pi\agent\models.json` if you change the platform port.
+- Ensure the Pi.dev agent baseUrl points to the same port used by the platform (default **12345**). Update `%USERPROFILE%\.pi\agent\models.json` if you change the platform port.
 
 ### 🧩 VS Code Extension (`src/extension.ts`)
 
@@ -304,6 +309,58 @@ sequenceDiagram
     User-->>User: Session ended
 ```
 
+### Data Model (State & Config Entities)
+
+What each JSON file on disk actually holds, and how they relate. `provider-policy.json` is the persisted *intent* ("use vLLM if I can"); `active-provider.json` is the *live truth* of what's running right now — they're deliberately separate so a stale runtime state can never look like a changed user preference.
+
+```mermaid
+erDiagram
+    PROVIDER_POLICY ||--o{ ACTIVE_PROVIDER : "backend choice read by Start-AI.ps1 to produce"
+    PROVIDER_POLICY {
+        string preferredLocalProvider "ollama or vllm"
+        string preferredLocalModel
+        bool cloudFallbackEnabled
+        bool allowSensitiveDataToCloud
+        array cloudProviderPriority
+    }
+    ACTIVE_PORT ||--|| ACTIVE_PROVIDER : "written and deleted together, every start/stop"
+    ACTIVE_PORT {
+        int port
+        string model
+        datetime started
+    }
+    ACTIVE_PROVIDER {
+        string provider "ollama or vllm - ground truth for Stop-AI.ps1"
+        string model
+        string endpoint "http://127.0.0.1:12345/v1"
+        string source "local or cloud"
+        string reason
+    }
+    MODELS_REGISTRY ||--o{ ACTIVE_PROVIDER : "supplies model name/size for auto-selection"
+    MODELS_REGISTRY {
+        object localModels "name to size, params, role, tags"
+        array fallbackOrder
+    }
+    AUTH_CONFIG ||--o{ ACTIVE_PROVIDER : "supplies cloud credentials when source=cloud"
+    AUTH_CONFIG {
+        string provider
+        string key "never committed, gitignored"
+    }
+    COMMIT_POLICY ||--o{ AUDIT_LOG : "block/approve decisions logged to"
+    COMMIT_POLICY {
+        array alwaysBlockPatterns
+        array requireApprovalPatterns
+    }
+    ACTIVE_PROVIDER ||--o{ AUDIT_LOG : "every state transition logged to"
+    AUDIT_LOG {
+        datetime timestampUtc
+        string action
+        string result "STARTED, SUCCESS, WARNING, FAILED"
+        string provider
+        string model
+    }
+```
+
 ---
 
 ## 🚀 Quick Start
@@ -316,27 +373,36 @@ sequenceDiagram
 - [Python 3.11+](https://www.python.org/) (for aider)
 - [Git](https://git-scm.com/)
 
-### Installation
+### Installation (1-click)
 
 ```powershell
 # 1. Clone or download this repo
 git clone https://github.com/YOUR_USERNAME/local-ai-platform.git
 cd local-ai-platform
 
-# 2. Deploy to your home directory
-New-Item -Path "$env:USERPROFILE\.ai-platform\scripts" -ItemType Directory -Force
-Copy-Item .\scripts\* "$env:USERPROFILE\.ai-platform\scripts\" -Force
-Copy-Item .\config\* "$env:USERPROFILE\.ai-platform\config\" -Force -Recurse
+# 2. Deploy — this one script does everything: copies scripts/config to
+#    ~/.ai-platform, and wires profile-helpers.ps1 into your PowerShell profile
+.\setup.ps1
 
-# 3. Pull your preferred model(s)
-ollama pull devstral-small-2:24b
-ollama pull qwen3-coder:30b
-
-# 4. Add to your PowerShell profile (~\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1)
-Add-Content $PROFILE ". `"$env:USERPROFILE\.ai-platform\scripts\profile-helpers.ps1`""
-
-# 5. Restart PowerShell
+# 3. Restart PowerShell (or run `. $PROFILE`) so the ai-* commands are available
 ```
+
+`ollama pull <model>` isn't a required manual step — `ai-start` auto-detects your hardware and pulls the best-fitting model in the background the first time you run it (see [`06-Model-Acquisition-Backlog.md`](docs/06-Model-Acquisition-Backlog.md)). Pull one yourself first only if you want a specific model pinned via `ai-start -Model <name>`.
+
+<details>
+<summary>Manual install (if you'd rather not run setup.ps1)</summary>
+
+```powershell
+New-Item -Path "$env:USERPROFILE\.ai-platform\scripts" -ItemType Directory -Force
+New-Item -Path "$env:USERPROFILE\.ai-platform\config\policies" -ItemType Directory -Force
+Copy-Item .\scripts\*.ps1 "$env:USERPROFILE\.ai-platform\scripts\" -Force
+Copy-Item .\config\*.json "$env:USERPROFILE\.ai-platform\config\" -Force
+Copy-Item .\config\policies\*.json "$env:USERPROFILE\.ai-platform\config\policies\" -Force
+Copy-Item .\config\*.template "$env:USERPROFILE\.ai-platform\config\" -Force
+Add-Content $PROFILE ". `"$env:USERPROFILE\.ai-platform\scripts\profile-helpers.ps1`""
+```
+
+</details>
 
 ### First Run
 
@@ -452,30 +518,44 @@ ai-start
 
 ```
 local-ai-platform/
-├── README.md                 # This file
-├── LICENSE                   # MIT License
-├── main.py                   # Demo script for testing
-├── requirements.txt          # Python dependencies
+├── README.md                     # This file
+├── PLAYBOOK.md                   # Step-by-step operational playbook
+├── LICENSE                       # MIT License
+├── setup.ps1                     # One-command installer (deploys to ~/.ai-platform)
+├── Start-AI.bat / Stop-AI.bat    # Double-click wrappers around the .ps1 scripts
+├── main.py                       # Demo script for testing the OpenAI-compatible endpoint
+├── requirements.txt              # Python dependencies for main.py
+├── package.json / tsconfig.json  # VS Code extension build config
+├── src/
+│   └── extension.ts              # VS Code extension: status bar, start/stop/switch commands
 ├── scripts/
-│   ├── Start-AI.ps1          # Main startup (hardened, single-instance)
-│   ├── Stop-AI.ps1           # Clean shutdown
-│   ├── profile-helpers.ps1   # CLI helpers (ai-start, ai-code, etc.)
-│   └── Invoke-CommitReview.ps1  # Pre-commit security gate
+│   ├── Start-AI.ps1              # Main startup (hardened, single-instance, backend chooser)
+│   ├── Start-VLLM.ps1            # Optional vLLM backend (Docker, NVIDIA GPU)
+│   ├── Get-BackendCapability.ps1 # Detects vLLM viability (GPU + Docker)
+│   ├── Get-ModelAcquisition.ps1  # Hardware detection + auto model pull (Ollama/HF)
+│   ├── Stop-AI.ps1               # Clean shutdown (whichever backend is active)
+│   ├── profile-helpers.ps1       # CLI helpers (ai-start, ai-code, ai-health, etc.)
+│   ├── Invoke-CommitReview.ps1   # Pre-commit security gate
+│   └── Test-*.ps1                # Self-checks for model selection / capability logic
 ├── config/
-│   ├── models.json           # Model registry (capabilities, sizes)
-│   ├── provider-policy.json  # Routing rules (local/cloud)
-│   ├── .env.template         # Environment template
-│   ├── .aider.conf.yml.template  # Aider config template
-│   ├── opencode.json.template    # opencode.ai config
-│   └── auth.json.template    # Cloud provider auth template
+│   ├── models.json               # Model registry (capabilities, sizes)
+│   ├── policies/
+│   │   ├── provider-policy.json  # Routing rules (local/cloud, preferredLocalProvider)
+│   │   └── commit-policy.json    # Patterns blocked/needing approval before commit
+│   └── *.template                # Copy-and-fill templates: auth, opencode, claude-settings,
+│                                  # hermes-config, jcode-config, pi-models
 ├── docs/
 │   ├── 00-Artifact-Index.md
 │   ├── 01-Local-AI-Platform-Blueprint.md
 │   ├── 02-Windows-Implementation-Guide.md
 │   ├── 03-PowerShell-Module-Spec.md
 │   ├── 04-Security-Audit-Runbook.md
-│   └── 05-Provider-Fallback-Matrix.md
-└── hermes-container/         # Sandboxed agent for job applications
+│   ├── 05-Provider-Fallback-Matrix.md
+│   ├── 06-Model-Acquisition-Backlog.md
+│   ├── 07-Quickstart-Playbook.md
+│   ├── COMPONENTS.md
+│   └── adr/                      # Architecture Decision Records
+└── hermes-container/             # Sandboxed agent for job applications
     ├── README.md
     ├── PLAYBOOK.md
     ├── Dockerfile
@@ -579,7 +659,7 @@ ai-health
 ### Development Guidelines
 
 - Always test with `ai-start -Force` before committing
-- Ensure no secrets in code (use `.env.template` for examples)
+- Ensure no secrets in code (use `config/auth.json.template` etc. for examples — never commit the filled-in versions)
 - Add audit logging for new actions
 - Update `docs/` for significant changes
 

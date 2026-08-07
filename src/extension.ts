@@ -82,7 +82,13 @@ async function selectModel() {
         vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set aiPlatform.modelsConfigPath.`);
         return;
     }
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    let config: any;
+    try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {
+        vscode.window.showErrorMessage(`models.json at ${configPath} is not valid JSON.`);
+        return;
+    }
     const names: string[] = Object.keys(config.localModels || {});
     const picked = await vscode.window.showQuickPick(names.map(name => ({
         label: name,
@@ -100,7 +106,13 @@ async function switchModel() {
         vscode.window.showErrorMessage(`models.json not found at ${configPath}. Set aiPlatform.modelsConfigPath.`);
         return;
     }
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    let config: any;
+    try {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    } catch (e) {
+        vscode.window.showErrorMessage(`models.json at ${configPath} is not valid JSON.`);
+        return;
+    }
     const names: string[] = Object.keys(config.localModels || {});
     const picked = await vscode.window.showQuickPick(names.map(name => ({
         label: name,

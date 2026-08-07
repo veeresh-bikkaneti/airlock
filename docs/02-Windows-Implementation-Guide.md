@@ -54,24 +54,18 @@ aider --version
 ```
 Record the installed version in your setup notes.
 
-## Step 4: Install secret vault modules
+## Step 4: Store provider keys
+Store only providers you plan to use — this writes to `~/.ai-platform/config/auth.json` (gitignored, never committed):
 ```powershell
-Install-Module Microsoft.PowerShell.SecretManagement -Scope CurrentUser -Force
-Install-Module Microsoft.PowerShell.SecretStore      -Scope CurrentUser -Force
-Register-SecretVault -Name AIVault -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
+ai-auth-set openrouter ""
+ai-auth-set openai ""
+ai-auth-set anthropic ""
+ai-auth-set google ""
+ai-auth-set azure-openai ""
+ai-auth   # verify what's configured
 ```
 
-## Step 5: Store provider keys
-Store only providers you plan to use:
-```powershell
-Set-Secret -Vault AIVault -Name OPENROUTER_API_KEY -Secret ""
-Set-Secret -Vault AIVault -Name OPENAI_API_KEY     -Secret ""
-Set-Secret -Vault AIVault -Name ANTHROPIC_API_KEY  -Secret ""
-Set-Secret -Vault AIVault -Name GOOGLE_API_KEY     -Secret ""
-Set-Secret -Vault AIVault -Name AZURE_OPENAI_KEY   -Secret ""
-Set-Secret -Vault AIVault -Name AZURE_OPENAI_URL   -Secret ""
-Get-SecretInfo -Vault AIVault | Sort-Object Name
-```
+`ai-start` separately checks for a registered PowerShell SecretManagement vault named `AIVault` and logs whether it's present. That check is informational only — nothing in the platform currently reads keys from a SecretManagement vault, so installing/registering one is not required.
 Do not place these values in profile files, repository files, or command history exports.
 
 ## Optional: vLLM Backend for NVIDIA GPUs
@@ -92,7 +86,7 @@ If vLLM fails to start (e.g., GPU passthrough issue), the platform automatically
 
 Both backends expose the same endpoint: `http://127.0.0.1:12345/v1`. No client changes needed.
 
-## Step 6: Create provider policy
+## Step 5: Create provider policy
 Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
 ```json
 {
@@ -114,7 +108,7 @@ Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
 
 **Note:** `preferredLocalProvider` defaults to `"ollama"`. On first run with an NVIDIA GPU + Docker, `Start-AI.ps1` will prompt you to choose between `"ollama"` (always works) and `"vllm"` (faster for concurrent requests). Your choice is auto-saved here.
 
-## Step 7: Create aider config
+## Step 6: Create aider config
 Create `%USERPROFILE%\.aider.conf.yml`:
 ```yaml
 model: openai/devstral-small-2:24b
@@ -136,7 +130,7 @@ detect-urls: false
 - `detect-urls: false` reduces unwanted network access.
 - Loopback `openai-api-base` keeps the default provider local.
 
-## Step 8: Add startup and stop scripts
+## Step 7: Add startup and stop scripts
 Implement the scripts from the module specification artifact so the platform can:
 - Discover or start Ollama.
 - Write structured logs.
@@ -144,7 +138,7 @@ Implement the scripts from the module specification artifact so the platform can
 - Export only session-scoped environment variables.
 - Shut down local services cleanly.
 
-## Step 9: Add profile helpers
+## Step 8: Add profile helpers
 Update your PowerShell profile to expose commands such as:
 - `ai-start`
 - `ai-stop`
@@ -153,7 +147,7 @@ Update your PowerShell profile to expose commands such as:
 - `ai-provider`
 - `ai-audit-last`
 
-## Step 10: Validate end to end
+## Step 9: Validate end to end
 ```powershell
 ai-start
 ai-provider

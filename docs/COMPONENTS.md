@@ -49,9 +49,12 @@ This document explains **what each file/folder in the repository does** and **wh
 - `defaultCloudModels` – map of cloud provider → model name the platform will request when falling back.
 | **`policies/commit‑policy.json`** | - `alwaysBlockPatterns` – glob patterns that **must never** be committed (e.g., `*\.env`, `*\.key`).
 - `requireApprovalPatterns` – patterns that trigger a **user prompt** before committing (e.g., `*.md` containing sensitive sections). |
-| **`auth.json.template`** | Template for cloud API keys. **Never** commit real keys – copy to `auth.json` and fill in values. |
-| **`.aider.conf.yml.template`** | Configuration for the `aider` coding assistant – points it at the local Ollama endpoint.
-| **`.env.template`** | Example environment file showing optional variables (e.g., `OLLAMA_HOST`). |
+| **`auth.json.template`** | Template for cloud API keys. **Never** commit real keys – run `ai-auth-set <provider> <key>` to fill it in. |
+| **`opencode.json.template`** | Configuration for the `opencode.ai` agent – points it at the local Ollama endpoint. |
+| **`claude-settings.json.template`** | Claude Code settings pointed at the local endpoint. |
+| **`hermes-config.json.template`** | Config for the Hermes container's agent (cloud-model settings). |
+| **`jcode-config.toml.template`** | Configuration for the `jcode` agent. |
+| **`pi-models.json.template`** | Model registry mirror for the Pi.dev agent. |
 
 ---
 
@@ -70,7 +73,7 @@ This document explains **what each file/folder in the repository does** and **wh
 2. **Local‑only binding** – only `127.0.0.1`, never `0.0.0.0`.
 3. **Inbound firewall block** – Windows rule `AI‑Platform‑Ollama‑Block‑<port>`.
 4. **Audit logging** – every action (start, stop, model switch, commit review) is written to `logs/YYYY‑MM‑DD.jsonl`.
-5. **Secret handling** – API keys stored in PowerShell SecretManagement vault, never in source.
+5. **Secret handling** – API keys stored in a local JSON file (`~/.ai-platform/config/auth.json`), never committed to source.
 6. **Commit gate** – `Invoke‑CommitReview.ps1` blocks secrets from Git commits.
 7. **Resource checks** – RAM >20 % free, VRAM >4 GB free before loading large models.
 8. **Model digest verification** – ensures the exact binary you think you are using.

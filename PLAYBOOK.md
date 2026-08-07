@@ -229,17 +229,10 @@ Edit `config/policies/provider-policy.json`:
 }
 ```
 
-### Step 2: Store API Keys Securely
+### Step 2: Store API Keys
 
 ```powershell
-# Install PowerShell SecretManagement
-Install-Module Microsoft.PowerShell.SecretManagement -Scope CurrentUser -Force
-Install-Module Microsoft.PowerShell.SecretStore -Scope CurrentUser -Force
-
-# Register vault
-Register-SecretVault -Name AIVault -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
-
-# Store keys
+# Store keys (writes to ~/.ai-platform/config/auth.json, gitignored, never committed)
 ai-auth-set openrouter sk-or-v1-your-openrouter-key
 ai-auth-set openai sk-your-openai-key
 ai-auth-set anthropic sk-anthropic-key
@@ -247,6 +240,8 @@ ai-auth-set anthropic sk-anthropic-key
 # Verify
 ai-auth
 ```
+
+`ai-start` also checks for a registered PowerShell SecretManagement vault named `AIVault` (`Get-SecretVault -Name AIVault`) and logs whether it's present — that check is informational only, nothing currently reads keys from it. `ai-auth-set` above is the actual, working key storage.
 
 ### Step 3: Test Fallback
 

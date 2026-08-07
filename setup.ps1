@@ -52,5 +52,5 @@ if (-not $profileContent.Contains($dotSourceLine)) {
 
 Write-Host ""
 Write-Host "Done. Open a new PowerShell terminal (or run '. `$PROFILE') and try 'ai-start'." -ForegroundColor Cyan
-Write-Host "Copy config/.env.template to ~/.ai-platform/config/.env and fill in any cloud API keys you want." -ForegroundColor Gray
+Write-Host "To add cloud fallback keys, run: ai-auth-set <provider> <api-key>  (e.g. ai-auth-set openrouter sk-or-...)" -ForegroundColor Gray
 Write-Host ""

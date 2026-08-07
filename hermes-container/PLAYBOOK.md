@@ -6,7 +6,7 @@ A step-by-step guide to applying for jobs with Hermes agent and career-ops.
 
 ### Step 1: Start Hermes
 ```powershell
-cd C:\Users\veere\Downloads\local AI setup\hermes-container
+cd C:\path\to\local-ai-platform\hermes-container
 .\run-hermes.ps1
 ```
 

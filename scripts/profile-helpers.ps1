@@ -388,10 +388,10 @@ function global:ai-health {
 # Write-Host "  ai-audit-last    Show recent audit log entries" -ForegroundColor Gray
 # Write-Host "  ai-policy        Show provider policy" -ForegroundColor Gray
 # Write-Host "  ai-models        List configured models" -ForegroundColor Gray
-Write-Host "  ai-auth          Show auth status" -ForegroundColor Gray
-Write-Host "  ai-auth-set      Store API key for cloud provider" -ForegroundColor Gray
-Write-Host "  ai-cache         Show/clear prompt cache" -ForegroundColor Gray
-Write-Host "  ai-config        Show full platform configuration" -ForegroundColor Gray
-Write-Host ""
-Write-Host "  ollama serve     BLOCKED — use ai-start instead" -ForegroundColor DarkGray
-Write-Host "  ollama <other>   Passed through to ollama.exe normally" -ForegroundColor DarkGray
+# Write-Host "  ai-auth          Show auth status" -ForegroundColor Gray
+# Write-Host "  ai-auth-set      Store API key for cloud provider" -ForegroundColor Gray
+# Write-Host "  ai-cache         Show/clear prompt cache" -ForegroundColor Gray
+# Write-Host "  ai-config        Show full platform configuration" -ForegroundColor Gray
+# Write-Host ""
+# Write-Host "  ollama serve     BLOCKED — use ai-start instead" -ForegroundColor DarkGray
+# Write-Host "  ollama <other>   Passed through to ollama.exe normally" -ForegroundColor DarkGray

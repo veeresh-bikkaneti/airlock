@@ -70,8 +70,8 @@ Model acquisition guarantees the "Local: Ollama" branch has a model to route to;
 
 ## Security Controls
 - Loopback-only binding for local inference.
-- SecretManagement / SecretStore for provider credentials.
-- No secrets in `.env`, scripts, git config, or terminal history.
+- Provider credentials stored via `ai-auth-set` in `~/.ai-platform/config/auth.json`, gitignored, never committed. (`ai-start` also checks for a registered PowerShell SecretManagement vault named `AIVault`, but that check is informational only — nothing currently reads keys from it.)
+- No secrets in scripts, git config, or terminal history.
 - Manual review before commit.
 - URL autodetection disabled where possible.
 - Separate infrastructure secrets from resume, career, or other personal data.

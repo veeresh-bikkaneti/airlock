@@ -106,5 +106,55 @@ Swarm review (Sonnet orchestrator + Haiku expert reviewers) of the vLLM/Ollama b
 - Needs backend-aware branching (read `active-provider.json`, check the right process/container and firewall rule name per backend) — not a one-line endpoint swap.
 - Priority: **P2**
 
-## Full-repo review — deferred
-Whole-repo swarm review requested by the user; deferred until usage limit resets. Scope: entire `local-ai-platform` codebase, not just this feature.
+## Full-Repo Review (2026-08-06)
+Sonnet orchestrator + 6 Haiku expert reviewers across scripts/, config/, hermes-container/, src/ (VS Code extension), and build entry points. Every finding was independently re-verified before acting on it — several Haiku findings turned out false or overstated and were rejected (see task history for detail).
+
+**Fixed this pass:**
+- `scripts/Invoke-CommitReview.ps1` — `git restore --staged` failures on BLOCKED/declined files were silently swallowed, so a failed unstage would fall through to the final `git commit` anyway. This defeated the script's entire purpose (preventing secret leaks). Now hard-aborts on unstage failure.
+- `src/extension.ts` — `selectModel()`/`switchModel()` had unhandled `JSON.parse()` on `models.json`; malformed config now shows a clean error instead of an uncaught exception.
+- `tsconfig.json` — no `include` array meant `tsc -p .` (the extension's own build command) pulled in the unrelated untracked `my-video/` directory and failed outright. Added `"include": ["src"]`. Verified clean via `npm install && npx tsc --noEmit`.
+- `scripts/profile-helpers.ps1` — a partially-commented-out "print command summary" block left 7 `Write-Host` calls executing unconditionally on every dot-source (every new shell, every `ai-start`), printing a broken partial command list. Finished commenting it out per the block's own stated intent.
+- `docs/COMPONENTS.md` — security checklist falsely claimed API keys live in a "PowerShell SecretManagement vault"; actual code (`ai-auth-set`) writes plain JSON to `~/.ai-platform/config/auth.json`, contradicting the doc's own earlier line. Corrected.
+
+### 9. Pin hermes-container base image to a digest — **Status: Backlog**
+**As a** maintainer **I want** the Hermes container's base image pinned to an immutable digest **so that** a `node:24-bookworm-slim` upstream update can't silently change the build.
+- `hermes-container/Dockerfile:1` uses a mutable tag. Needs the real digest (`docker pull node:24-bookworm-slim && docker inspect ... RepoDigests`) — not fabricated here.
+- Priority: **P3** (low risk for a single-user local tool)
+
+### 10. Make Test-ModelSelection.ps1 test the real Select-BestModel — **Status: Backlog**
+**As a** maintainer **I want** the model-selection test to exercise the actual production function **so that** a regression in `Select-BestModel` (`scripts/Get-ModelAcquisition.ps1:361`) gets caught.
+- `scripts/Test-ModelSelection.ps1:10-18` defines its own `Select-ModelForMemory` copy instead of calling `Select-BestModel` — the real function includes HF fallback/discovery the test never exercises.
+- Feeds into the queued `/ruflo-testgen:testgen` pass.
+- Priority: **P2**
+
+### 11. Regenerate or delete the stale artifact manifest — **Status: Backlog**
+**As a** maintainer **I want** `docs/artifact-manifest.json` to either be accurate or gone **so that** it doesn't look like a live integrity check when it isn't.
+- 5 of 7 tracked docs have mismatched hash/size; `07-Quickstart-Playbook.md` and `COMPONENTS.md` were never added. Confirmed nothing in the codebase reads or verifies this file — zero functional risk, purely stale metadata.
+- Priority: **P3**
+
+### Rejected/downgraded findings (for the record)
+- `$LASTEXITCODE` reliability after `| Out-Null` — empirically disproven (tested directly).
+- `ai-switch` using `/api/tags` instead of `/v1/models` — false positive, that function is intentionally Ollama-only per ADR-003's explicit scope.
+- `Get-ModelAcquisition.ps1` background-job lifecycle — real limitation but already documented in-code as an accepted tradeoff with the same upgrade path suggested.
+- `$LogFile` and `Get-ModelSizingCeilingGB` "unused" — both false, both have live callers.
+- VS Code `pollTimer` not in `context.subscriptions` — overstated; `deactivate()` already clears it through the same lifecycle VS Code uses to dispose subscriptions.
+- Hardcoded `127.0.0.1` in the extension and elsewhere — intentional loopback-only invariant per ADR-003, not a bug.
+
+## Documentation & Diagram Pass (2026-08-06)
+User asked for beginner-friendly architecture diagrams (flowchart, entity diagram, workflow diagram) and a genuinely 1-click install. README already had 3 of the 4 diagram types (architecture flowchart, backend-selection flowchart, start/stop sequence diagram) from the earlier vLLM work — added the missing **entity diagram** (`erDiagram` of provider-policy/active-port/active-provider/models-registry/auth/commit-policy/audit-log relationships).
+
+**Fixed:**
+- README's "Installation" section didn't mention `setup.ps1` exists at all — it spelled out 5 manual commands instead of the actual one-liner. Now leads with `.\setup.ps1`, manual steps moved to a collapsed fallback.
+- `setup.ps1`'s own final message told the user to copy a `config/.env.template` that doesn't exist in this repo. Fixed to point at the real `ai-auth-set` flow.
+- **Bigger one**: `PLAYBOOK.md`, `docs/02-Windows-Implementation-Guide.md`, and `docs/01-Local-AI-Platform-Blueprint.md` all instructed installing/registering a PowerShell SecretManagement vault (`Install-Module`, `Register-SecretVault`, `Set-Secret`) as the way to store API keys. Verified by grep across every `.ps1` file: `Get-SecretVault` is called exactly once (`Start-AI.ps1:400`), for an existence check only — nothing anywhere calls `Get-Secret`/`Set-Secret`. The real, working mechanism is `ai-auth-set` writing plain JSON to `auth.json`. Following the vault instructions as written would waste a beginner's time setting up something the platform never reads from. Corrected all three docs; renumbered `docs/02`'s steps after merging two into one.
+- README's Component Guide / Architecture Files tree / `COMPONENTS.md` config table all listed `.env.template` and `.aider.conf.yml.template` (don't exist) and were missing `claude-settings.json.template`, `hermes-config.json.template`, `jcode-config.toml.template`, `pi-models.json.template` (do exist). Synced to reality in both files.
+
+### 12. `docs/02-Windows-Implementation-Guide.md` Step 1 creates a dead `.env` file — **Status: Backlog**
+**As a** user **I want** the Windows implementation guide to only ask me to create files the platform actually reads **so that** I'm not doing pointless setup work.
+- Step 1 creates `~/.ai-platform/.env` and sets ACLs on it. Confirmed by grep: no script reads this path. Lower priority than the vault fix above since it's just an unused empty file, not a wasted module install.
+- Priority: **P3**
+
+## Cleanup candidates (unrelated to any feature, flagged not actioned)
+- 4 stale `worktree-agent-*` git branches.
+- Stray untracked `$null` file in repo root (cmd.exe redirect artifact, harmless junk).
+- Untracked `my-video/` directory in repo root (unrelated Remotion project) — this is what broke `tsc` above; worth relocating out of the repo root even though `tsconfig.json` no longer chokes on it.

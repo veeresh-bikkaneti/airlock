@@ -78,7 +78,16 @@ if ($blocked.Count -gt 0) {
     Write-Host ""
     Write-Host "BLOCKED - will be unstaged:" -ForegroundColor Red
     $blocked | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-    $blocked | ForEach-Object { git restore --staged $_ 2>$null }
+    $unstageFailed = @()
+    foreach ($f in $blocked) {
+        git restore --staged $f 2>$null
+        if ($LASTEXITCODE -ne 0) { $unstageFailed += $f }
+    }
+    if ($unstageFailed.Count -gt 0) {
+        Write-Host "ERROR: Failed to unstage: $($unstageFailed -join ', ')" -ForegroundColor Red
+        Write-Host "Aborting - blocked files may still be staged. Fix manually before committing." -ForegroundColor Red
+        exit 1
+    }
     Write-Host "These files were unstaged. Add them to .gitignore." -ForegroundColor Yellow
 }
 
@@ -90,7 +99,16 @@ if ($needsOK.Count -gt 0) {
     Write-Host ""
     $choice = Read-Host "Commit these too? [Y]es / [N]o (unstage)"
     if ($choice -notmatch "^[Yy]") {
-        $needsOK | ForEach-Object { git restore --staged $_ 2>$null }
+        $unstageFailed = @()
+        foreach ($f in $needsOK) {
+            git restore --staged $f 2>$null
+            if ($LASTEXITCODE -ne 0) { $unstageFailed += $f }
+        }
+        if ($unstageFailed.Count -gt 0) {
+            Write-Host "ERROR: Failed to unstage: $($unstageFailed -join ', ')" -ForegroundColor Red
+            Write-Host "Aborting - declined files may still be staged. Fix manually before committing." -ForegroundColor Red
+            exit 1
+        }
         Write-Host "Unstaged. Only auto-approved files remain." -ForegroundColor Cyan
         $needsOK = @()
     }
