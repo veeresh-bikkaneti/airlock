@@ -1,0 +1,3 @@
+One line installs Airlock. It detects your hardware, picks Ollama or vLLM, measures your real RAM/VRAM and pulls the model that actually fits — no guessing — then proves the whole setup with a real test chat before you ever touch it. No cloud rate limits, no flaky routing layer. Proof, not a claim.
+
+github.com/veeresh-bikkaneti/airlock

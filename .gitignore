@@ -116,3 +116,4 @@ agentdb.rvf.idmap.json
 .claude/
 .agents/
 skills-lock.json
+.gstack/
