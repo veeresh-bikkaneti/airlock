@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Airlock — Brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/TextPlugin.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: #0c0c0c;
+        font-family: "JetBrains Mono", "Consolas", monospace;
+      }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0c0c0c; }
+
+      .scene { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; }
+      #scene1 { z-index: 1; }
+      #scene2 { z-index: 2; opacity: 0; }
+      #scene3 { z-index: 3; opacity: 0; }
+      #scene4 { z-index: 4; opacity: 0; }
+      #scene5 { z-index: 5; opacity: 0; }
+      #scene6 { z-index: 6; opacity: 0; }
+
+      /* ---------- ambient background layer (persistent tint per-scene) ---------- */
+      .scene-bg {
+        position: absolute; inset: 0; background: #0c0c0c;
+      }
+      .scene-glow {
+        position: absolute; width: 1400px; height: 1400px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(61,219,217,0.10) 0%, rgba(61,219,217,0) 65%);
+        left: 50%; top: 50%; transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+      .scanlines {
+        position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
+        background: repeating-linear-gradient(0deg, #fff 0px, #fff 1px, transparent 1px, transparent 3px);
+      }
+
+      /* ---------- terminal chrome ---------- */
+      .term {
+        position: absolute; background: #111417; border-radius: 10px;
+        border: 1px solid #23282e; box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+        overflow: hidden;
+      }
+      .term-bar {
+        height: 44px; background: #14181c; border-bottom: 1px solid #23282e;
+        display: flex; align-items: center; padding: 0 18px; gap: 10px;
+      }
+      .term-tab {
+        color: #9aa4ad; font-size: 15px; letter-spacing: 0.3px;
+      }
+      .term-ctrls { margin-left: auto; display: flex; gap: 16px; color: #8a929a; font-size: 14px; }
+      .term-body { padding: 28px 34px; color: #e8e8e8; font-size: 26px; line-height: 1.55; }
+      .term-line { white-space: pre; }
+      .term-prompt { color: #3ddbd9; }
+      .term-cursor { display: inline-block; width: 14px; height: 28px; background: #e8e8e8; vertical-align: -5px; }
+      .cursor-blink { animation: blink 0.8s step-end infinite; }
+      .cursor-solid { animation: none; opacity: 1; }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+      .term-dim-line { color: #9aa4ad; font-size: 22px; }
+      .term-green { color: #3ddc84; }
+      .term-cyan { color: #3ddbd9; }
+
+      /* ---------- Scene 1 ---------- */
+      #s1-term { width: 1360px; height: 340px; left: 280px; top: 370px; }
+
+      /* ---------- Scene 2 ---------- */
+      #s2-term { width: 900px; height: 460px; left: 130px; top: 310px; opacity: 0.55; }
+      #s2-caption-wrap { position: absolute; right: 150px; top: 430px; width: 780px; }
+      .caption-line {
+        color: #e8e8e8; font-size: 40px; line-height: 1.4; font-weight: 500;
+        opacity: 0; position: absolute; top: 0; left: 0; width: 100%;
+      }
+      .caption-line .accent { color: #3ddbd9; }
+
+      /* ---------- Scene 3 ---------- */
+      #s3-term { width: 480px; height: 180px; left: 60px; top: 40px; opacity: 0.28; transform: scale(0.9); }
+      #s3-headline-wrap { position: absolute; left: 50%; top: 270px; transform: translateX(-50%); width: 1400px; text-align: center; }
+      .s3-headline { color: #e8e8e8; font-size: 46px; font-weight: 500; opacity: 0; position: absolute; top: 0; left: 0; width: 100%; }
+      .s3-headline .accent { color: #3ddbd9; }
+
+      #s3-meter-wrap { position: absolute; left: 50%; top: 420px; transform: translateX(-50%); width: 900px; opacity: 0; }
+      #s3-headline-wrap { z-index: 2; }
+      .s3-meter-label { color: #9aa4ad; font-size: 24px; margin-bottom: 10px; letter-spacing: 0.5px; }
+      .s3-meter-track { width: 100%; height: 22px; background: #1b2126; border-radius: 11px; overflow: hidden; }
+      .s3-meter-fill { width: 100%; height: 100%; background: #3ddbd9; transform: scaleX(0); transform-origin: left center; }
+      .s3-meter-readout { margin-top: 12px; font-size: 34px; color: #e8e8e8; font-weight: 600; }
+      .s3-meter-readout .unit { color: #9aa4ad; font-weight: 400; font-size: 24px; }
+      .s3-gpu-readout { margin-top: 6px; font-size: 24px; color: #9aa4ad; opacity: 0; }
+
+      #s3-cards-wrap {
+        position: absolute; left: 50%; top: 595px; transform: translateX(-50%);
+        display: flex; gap: 36px; opacity: 0;
+      }
+      .s3-card {
+        width: 230px; height: 260px; background: #14181c; border: 1px solid #23282e; border-radius: 14px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        opacity: 0; transform: scale(0);
+      }
+      .s3-card-size { font-size: 42px; color: #e8e8e8; font-weight: 700; }
+      .s3-card-name { font-size: 18px; color: #9aa4ad; margin-top: 10px; text-align: center; padding: 0 12px; }
+      .s3-card-check { font-size: 26px; color: #3ddc84; margin-top: 14px; opacity: 0; }
+      .s3-card.winner { border-color: #3ddc84; box-shadow: 0 0 0 2px rgba(61,220,132,0.35), 0 0 40px rgba(61,220,132,0.25); }
+      .s3-card-tag {
+        position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+        background: #3ddc84; color: #0c0c0c; font-size: 15px; font-weight: 700;
+        padding: 4px 14px; border-radius: 999px; opacity: 0; white-space: nowrap;
+      }
+      #s3-source-note { position: absolute; left: 50%; top: 895px; transform: translateX(-50%); color: #9aa4ad; font-size: 22px; opacity: 0; }
+
+      /* ---------- Scene 4 ---------- */
+      #s4-term { width: 620px; height: 320px; left: 90px; top: 90px; opacity: 0.22; transform: scale(0.9); }
+      #s4-list-wrap { position: absolute; left: 50%; top: 420px; transform: translateX(-50%); width: 1000px; }
+      .s4-item {
+        display: flex; align-items: center; gap: 22px; margin-bottom: 34px; opacity: 0; transform: scale(0);
+      }
+      .s4-item-icon { width: 46px; height: 46px; border-radius: 50%; background: #16302a; border: 2px solid #3ddc84;
+        display: flex; align-items: center; justify-content: center; color: #3ddc84; font-size: 24px; flex-shrink: 0; }
+      .s4-item-text { color: #e8e8e8; font-size: 40px; font-weight: 500; }
+
+      /* ---------- Scene 5 ---------- */
+      #s5-term { width: 1360px; height: 760px; left: 280px; top: 160px; }
+      #s5-banner { margin-top: 10px; }
+      .s5-banner-line { opacity: 0; transform: translateY(10px); }
+      .s5-chat-wrap { margin-top: 26px; }
+      #s5-prompt { color: #e8e8e8; }
+      #s5-response { color: #3ddc84; }
+
+      /* ---------- Scene 6 ---------- */
+      #s6-content { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
+      #s6-word { font-family: "Inter", sans-serif; font-size: 108px; font-weight: 700; color: #e8e8e8;
+        letter-spacing: 2px; opacity: 0; }
+      #s6-tag { font-family: "Inter", sans-serif; font-size: 34px; font-weight: 400; color: #3ddbd9;
+        margin-top: 24px; opacity: 0; }
+      #s6-url { font-family: "JetBrains Mono", monospace; font-size: 24px; color: #9aa4ad; margin-top: 40px; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-0xju" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="35.9">
+
+      <!-- ============ SCENE 1 — The one-liner ============ -->
+      <div data-hf-id="hf-zet7" id="scene1" class="scene">
+        <div data-hf-id="hf-8rns" class="scene-bg"></div>
+        <div data-hf-id="hf-ohez" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-8pzc" class="scanlines"></div>
+        <div data-hf-id="hf-cm2z" id="s1-term" class="term">
+          <div data-hf-id="hf-vwwm" class="term-bar">
+            <span data-hf-id="hf-08n2" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-fs9i" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-ty2f" class="term-body">
+            <div data-hf-id="hf-tyf9" class="term-line"><span data-hf-id="hf-ukjj" class="term-prompt">PS C:\Users\you&gt;</span> <span data-hf-id="hf-xajh" id="s1-typed"></span><span data-hf-id="hf-fdoq" id="s1-cursor" class="term-cursor cursor-blink"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 2 — Which backend ============ -->
+      <div data-hf-id="hf-qqxc" id="scene2" class="scene">
+        <div data-hf-id="hf-mhds" class="scene-bg"></div>
+        <div data-hf-id="hf-n3t7" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-uypi" id="s2-term" class="term">
+          <div data-hf-id="hf-iuka" class="term-bar">
+            <span data-hf-id="hf-vyci" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-hfp6" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-foon" class="term-body">
+            <div data-hf-id="hf-774j" id="s2-line1" class="term-line term-dim-line" style="opacity:0">Deploying Airlock to ~/.ai-platform</div>
+            <div data-hf-id="hf-oiy4" id="s2-line2" class="term-line term-dim-line" style="opacity:0; margin-top:10px">&#160;&#160;Scripts deployed</div>
+            <div data-hf-id="hf-1c8f" id="s2-line3" class="term-line term-dim-line" style="opacity:0; margin-top:10px">&#160;&#160;Config deployed</div>
+          </div>
+        </div>
+        <div data-hf-id="hf-jlx0" id="s2-caption-wrap">
+          <div data-hf-id="hf-0yt4" id="s2-cap-a" class="caption-line">Checks for a GPU <span data-hf-id="hf-koww" class="accent">and</span> Docker.</div>
+          <div data-hf-id="hf-oym4" id="s2-cap-b" class="caption-line">Both present <span data-hf-id="hf-0hge" class="accent">→ vLLM.</span><br data-hf-id="hf-x5px">Otherwise <span data-hf-id="hf-yfzz" class="accent">→ Ollama.</span></div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 3 — The gamble, offloaded (centerpiece) ============ -->
+      <div data-hf-id="hf-ril5" id="scene3" class="scene">
+        <div data-hf-id="hf-lagp" class="scene-bg"></div>
+        <div data-hf-id="hf-mpi6" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-v425" id="s3-term" class="term">
+          <div data-hf-id="hf-j8vb" class="term-bar">
+            <span data-hf-id="hf-wcnj" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-hu07" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-fadm" class="term-body">
+            <div data-hf-id="hf-8ru8" id="s3-line1" class="term-line term-dim-line" style="opacity:0">Resource check...</div>
+            <div data-hf-id="hf-enj6" id="s3-line2" class="term-line term-dim-line" style="opacity:0; margin-top:10px">&#160;&#160;Checking model...</div>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-yupl" id="s3-headline-wrap" data-layout-allow-overlap="true">
+          <div data-hf-id="hf-90td" id="s3-h1" class="s3-headline">Wrong size = crashes, <span data-hf-id="hf-d80p" class="accent">or wasted power.</span></div>
+          <div data-hf-id="hf-2aca" id="s3-h2" class="s3-headline">Measures your real <span data-hf-id="hf-5nmo" class="accent">RAM + VRAM.</span></div>
+          <div data-hf-id="hf-l7qa" id="s3-h3" class="s3-headline">Scores every model — picks the biggest <span data-hf-id="hf-7wbc" class="accent">that fits.</span></div>
+        </div>
+
+        <div data-hf-id="hf-vbjk" id="s3-meter-wrap">
+          <div data-hf-id="hf-uhbe" class="s3-meter-label">FREE MEMORY DETECTED</div>
+          <div data-hf-id="hf-z2mg" class="s3-meter-track"><div data-hf-id="hf-ye16" id="s3-meter-fill" class="s3-meter-fill"></div></div>
+          <div data-hf-id="hf-abq9" class="s3-meter-readout"><span data-hf-id="hf-k048" id="s3-ram-num">0</span><span data-hf-id="hf-trik" class="unit">&#160;GB RAM free</span></div>
+          <div data-hf-id="hf-lbtd" id="s3-gpu-readout" class="s3-gpu-readout">16&#160;GB GPU · 14.8&#160;GB free</div>
+        </div>
+
+        <div data-hf-id="hf-7bom" id="s3-cards-wrap">
+          <div data-hf-id="hf-5ktm" id="s3-card-1" class="s3-card">
+            <div data-hf-id="hf-uucs" class="s3-card-size">4.7<span data-hf-id="hf-odpq" style="font-size:22px">GB</span></div>
+            <div data-hf-id="hf-35ly" class="s3-card-name">qwen2.5-coder:7b</div>
+            <div data-hf-id="hf-kex9" class="s3-card-check">✓ fits</div>
+          </div>
+          <div data-hf-id="hf-zf3t" id="s3-card-2" class="s3-card">
+            <div data-hf-id="hf-syco" class="s3-card-size">9<span data-hf-id="hf-6hyq" style="font-size:22px">GB</span></div>
+            <div data-hf-id="hf-uzwi" class="s3-card-name">deepseek-r1:14b</div>
+            <div data-hf-id="hf-oj41" class="s3-card-check">✓ fits</div>
+          </div>
+          <div data-hf-id="hf-yng0" id="s3-card-3" class="s3-card">
+            <div data-hf-id="hf-fib0" class="s3-card-size">14<span data-hf-id="hf-6w9r" style="font-size:22px">GB</span></div>
+            <div data-hf-id="hf-remn" class="s3-card-name">devstral-small-2:24b</div>
+            <div data-hf-id="hf-pq14" class="s3-card-check">✓ fits</div>
+          </div>
+          <div data-hf-id="hf-kuo2" id="s3-card-4" class="s3-card winner">
+            <div data-hf-id="hf-kj1z" id="s3-card4-tag" class="s3-card-tag">LARGEST THAT FITS</div>
+            <div data-hf-id="hf-dx2w" class="s3-card-size">18<span data-hf-id="hf-7aks" style="font-size:22px">GB</span></div>
+            <div data-hf-id="hf-sjys" class="s3-card-name">qwen3-coder:30b</div>
+            <div data-hf-id="hf-pbq3" class="s3-card-check">✓ fits</div>
+          </div>
+        </div>
+        <div data-hf-id="hf-qels" id="s3-source-note">Pulled from your local registry — HuggingFace only if nothing local fits</div>
+      </div>
+
+      <!-- ============ SCENE 4 — What it locks down ============ -->
+      <div data-hf-id="hf-gn3i" id="scene4" class="scene">
+        <div data-hf-id="hf-lorq" class="scene-bg"></div>
+        <div data-hf-id="hf-mb75" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-dlog" id="s4-term" class="term">
+          <div data-hf-id="hf-jn6c" class="term-bar">
+            <span data-hf-id="hf-wqyk" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-i8b8" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-ew2l" class="term-body">
+            <div data-hf-id="hf-2qdz" class="term-line term-dim-line">Single-instance enforcement...</div>
+          </div>
+        </div>
+        <div data-hf-id="hf-ug32" id="s4-list-wrap">
+          <div data-hf-id="hf-79mi" id="s4-item-1" class="s4-item"><div data-hf-id="hf-dkz4" class="s4-item-icon">✓</div><div data-hf-id="hf-v2yo" class="s4-item-text">One instance, ever.</div></div>
+          <div data-hf-id="hf-3bih" id="s4-item-2" class="s4-item"><div data-hf-id="hf-3ux4" class="s4-item-icon">✓</div><div data-hf-id="hf-zg00" class="s4-item-text">Port blocked from the outside.</div></div>
+          <div data-hf-id="hf-0c8w" id="s4-item-3" class="s4-item"><div data-hf-id="hf-2o01" class="s4-item-icon">✓</div><div data-hf-id="hf-6u9i" class="s4-item-text">Every action logged.</div></div>
+          <div data-hf-id="hf-m4rm" id="s4-item-4" class="s4-item"><div data-hf-id="hf-m4ri" class="s4-item-icon">✓</div><div data-hf-id="hf-m4rt" class="s4-item-text">Remembers your session — on Ollama.</div></div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 5 — Proof ============ -->
+      <div data-hf-id="hf-kl7j" id="scene5" class="scene">
+        <div data-hf-id="hf-khun" class="scene-bg"></div>
+        <div data-hf-id="hf-lww4" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-o5m7" id="s5-term" class="term">
+          <div data-hf-id="hf-k1hd" class="term-bar">
+            <span data-hf-id="hf-x59l" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-imm9" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-ho7s" class="term-body">
+            <div data-hf-id="hf-cczc" id="s5-banner">
+              <div data-hf-id="hf-r9t0" id="s5-b1" class="s5-banner-line term-green" style="font-size:32px; font-weight:700">AI PLATFORM READY (Hardened)</div>
+              <div data-hf-id="hf-zisp" id="s5-b2" class="s5-banner-line" style="margin-top:14px">Endpoint: <span data-hf-id="hf-7m53" class="term-cyan">http://127.0.0.1:12345/v1</span></div>
+              <div data-hf-id="hf-zjtp" id="s5-b3" class="s5-banner-line" style="margin-top:6px">Bind: 127.0.0.1 ONLY (no external)</div>
+              <div data-hf-id="hf-hq9k" id="s5-b4" class="s5-banner-line term-green" style="margin-top:6px">Firewall: Inbound port 12345 BLOCKED</div>
+            </div>
+            <div data-hf-id="hf-raqs" class="s5-chat-wrap">
+              <div data-hf-id="hf-vye1" class="term-line"><span data-hf-id="hf-3gn8" class="term-prompt">&gt;</span> <span data-hf-id="hf-c8nt" id="s5-prompt"></span></div>
+              <div data-hf-id="hf-o4b8" class="term-line" style="margin-top:10px"><span data-hf-id="hf-8f4i" id="s5-response"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 6 — Outro ============ -->
+      <div data-hf-id="hf-bxbo" id="scene6" class="scene">
+        <div data-hf-id="hf-kw5o" class="scene-bg"></div>
+        <div data-hf-id="hf-lil3" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-jele" id="s6-content">
+          <div data-hf-id="hf-e1uq" id="s6-word">Airlock</div>
+          <div data-hf-id="hf-m4qu" id="s6-tag">Sealed. Tested. Then opened.</div>
+          <div data-hf-id="hf-3waa" id="s6-url">github.com/veeresh-bikkaneti/airlock</div>
+        </div>
+      </div>
+
+      <!-- ============ AUDIO ============ -->
+      <audio data-hf-id="hf-hu9x" id="bgm" data-start="0" data-duration="35.9" data-track-index="10" data-volume="0" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+
+      <!-- Voiceover — own track, drives scene pacing -->
+      <audio data-hf-id="hf-762b" id="vo1" data-start="0.4" data-duration="1.984" data-track-index="3" data-volume="1" src="assets/vo/vo1.wav"></audio>
+      <audio data-hf-id="hf-twma" id="vo2" data-start="3.3" data-duration="5.312" data-track-index="3" data-volume="1" src="assets/vo/vo2.wav"></audio>
+      <audio data-hf-id="hf-dh2h" id="vo3" data-start="9.5" data-duration="9.920" data-track-index="3" data-volume="1" src="assets/vo/vo3.wav"></audio>
+      <audio data-hf-id="hf-30cz" id="vo4" data-start="20.3" data-duration="6.933" data-track-index="3" data-volume="1" src="assets/vo/vo4.wav"></audio>
+      <audio data-hf-id="hf-c8oj" id="vo5" data-start="27.9" data-duration="3.456" data-track-index="3" data-volume="1" src="assets/vo/vo5.wav"></audio>
+      <audio data-hf-id="hf-c45b" id="vo6" data-start="33.0" data-duration="2.261" data-track-index="3" data-volume="1" src="assets/vo/vo6.wav"></audio>
+
+      <audio data-hf-id="hf-fbqg" id="sfx-cap-a" data-start="3.3" data-duration="0.11" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-dp49" id="sfx-cap-b" data-start="5.9" data-duration="0.19" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_002.ogg"></audio>
+
+      <audio data-hf-id="hf-jnfy" id="sfx-meter" data-start="12.2" data-duration="0.6" data-track-index="12" data-volume="0.55" src="assets/sfx/interface/switch_001.ogg"></audio>
+      <audio data-hf-id="hf-g10m" id="sfx-meter-settle" data-start="13.8" data-duration="0.05" data-track-index="12" data-volume="0.6" src="assets/sfx/interface/select_008.ogg"></audio>
+      <audio data-hf-id="hf-48pf" id="sfx-sweep" data-start="15.8" data-duration="0.5" data-track-index="12" data-volume="0.55" src="assets/sfx/interface/switch_001.ogg"></audio>
+      <audio data-hf-id="hf-jva1" id="sfx-winner" data-start="16.3" data-duration="0.05" data-track-index="12" data-volume="0.75" src="assets/sfx/interface/select_008.ogg"></audio>
+
+      <audio data-hf-id="hf-ciu9" id="sfx-item1" data-start="20.3" data-duration="0.11" data-track-index="11" data-volume="0.55" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-v8yf" id="sfx-item2" data-start="21.6" data-duration="0.19" data-track-index="11" data-volume="0.55" src="assets/sfx/interface/drop_002.ogg"></audio>
+      <audio data-hf-id="hf-1t4g" id="sfx-item3" data-start="22.9" data-duration="0.11" data-track-index="11" data-volume="0.55" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-m4rs" id="sfx-item4" data-start="24.2" data-duration="0.19" data-track-index="11" data-volume="0.55" src="assets/sfx/interface/drop_002.ogg"></audio>
+
+      <audio data-hf-id="hf-1d4z" id="sfx-banner" data-start="28.8" data-duration="1.2" data-track-index="13" data-volume="0.8" src="assets/sfx/impact/impactBell_heavy_000.ogg"></audio>
+      <audio data-hf-id="hf-s9r9" id="sfx-peak" data-start="31.9" data-duration="0.30" data-track-index="13" data-volume="0.9" src="assets/sfx/impact/impactBell_heavy_004.ogg"></audio>
+    </div>
+
+    <script>
+      gsap.registerPlugin(TextPlugin);
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ============================================================
+      // SCENE 1 — The one-liner (0 - 2.7) — VO1 0.4-2.384
+      // ============================================================
+      const CMD = 'irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex';
+      tl.fromTo("#s1-term", { opacity: 0, scale: 0.98 }, { opacity: 1, scale: 1, duration: 0.4, ease: "power2.out" }, 0);
+      tl.call(() => document.getElementById("s1-cursor").classList.replace("cursor-blink", "cursor-solid"), [], 0.3);
+      tl.to("#s1-typed", { text: { value: CMD }, duration: 2.29, ease: "none" }, 0.3);
+      tl.call(() => document.getElementById("s1-cursor").classList.replace("cursor-solid", "cursor-blink"), [], 2.59);
+
+      // ============================================================
+      // TRANSITION 1->2 (crossfade) at 2.7, 0.5s
+      // ============================================================
+      tl.to("#scene1", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 2.7);
+      tl.fromTo("#scene2", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 2.7);
+      tl.set("#scene1", { visibility: "hidden" }, 3.2);
+
+      // ============================================================
+      // SCENE 2 — Which backend (3.2 - 8.9) — VO2 3.3-8.612
+      // ============================================================
+      tl.fromTo("#s2-line1", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 3.3);
+      tl.fromTo("#s2-line2", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 3.7);
+      tl.fromTo("#s2-line3", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.35, ease: "power2.out" }, 4.1);
+
+      tl.fromTo("#s2-cap-a", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 3.3);
+      tl.to("#s2-cap-a", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 5.6);
+      tl.fromTo("#s2-cap-b", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 5.9);
+
+      // ============================================================
+      // TRANSITION 2->3 (crossfade) at 8.9, 0.5s
+      // ============================================================
+      tl.to("#scene2", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 8.9);
+      tl.fromTo("#scene3", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 8.9);
+      tl.set("#scene2", { visibility: "hidden" }, 9.4);
+
+      // ============================================================
+      // SCENE 3 — The gamble, offloaded (9.4 - 19.7) — centerpiece — VO3 9.5-19.42
+      // ============================================================
+      tl.fromTo("#s3-line1", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 9.5);
+      tl.fromTo("#s3-line2", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 10.0);
+
+      // Beat 1
+      tl.fromTo("#s3-h1", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 9.5);
+      tl.to("#s3-h1", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 11.8);
+
+      // Beat 2 + meter
+      tl.fromTo("#s3-h2", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 12.1);
+      tl.fromTo("#s3-meter-wrap", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 12.1);
+      tl.to("#s3-meter-fill", { scaleX: 0.86, duration: 1.6, ease: "power2.out" }, 12.2);
+      const ramCounter = { v: 0 };
+      tl.to(ramCounter, {
+        v: 127.7, duration: 1.6, ease: "power2.out",
+        onUpdate: () => { document.getElementById("s3-ram-num").textContent = ramCounter.v.toFixed(1); }
+      }, 12.2);
+      tl.fromTo("#s3-gpu-readout", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 14.0);
+      tl.to("#s3-h2", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 15.0);
+
+      // Beat 3 + cards
+      tl.fromTo("#s3-h3", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 15.0);
+      tl.fromTo("#s3-cards-wrap", { opacity: 0 }, { opacity: 1, duration: 0.2 }, 15.25);
+      ["#s3-card-1", "#s3-card-2", "#s3-card-3", "#s3-card-4"].forEach((sel, i) => {
+        tl.fromTo(sel, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "power3.out" }, 15.3 + i * 0.08);
+      });
+      ["#s3-card-1 .s3-card-check", "#s3-card-2 .s3-card-check", "#s3-card-3 .s3-card-check", "#s3-card-4 .s3-card-check"].forEach((sel, i) => {
+        tl.fromTo(sel, { opacity: 0 }, { opacity: 1, duration: 0.25 }, 15.8 + i * 0.12);
+      });
+      tl.to(["#s3-card-1", "#s3-card-2", "#s3-card-3"], { opacity: 0.55, duration: 0.4, ease: "power2.out" }, 16.3);
+      tl.fromTo("#s3-card-4", { scale: 1 }, { scale: 1.06, duration: 0.4, ease: "power2.out" }, 16.3);
+      tl.fromTo("#s3-card4-tag", { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.35, ease: "power3.out" }, 16.4);
+      tl.fromTo("#s3-source-note", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 16.8);
+
+      // ============================================================
+      // TRANSITION 3->4 (crossfade) at 19.7, 0.5s
+      // ============================================================
+      tl.to("#scene3", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 19.7);
+      tl.fromTo("#scene4", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 19.7);
+      tl.set("#scene3", { visibility: "hidden" }, 20.2);
+
+      // ============================================================
+      // SCENE 4 — What it locks down (20.2 - 27.3) — VO4 20.3-27.233
+      // (4th beat added for memory-service; VO4 now runs longer, so this
+      // scene's hold + transition-out both shifted later — see brag-plan.md)
+      // ============================================================
+      tl.fromTo("#s4-item-1", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "power3.out" }, 20.3);
+      tl.fromTo("#s4-item-2", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "power3.out" }, 21.6);
+      tl.fromTo("#s4-item-3", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "power3.out" }, 22.9);
+      tl.fromTo("#s4-item-4", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.45, ease: "power3.out" }, 24.2);
+
+      // ============================================================
+      // TRANSITION 4->5 (crossfade) at 27.3, 0.5s
+      // ============================================================
+      tl.to("#scene4", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 27.3);
+      tl.fromTo("#scene5", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 27.3);
+      tl.set("#scene4", { visibility: "hidden" }, 27.8);
+
+      // ============================================================
+      // SCENE 5 — Proof (27.8 - 32.2) — VO5 27.9-31.356
+      // ============================================================
+      ["#s5-b1", "#s5-b2", "#s5-b3", "#s5-b4"].forEach((sel, i) => {
+        tl.fromTo(sel, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }, 27.9 + i * 0.2);
+      });
+      const PROMPT = "Say hello world and nothing else.";
+      tl.to("#s5-prompt", { text: { value: PROMPT }, duration: 0.7, ease: "none" }, 29.0);
+      const RESPONSE = "Hello, what do you need help with?";
+      tl.to("#s5-response", { text: { value: RESPONSE }, duration: 2.0, ease: "none" }, 29.9);
+
+      // ============================================================
+      // TRANSITION 5->6 (outro crossfade, slower) at 32.2, 0.7s
+      // ============================================================
+      tl.to("#scene5", { opacity: 0, duration: 0.7, ease: "power1.inOut" }, 32.2);
+      tl.fromTo("#scene6", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power1.inOut" }, 32.2);
+      tl.set("#scene5", { visibility: "hidden" }, 32.9);
+
+      // ============================================================
+      // SCENE 6 — Outro (32.9 - 35.8) — VO6 33.0-35.261
+      // ============================================================
+      tl.fromTo("#s6-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 33.0);
+      tl.fromTo("#s6-tag", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 33.6);
+      tl.fromTo("#s6-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 34.2);
+      tl.set("#scene6", { visibility: "hidden" }, 35.81);
+
+      // ============================================================
+      // MUSIC — fade in to a ducked baseline (voice covers most of the
+      // runtime, so music stays low throughout rather than lifting/ducking
+      // per-clip), fade out after the last VO line finishes.
+      // ============================================================
+      tl.to("#bgm", { volume: 0.14, duration: 0.5, ease: "power1.out" }, 0);
+      tl.to("#bgm", { volume: 0, duration: 0.8, ease: "power1.in" }, 35.3);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
