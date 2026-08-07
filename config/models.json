@@ -44,6 +44,15 @@
       "role": "general",
       "tags": ["general", "balanced"],
       "supportsFunctionCalling": true
+    },
+    "nomic-embed-text": {
+      "size": "~274 MB",
+      "parameters": "137M",
+      "contextWindow": 2048,
+      "maxOutputTokens": 0,
+      "role": "embedding",
+      "tags": ["embedding", "memory-service"],
+      "supportsFunctionCalling": false
     }
   },
   "fallbackOrder": [

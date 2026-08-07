@@ -21,6 +21,15 @@ foreach ($dir in @($PlatformDir, "$PlatformDir\scripts", "$PlatformDir\config", 
 Copy-Item "$RepoDir\scripts\*.ps1" "$PlatformDir\scripts\" -Force
 Write-Host "  Scripts deployed" -ForegroundColor Green
 
+# Memory service (opt-in): app source always overwritten, repo is the source of truth.
+# The venv is created on first 'ai-memory-start', not here, so setup stays fast/offline.
+if (Test-Path "$RepoDir\memory-service") {
+    New-Item -Path "$PlatformDir\memory-service\app" -ItemType Directory -Force | Out-Null
+    Copy-Item "$RepoDir\memory-service\app\*" "$PlatformDir\memory-service\app\" -Recurse -Force
+    Copy-Item "$RepoDir\memory-service\requirements.txt" "$PlatformDir\memory-service\requirements.txt" -Force
+    Write-Host "  Memory service deployed (opt-in — run ai-memory-start to use it)" -ForegroundColor Green
+}
+
 # Config: copy templates without clobbering anything the user has already filled in,
 # unless -Force is passed. models.json and policy files are not secrets, always refresh those.
 Copy-Item "$RepoDir\config\models.json" "$PlatformDir\config\models.json" -Force

@@ -2,6 +2,7 @@
 
 ## Rules
 
+- ALWAYS use feature branching — never commit directly to `main`. One branch per task; independent tasks touching different file regions can run in parallel worktrees, conflicting ones sequence instead. Review the diff and run tests on the branch before merging (`git merge --no-ff`) or opening a PR (`gh pr create` — this repo has a public remote), then delete the branch.
 - Do what has been asked; nothing more, nothing less
 - NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
