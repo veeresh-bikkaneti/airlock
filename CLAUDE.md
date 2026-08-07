@@ -1,19 +1,20 @@
-# Ruflo — Claude Code Configuration
+# Repository Intelligence & Autonomous Execution Guidelines
 
-## Rules
+## 1. Core Operating Rules & Engineering Principles
 
-- ALWAYS use feature branching — never commit directly to `main`. One branch per task; independent tasks touching different file regions can run in parallel worktrees, conflicting ones sequence instead. Review the diff and run tests on the branch before merging (`git merge --no-ff`) or opening a PR (`gh pr create` — this repo has a public remote), then delete the branch.
-- Do what has been asked; nothing more, nothing less
-- NEVER create files unless absolutely necessary — prefer editing existing files
-- NEVER create documentation files unless explicitly requested
-- NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
-- ALWAYS read a file before editing it
-- NEVER commit secrets, credentials, or .env files
-- NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
-- Keep files under 500 lines
-- Validate input at system boundaries
+- **Think Before Coding:** Never make silent assumptions. If requirements, architecture, or dependencies are ambiguous, ask first.
+- **Simplicity First:** Implement the minimal code that works. Avoid single-use abstractions, speculative flexibility, or over-engineering.
+- **Surgical Edits:** Only modify code directly related to the active task. Do not reformat adjacent lines, touch untouched files, or alter project code style.
+- **Goal-Driven & Verifiable:** Establish clear success criteria up front. Verify every change using failing/passing test cycles or concrete quality gates.
+- **Branching:** ALWAYS use feature branching — never commit directly to `main`. One branch per task; independent tasks touching different file regions can run in parallel worktrees, conflicting ones sequence instead. Review the diff and run tests on the branch before merging (`git merge --no-ff`) or opening a PR (`gh pr create` — this repo has a public remote), then delete the branch.
+- **Scope Discipline:** Do what has been asked; nothing more, nothing less.
+- **File Hygiene:** NEVER create files unless absolutely necessary — prefer editing existing files. NEVER create documentation files unless explicitly requested. NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`. Keep files under 500 lines.
+- **Read Before Edit:** ALWAYS read a file before editing it.
+- **Secrets:** NEVER commit secrets, credentials, or `.env` files.
+- **Commit Attribution:** NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
+- **Input Validation:** Validate input at system boundaries.
 
-## Ruflo Capability Brain & Implementation Loop
+## 2. Ruflo Capability Brain & Implementation Loop
 
 Ruflo is the coordination ledger and policy decision point. Claude Code is the
 executor: after a Ruflo coordination call, continue implementing the task.
@@ -55,7 +56,7 @@ Follow the returned loop:
 - Bind tests, benchmarks, policy decisions, and release evidence to an exact
   commit or immutable dirty-worktree snapshot.
 
-## Agent Comms (SendMessage-First Coordination)
+## 3. Agent Comms (SendMessage-First Coordination)
 
 Named agents coordinate via `SendMessage`, not polling or shared state.
 
@@ -64,24 +65,9 @@ Lead (you) ←→ architect ←→ developer ←→ tester ←→ reviewer
               (named agents message each other directly)
 ```
 
-### Spawning a Coordinated Team
-
-```javascript
-// ALL agents in ONE message, each knows WHO to message next
-Agent({ prompt: "Research the codebase. SendMessage findings to 'architect'.",
-  subagent_type: "researcher", name: "researcher", run_in_background: true })
-Agent({ prompt: "Wait for 'researcher'. Design solution. SendMessage to 'coder'.",
-  subagent_type: "system-architect", name: "architect", run_in_background: true })
-Agent({ prompt: "Wait for 'architect'. Implement it. SendMessage to 'tester'.",
-  subagent_type: "coder", name: "coder", run_in_background: true })
-Agent({ prompt: "Wait for 'coder'. Write tests. SendMessage results to 'reviewer'.",
-  subagent_type: "tester", name: "tester", run_in_background: true })
-Agent({ prompt: "Wait for 'tester'. Review code quality and security.",
-  subagent_type: "reviewer", name: "reviewer", run_in_background: true })
-
-// Kick off the pipeline
-SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
-```
+Spawn all agents in one message, each named and told who to message next, e.g.:
+`Agent({ prompt: "...SendMessage findings to 'architect'.", name: "researcher", run_in_background: true })`
+Then kick off with `SendMessage({ to: "researcher", ... })`.
 
 ### Patterns
 
@@ -101,7 +87,13 @@ SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
 - Do not poll repeatedly — agents message back or complete automatically
 - Give every writing agent an isolated worktree and a non-overlapping file scope
 
-## Swarm & Routing
+## 4. Dynamic Discovery & Team Orchestration
+
+- **MCP Tools:** Discover on demand via `ToolSearch("keyword")` — the full tool roster is injected dynamically per session; don't enumerate it here.
+- **Agent Capabilities:** Available agent types are injected dynamically per session; any arbitrary string also works as a custom agent type.
+- **Coordinated Teams:** Use the Agent Comms pattern above (§3) — named `Agent()` calls + `SendMessage`. Don't call `swarm_init`/`agent_spawn` MCP tools directly for execution: per §9, MCP tools handle coordination (swarm, memory, hooks), the Agent tool handles execution (agents, files, code, git).
+
+## 5. Swarm & Routing
 
 ### Config
 - **Topology**: hierarchical-mesh (anti-drift)
@@ -125,8 +117,10 @@ npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --
 | Security | security-architect, auditor | hierarchical |
 
 ### When to Swarm
-- **YES**: 3+ files, new features, cross-module refactoring, API changes, security, performance
+- **YES** (offer/use a swarm): 3+ files, new features, cross-module refactoring, API changes, security, performance
 - **NO**: single file edits, 1-2 line fixes, docs updates, config changes, questions
+
+Spawning is user-triggered, not automatic. The YES column describes when a swarm is the right tool to *offer or use once asked*, not a trigger to launch one unprompted — unnecessary swarm spin-up burns tokens for no benefit on tasks a single agent handles fine.
 
 ### 3-Tier Model Routing
 
@@ -136,7 +130,7 @@ npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --
 | 2 | Haiku | Simple tasks, low complexity |
 | 3 | Sonnet/Opus | Architecture, security, complex reasoning |
 
-## Memory & Learning
+## 6. Memory & Learning
 
 ### Before Any Task
 ```bash
@@ -149,18 +143,6 @@ npx @claude-flow/cli@latest hooks route --task "[task description]"
 npx @claude-flow/cli@latest memory store --namespace patterns --key "[name]" --value "[what worked]"
 npx @claude-flow/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
 ```
-
-### MCP Tools (use `ToolSearch("keyword")` to discover)
-
-| Category | Key Tools |
-|----------|-----------|
-| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` |
-| **Bridge** | `memory_import_claude`, `memory_bridge_status` |
-| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` |
-| **Agents** | `agent_spawn`, `agent_list`, `agent_status` |
-| **Hooks** | `hooks_route`, `hooks_post-task`, `hooks_worker-dispatch` |
-| **Security** | `aidefence_scan`, `aidefence_is_safe`, `aidefence_has_pii` |
-| **Hive-Mind** | `hive-mind_init`, `hive-mind_consensus`, `hive-mind_spawn` |
 
 ### Background Workers
 
@@ -176,18 +158,7 @@ npx @claude-flow/cli@latest hooks post-task --task-id "[id]" --success true --st
 npx @claude-flow/cli@latest hooks worker dispatch --trigger audit
 ```
 
-## Agents
-
-**Core**: `coder`, `reviewer`, `tester`, `planner`, `researcher`
-**Architecture**: `system-architect`, `backend-dev`, `mobile-dev`
-**Security**: `security-architect`, `security-auditor`
-**Performance**: `performance-engineer`, `perf-analyzer`
-**Coordination**: `hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-**GitHub**: `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-Any string works as a custom agent type.
-
-## Build & Test
+## 7. Build & Test
 
 - ALWAYS run tests after code changes
 - ALWAYS verify build succeeds before committing
@@ -196,7 +167,7 @@ Any string works as a custom agent type.
 npm run build && npm test
 ```
 
-## CLI Quick Reference
+## 8. CLI Quick Reference
 
 ```bash
 npx @claude-flow/cli@latest init --wizard           # Setup
@@ -210,7 +181,7 @@ npx @claude-flow/cli@latest performance benchmark    # Benchmarks
 
 26 commands, 140+ subcommands. Use `--help` on any command for details.
 
-## Setup
+## 9. Setup
 
 ```bash
 claude mcp add claude-flow -- npx -y ruflo@latest mcp start
