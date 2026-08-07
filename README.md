@@ -531,19 +531,45 @@ airlock/
 │   ├── docker-compose.yml
 │   ├── run-hermes.ps1
 │   └── stop-hermes.ps1
-└── memory-service/               # FastAPI app: vector DB + RAG + LangGraph session memory
-    ├── app/
-    │   ├── main.py                # FastAPI routes: /health, /v1/memory/*, /v1/chat/completions proxy
-    │   ├── memory_store.py        # Chroma vector DB (remember/recall)
-    │   ├── graph.py                # LangGraph retrieve -> inject -> forward pipeline
-    │   ├── checkpointer.py        # Per-session short-term/working memory
-    │   ├── embeddings.py          # Ollama /api/embeddings client
-    │   ├── proxy.py                # Forwards to the real backend, tracks active provider
-    │   ├── audit.py                # Structured audit logging
-    │   └── config.py
-    ├── tests/
-    └── requirements.txt
+├── memory-service/                # FastAPI app: vector DB + RAG + LangGraph session memory
+│   ├── app/
+│   │   ├── main.py                # FastAPI routes: /health, /v1/memory/*, /v1/chat/completions proxy
+│   │   ├── memory_store.py        # Chroma vector DB (remember/recall)
+│   │   ├── graph.py                # LangGraph retrieve -> inject -> forward pipeline
+│   │   ├── checkpointer.py        # Per-session short-term/working memory
+│   │   ├── embeddings.py          # Ollama /api/embeddings client
+│   │   ├── proxy.py                # Forwards to the real backend, tracks active provider
+│   │   ├── audit.py                # Structured audit logging
+│   │   └── config.py
+│   ├── tests/
+│   └── requirements.txt
+└── tools/
+    └── 3d-system-visualizer/      # Standalone Three.js system-design + workflow visualizer
+        └── index.html
 ```
+
+---
+
+## 🧊 3D System Visualizer
+
+Standalone, single-file Three.js scene (`tools/3d-system-visualizer/index.html`) for visualizing a system's services, data stores, and edges as a 3D node graph — with animated workflow playback (a packet travels the actual call path, step by step) and built-in scene validation (catches edges referencing missing nodes, like the intentional "BROKEN" demo entry).
+
+No build step, no dependencies to install — it pulls Three.js from a CDN via an import map.
+
+![3D system visualizer mid-workflow](tools/3d-system-visualizer/preview.png)
+
+**Run it locally:**
+
+```powershell
+# from repo root
+python -m http.server 8347 --directory tools/3d-system-visualizer
+# or
+npx serve tools/3d-system-visualizer
+```
+
+Open `http://localhost:8347` and click a workflow button in the top-left panel to watch it animate through the graph.
+
+> Import maps require a real HTTP origin — opening `index.html` directly via `file://` will fail to load the ES modules.
 
 ---
 
