@@ -425,7 +425,7 @@ if ($modelPullPending) {
     Write-Host "  Model   : $Model" -ForegroundColor White
 }
 Write-Host "  Bind    : 127.0.0.1 ONLY (no external)" -ForegroundColor White
-Write-Host "  Firewall: Inbound port $LivePort BLOCKED" -ForegroundColor $(if (Test-FirewallRule $LivePort) { "Green" } else { "Yellow" })
+Write-Host "  Firewall: $(if (Test-FirewallRule $LivePort) { "Inbound port $LivePort BLOCKED" } else { "NO RULE on port $LivePort (defense-in-depth only — listener is loopback-only, not externally reachable either way)" })" -ForegroundColor $(if (Test-FirewallRule $LivePort) { "Green" } else { "Yellow" })
 Write-Host "  Logs    : $LogFile" -ForegroundColor Gray
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
