@@ -59,6 +59,8 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 /* ======================================================================
    SAMPLE SCENE DATA — exactly the schema the user specified:
@@ -172,6 +174,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 host.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -181,14 +185,48 @@ controls.target.set(0, 0, 0);
 const DEFAULT_CAMERA_POS = camera.position.clone();
 const DEFAULT_CAMERA_TARGET = controls.target.clone();
 
-scene.add(new THREE.AmbientLight(0x8899aa, 0.9));
-const key = new THREE.DirectionalLight(0xffffff, 1.0);
+/* ======================================================================
+   IMAGE-BASED LIGHTING — a procedural "room" environment (PMREMGenerator
+   over RoomEnvironment, no HDRI file to fetch) so physical materials get
+   real reflections/highlights instead of the flat matte look a plain
+   directional+ambient rig gives. This is the single biggest lever for
+   "looks like a Three.js example" vs. "looks like colored boxes."
+   ====================================================================== */
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+pmremGenerator.dispose();
+
+const hemi = new THREE.HemisphereLight(0x8fa8c9, 0x0b0d10, 0.5);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffffff, 1.6);
 key.position.set(8, 14, 10);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 1;
+key.shadow.camera.far = 50;
+key.shadow.camera.left = -16;
+key.shadow.camera.right = 16;
+key.shadow.camera.top = 14;
+key.shadow.camera.bottom = -14;
+key.shadow.bias = -0.0015;
+key.shadow.radius = 3;
 scene.add(key);
 
 const grid = new THREE.GridHelper(40, 40, 0x2a2e35, 0x1a1d22);
 grid.position.y = -5;
 scene.add(grid);
+
+// Real shadow-catcher: a large dim plane at the same height as the grid.
+// Subsumes the old per-node fake contact-shadow decals — one physically
+// correct shadow system instead of two competing ones.
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 80),
+  new THREE.ShadowMaterial({ opacity: 0.45 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -5 + 0.001;
+ground.receiveShadow = true;
+scene.add(ground);
 
 /* ======================================================================
    SELECTIVE BLOOM — only the flow packet and the currently-hovered edge
@@ -267,37 +305,6 @@ finalComposer.addPass(renderPass);
 finalComposer.addPass(mixPass);
 finalComposer.addPass(new OutputPass());
 
-/* ======================================================================
-   CONTACT SHADOWS — a soft radial-gradient decal under each node, cheap
-   depth cue without shadow maps. One shared texture, one plane per node.
-   ====================================================================== */
-function makeContactShadowTexture() {
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, "rgba(0,0,0,0.55)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
-}
-const contactShadowTexture = makeContactShadowTexture();
-function addContactShadow(pos) {
-  const geo = new THREE.PlaneGeometry(NODE_SIZE * 2.4, NODE_SIZE * 2.4);
-  const mat = new THREE.MeshBasicMaterial({
-    map: contactShadowTexture,
-    transparent: true,
-    depthWrite: false,
-    toneMapped: false
-  });
-  const decal = new THREE.Mesh(geo, mat);
-  decal.rotation.x = -Math.PI / 2;
-  decal.position.set(pos[0], pos[1] - NODE_SIZE / 2 - 0.001, pos[2]);
-  scene.add(decal);
-}
-
 const TYPE_COLOR = {
   service: 0x4f8fd1,
   datastore: 0xd1a84f,
@@ -339,13 +346,21 @@ function makeLabelSprite(text) {
 function buildNodes(data) {
   for (const n of data.nodes) {
     const color = TYPE_COLOR[n.type] || TYPE_COLOR.default;
-    const geo = new THREE.BoxGeometry(NODE_SIZE, NODE_SIZE, NODE_SIZE);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.15 });
+    const geo = new RoundedBoxGeometry(NODE_SIZE, NODE_SIZE, NODE_SIZE, 4, 0.12);
+    const mat = new THREE.MeshPhysicalMaterial({
+      color,
+      roughness: 0.4,
+      metalness: 0.4,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.3,
+      envMapIntensity: 0.9
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(...n.pos);
     mesh.userData = { nodeId: n.id };
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
-    addContactShadow(n.pos);
 
     const label = makeLabelSprite(n.label);
     label.position.set(n.pos[0], n.pos[1] + NODE_SIZE, n.pos[2]);
@@ -384,8 +399,14 @@ function buildEdges(data) {
     // pre-rotated geometry).
     const quat = new THREE.Quaternion().setFromUnitVectors(UP, dir);
 
-    const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 6);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x3a4048, emissive: 0x000000, roughness: 0.6 });
+    const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 8);
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: 0x4a5058,
+      emissive: 0x000000,
+      roughness: 0.4,
+      metalness: 0.7,
+      envMapIntensity: 0.9
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(a).addScaledVector(dir, len / 2); // midpoint of a→b
     mesh.quaternion.copy(quat);
@@ -574,6 +595,7 @@ for (const flow of SCENE_DATA.flows) {
         btn.classList.add("playing");
         btn.textContent = `⏸ ${flow.name}`;
         flyToFlow(flow);
+        scheduleIdleAutoRotate();
       }
     });
   }
@@ -582,6 +604,25 @@ for (const flow of SCENE_DATA.flows) {
 document.getElementById("labels-toggle").addEventListener("change", (ev) => {
   for (const { label } of registry.nodes.values()) label.visible = ev.target.checked;
 });
+
+/* ======================================================================
+   IDLE AUTO-ROTATE — a slow orbit kicks in after a few seconds of no
+   interaction and no flow playing, so the scene reads as "alive" the way
+   Three.js's own example gallery demos do. Any drag, or starting a flow,
+   cancels it; it re-arms once things go quiet again.
+   ====================================================================== */
+controls.autoRotateSpeed = 0.6;
+let idleTimer = null;
+function scheduleIdleAutoRotate() {
+  controls.autoRotate = false;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    const anyPlaying = [...animators.values()].some(a => a.playing);
+    if (!anyPlaying) controls.autoRotate = true;
+  }, 3000);
+}
+controls.addEventListener("start", scheduleIdleAutoRotate);
+scheduleIdleAutoRotate();
 
 /* ======================================================================
    RENDER LOOP
