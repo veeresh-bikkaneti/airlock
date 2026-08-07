@@ -109,8 +109,8 @@ Hermes is a **sandboxed AI agent** for career operations (job applications, resu
 ```mermaid
 flowchart LR
     subgraph "Host OS (Your Machine)"
-        A[Your Personal Files] -.NOT ACCESSIBLE.> B[Hermes Container]
-        C[Local Code Repo] -.NOT ACCESSIBLE.> B
+        A[Your Personal Files] -. NOT ACCESSIBLE .-> B[Hermes Container]
+        C[Local Code Repo] -. NOT ACCESSIBLE .-> B
         D[Career-Ops Repo] -->|Read-Only Mount| B
     end
 
@@ -163,69 +163,21 @@ cd ../airlock/hermes-container
 
 ## 🏗️ Architecture
 
+The big picture — the diagrams below this one cover backend selection, startup/shutdown, and the data model each in detail, so this one stays deliberately simple:
+
 ```mermaid
-flowchart TD
-    subgraph "User Layer"
-        A[PowerShell Profile] -->|ai-start| B[Start-AI.ps1]
-        A -->|ai-stop| C[Stop-AI.ps1]
-        A -->|ai-code/ai-switch| D[profile-helpers.ps1]
-        A -->|ai-port/ai-provider| D
-    end
+flowchart LR
+    U([You]) -->|ai-start| P[Airlock picks<br/>one backend:<br/>Ollama or vLLM]
+    P --> E["One stable endpoint<br/>127.0.0.1:12345/v1<br/>same either way"]
+    E --> C["Your AI tool<br/>aider · Claude Code · opencode"]
+    P -.->|always on| G["Firewall-blocked · single-instance only<br/>every action audit-logged"]
+    E -.->|only if you enable it| CL["Cloud fallback<br/>(OpenRouter, OpenAI, Anthropic...)"]
 
-    subgraph "Backend Selection"
-        B --> E[First run or provider-policy.json missing?]
-        E -->|Yes| F[Get-BackendCapability]
-        E -->|No| G[Read preferredLocalProvider]
-        F --> H{NVIDIA GPU + Docker?}
-        H -->|Yes| I["Prompt: Ollama or vLLM?"]
-        H -->|No| J[Default to Ollama]
-        I --> K[Persist choice to provider-policy.json]
-        G --> K
-        J --> K
-    end
-
-    subgraph "Backend Launch"
-        K --> L{Which backend?}
-        L -->|Ollama| M[Start-AI.ps1 continues<br/>Single Instance Check<br/>Start Ollama on 12345]
-        L -->|vLLM| N[Hand off to Start-VLLM.ps1<br/>docker run vllm/vllm-openai<br/>Poll health check]
-        N --> O{Container healthy?}
-        O -->|No| P[Fall back to Ollama]
-        P --> M
-        O -->|Yes| Q["Both converge on<br/>127.0.0.1:12345/v1"]
-    end
-
-    subgraph "Local Inference"
-        M --> Q
-        Q --> R["OpenAI-compatible API"]
-        R --> S[Models available]
-    end
-
-    subgraph "Security & Observability"
-        M --> T[Set Firewall Guard<br/>AI-Platform-Backend-Block-12345]
-        M --> U[Write .active-port.json<br/>state/active-provider.json]
-        M --> V[Write audit log<br/>logs/YYYY-MM-DD.jsonl]
-    end
-
-    subgraph "Cloud Fallback (Policy-gated)"
-        D --> W{Policy Check}
-        W -->|Allowed| X[SecretVault Lookup]
-        X -->|Key Found| Y["OpenRouter / OpenAI<br/>/ Anthropic / others"]
-        X -->|Key Missing| Z[Fail Closed]
-        W -->|Blocked| Z
-    end
-
-    subgraph "AI Clients"
-        S --> AA["aider<br/>Claude Code<br/>opencode/custom clients"]
-        Y --> AA
-        AA -->|All talk to| AB["http://127.0.0.1:12345/v1<br/>(regardless of backend)"]
-    end
-
-    style B fill:#f9f,stroke:#333,stroke-width:4px
-    style C fill:#f9f,stroke:#333,stroke-width:4px
-    style Q fill:#9f9,stroke:#333,stroke-width:2px
-    style Y fill:#ff9,stroke:#333,stroke-width:2px
-    style V fill:#99f,stroke:#333,stroke-width:2px
+    style P fill:#f9f,stroke:#333,stroke-width:3px
+    style E fill:#9f9,stroke:#333,stroke-width:2px
 ```
+
+**How to read the diagram below this point:** "Backend Selection Flowchart" is *how* Airlock picks Ollama vs. vLLM (the `P` box above, expanded). "Start/Stop State Lifecycle" is *what happens* when you run `ai-start`/`ai-stop`, in order. "Data Model" is the JSON files on disk and what each one holds. You don't need all three to use Airlock — they're here for when something doesn't match what you expected.
 
 ### Backend Selection Flowchart
 
@@ -472,7 +424,7 @@ flowchart LR
 
 1. **Single-instance enforcement** — prevents resource conflicts
 2. **Firewall guard** — blocks inbound traffic to Ollama port
-3. **Secret isolation** — API keys in PowerShell SecretVault, never in code
+3. **Secret isolation** — API keys stored via `ai-auth-set` in `~/.ai-platform/config/auth.json`, gitignored, never in code
 4. **Audit logging** — every request logged with timestamp, user, model, provider
 5. **Fail-closed policy** — missing secrets = no cloud fallback
 6. **Model digest verification** — ensures model integrity
