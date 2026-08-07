@@ -358,6 +358,26 @@ function Start-HuggingFaceImport {
     return $modelName
 }
 
+function Select-BestCuratedModel {
+    # Pure: no I/O, no logging, no network. Extracted from Select-BestModel so
+    # it's directly testable, same reason Get-ModelSizingCeilingGB was extracted.
+    param(
+        [Parameter(Mandatory)][double]$AvailableGB,
+        [Parameter(Mandatory)][object]$ModelsConfig
+    )
+    $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
+        $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
+        [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($AvailableGB -ge ($sizeGB * 1.2)) }
+    }
+    $candidateSummary = ($candidates | ForEach-Object { "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))" }) -join ", "
+    # Prefer the largest model that still fits comfortably (with 20% headroom).
+    $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
+    [pscustomobject]@{
+        Model   = if ($winner) { $winner.Name } else { $null }
+        Summary = $candidateSummary
+    }
+}
+
 function Select-BestModel {
     param(
         [Parameter(Mandatory)][double]$AvailableGB,
@@ -378,16 +398,11 @@ function Select-BestModel {
     if (Test-Path $modelsConfigPath) {
         try {
             $modelsConfig = Get-Content $modelsConfigPath -Raw | ConvertFrom-Json
-            $candidates = foreach ($candidate in $modelsConfig.fallbackOrder) {
-                $sizeGB = [double]($modelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
-                [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($AvailableGB -ge ($sizeGB * 1.2)) }
-            }
-            $candidateSummary = ($candidates | ForEach-Object { "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))" }) -join ", "
+            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig
+            $candidateSummary = $selection.Summary
 
-            # Prefer the largest model that still fits comfortably (with 20% headroom).
-            $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
-            if ($winner) {
-                $Model = $winner.Name
+            if ($selection.Model) {
+                $Model = $selection.Model
                 $reason = "largest model that fits in $([math]::Round($AvailableGB,1)) GB with headroom"
                 Write-Host "  Auto-selected model: $Model (fits $([math]::Round($AvailableGB,1)) GB available)" -ForegroundColor Cyan
                 Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `

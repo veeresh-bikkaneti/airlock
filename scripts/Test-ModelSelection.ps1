@@ -4,16 +4,15 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $modelsConfig = Get-Content (Join-Path $ScriptDir "..\config\models.json") -Raw | ConvertFrom-Json
 
-# Load model acquisition module for Get-ModelSizingCeilingGB
+# Load model acquisition module for Get-ModelSizingCeilingGB / Select-BestCuratedModel
 . (Join-Path $ScriptDir "Get-ModelAcquisition.ps1")
 
+# Thin wrapper over the real, pure Select-BestCuratedModel (extracted from
+# Select-BestModel specifically so it's safe to call here without triggering
+# Select-BestModel's network calls / audit logging / HF background downloads).
 function Select-ModelForMemory([double]$availableGB) {
-    $candidates = foreach ($candidate in $modelsConfig.fallbackOrder) {
-        $sizeGB = [double]($modelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
-        [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($availableGB -ge ($sizeGB * 1.2)) }
-    }
-    $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
-    if ($winner) { return $winner.Name }
+    $selection = Select-BestCuratedModel -AvailableGB $availableGB -ModelsConfig $modelsConfig
+    if ($selection.Model) { return $selection.Model }
     return $modelsConfig.fallbackOrder[-1]
 }
 

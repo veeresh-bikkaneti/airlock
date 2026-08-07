@@ -45,6 +45,7 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Handle already-pulled models as a no-op (skip re-download).
 - Priority: **P0**
 - Implemented: `scripts/Get-ModelAcquisition.ps1:350-437` runs `ollama pull` in a background `Start-Job` for curated models, or launches `Start-HuggingFaceImport` for HF-sourced models. Both warm the model with a no-prompt `/api/generate` call and skip already-available models. `Start-ModelAcquisitionPull` (lines 343-437) detects HF models by name prefix and skips registry pull for them.
+- **Confirmed gap (real end-to-end test, 2026-08-07)**: the "ponytail" limitation noted in-code (`Start-Job only survives this PowerShell session`) is not theoretical — it reproduced on the very first live run. `ai-start -Model qwen2.5:0.5b` logged `ModelPull STARTED` and printed "will auto-start when ready," but the pull job died silently when the invoking PowerShell process exited: no `SUCCESS`/`FAILED` audit entry ever followed, `ollama list` showed zero models minutes later, and the console gave no indication anything had gone wrong. This will bite any invocation pattern where the process that ran `ai-start` doesn't stay alive for the full download (scripted/CI-style calls, some remote-exec wrappers) — an interactive terminal kept open is fine, but the failure is silent and undetectable from the console output either way. Upgrading from "accepted tradeoff, low priority" — needs either a completion check on next `ai-start`/`ai-health` (detect "model still missing after a plausible pull duration" and surface it) or the documented detached-process upgrade. Priority raised to **P2**.
 
 ### 4b. Wire up Hugging Face acquisition — **Status: Done**
 **As a** user **I want** a model actually downloaded from Hugging Face when nothing in the curated Ollama list fits **so that** the "check HF" story pays off instead of just logging a source that never supplies a model.
@@ -123,9 +124,15 @@ Sonnet orchestrator + 6 Haiku expert reviewers across scripts/, config/, hermes-
 
 ### 10. Make Test-ModelSelection.ps1 test the real Select-BestModel — **Status: Backlog**
 **As a** maintainer **I want** the model-selection test to exercise the actual production function **so that** a regression in `Select-BestModel` (`scripts/Get-ModelAcquisition.ps1:361`) gets caught.
-- `scripts/Test-ModelSelection.ps1:10-18` defines its own `Select-ModelForMemory` copy instead of calling `Select-BestModel` — the real function includes HF fallback/discovery the test never exercises.
-- Feeds into the queued `/ruflo-testgen:testgen` pass.
 - Priority: **P2**
+- **Fixed** (2026-08-07): `Select-BestModel` mixed pure scoring logic with real network calls (Get-ModelDiscoverySources, HuggingFace API), audit-log writes, and a possible real background download job — directly calling it from a test would have been actively harmful, not just untested. Extracted the pure candidate-scoring logic into `Select-BestCuratedModel` (`Get-ModelAcquisition.ps1:361-379`, no I/O), same pattern already used for `Get-ModelSizingCeilingGB`. `Select-BestModel` now calls it internally, unchanged externally. `Test-ModelSelection.ps1` now calls the real `Select-BestCuratedModel` instead of a hand-copied duplicate. All existing test cases still pass.
+
+### 12. `Start-AI.ps1`, `Stop-AI.ps1`, `profile-helpers.ps1`, `Start-VLLM.ps1` have zero test coverage — **Status: Backlog, needs a real decision**
+**As a** maintainer **I want** these scripts covered **so that** regressions in the platform's core lifecycle get caught before a user hits them.
+- Checked for safely-testable pure logic the way `Select-BestCuratedModel`/`Get-ModelSizingCeilingGB` were extracted: there isn't any. Every function in these 4 files is a thin wrapper around real OS state — `Get-Process`, `Stop-Process`, `Get-NetFirewallRule`, `docker ps`, real HTTP health checks, real file writes to `~/.ai-platform`. There's no pure decision logic left to extract; the logic *is* "do this real thing."
+- Testing these for real needs either a mocking framework (this repo currently has none — all existing `Test-*.ps1` files are plain assertion loops against pure functions, no `Pester`, no `Mock`) or refactoring every OS call behind an injectable interface, which is a much bigger change than "add tests."
+- Not doing either unprompted — that's a real infrastructure decision (adopt Pester? how much refactoring is worth it for test coverage on a single-user local tool?), not a mechanical testgen task.
+- Priority: **P3** (flag, don't silently skip)
 
 ### 11. Regenerate or delete the stale artifact manifest — **Status: Backlog**
 **As a** maintainer **I want** `docs/artifact-manifest.json` to either be accurate or gone **so that** it doesn't look like a live integrity check when it isn't.
@@ -153,6 +160,20 @@ User asked for beginner-friendly architecture diagrams (flowchart, entity diagra
 **As a** user **I want** the Windows implementation guide to only ask me to create files the platform actually reads **so that** I'm not doing pointless setup work.
 - Step 1 creates `~/.ai-platform/.env` and sets ACLs on it. Confirmed by grep: no script reads this path. Lower priority than the vault fix above since it's just an unused empty file, not a wasted module install.
 - Priority: **P3**
+
+## Real End-to-End Test (2026-08-07)
+Everything up to this point in the doc was verified by parse-checking (`Parser::ParseFile`, syntax only) and static code reading — never actually executed. Ran the real thing for the first time, start to finish, on this machine:
+
+1. `setup.ps1` — deployed for real to `~/.ai-platform`.
+2. `Start-AI.ps1 -Model qwen2.5:0.5b -StrictPort` — real run. Attempted vLLM first (a stored `preferredLocalProvider: vllm` pre-existed on this machine from unrelated prior activity), Docker wasn't running, failed fast and fell back to Ollama automatically — live confirmation ADR-003's fallback path (point 5) works, not just on paper.
+3. Ollama auto-installed for real via `winget` (real download, real install).
+4. Single-instance enforcement caught and killed 2 real stale Ollama processes that winget's installer had auto-launched — live confirmation the core "never more than one instance" guarantee holds against a real auto-launch, not a synthetic scenario.
+5. Firewall rule creation failed with "Access is denied" — expected, the test shell wasn't elevated. Confirmed the code degrades gracefully (warning + manual fallback command) instead of crashing, but real caveat: port 12345 was **not** actually firewall-blocked during this test run.
+6. Model pull via the default background `Start-Job` path silently died (see story 4's "Confirmed gap" above) — had to `ollama pull qwen2.5:0.5b` manually to unblock the rest of the test.
+7. Real chat completion against `http://127.0.0.1:12345/v1/chat/completions` returned a real response from the real model.
+8. `Stop-AI.ps1` — real shutdown. Found and killed 3 real Ollama processes (one more than the app+serve pair `Stop-AI.ps1`'s own health-check comment expects — likely a second auto-launch during the session), all cleaned up correctly. Verified after: zero Ollama processes, both state files removed, port 12345 no longer listening.
+
+Net: the core lifecycle (install → single-instance enforce → serve → real completion → clean stop) works end-to-end for real. The one real functional gap found by actually running it (not by reading the code) was the silent background-pull death — exactly the kind of bug static analysis and parse-checking cannot catch.
 
 ## Cleanup candidates (unrelated to any feature, flagged not actioned)
 - 4 stale `worktree-agent-*` git branches.

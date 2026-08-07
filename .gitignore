@@ -114,3 +114,5 @@ agentdb.rvf.idmap.json
 
 # Claude Code local tooling config (agent templates, local settings) - not product content
 .claude/
+.agents/
+skills-lock.json
