@@ -32,7 +32,7 @@ Entry → key action → result, and this time the "key action" beat is itself t
 - Interpretation: still restrained and real. Deliberately extended past this format's normal 15-25s guidance (to ~31s) because the model-sizing decision is the actual core insight and deserves full-sentence explanation with real reading time, not compressed labels. Everything else stays lean so the extra length buys depth in one place, not padding everywhere.
 
 ## Format: landscape — 1920x1080
-## Duration: 33s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed from an initial 31s cut once voiceover was added on 2026-08-07 — the generated Kokoro clips set the actual pace per scene, notably Scene 2's narration needing ~5.3s where the silent cut only budgeted ~3.7s)
+## Duration: 35.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed twice: first from an initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4 — the regenerated Kokoro VO4 clip runs 6.9s, longer than the original 3-beat scene budgeted for)
 
 ## Visual identity (from the project)
 - Background: near-black terminal (`#0C0C0C`, matches Windows Terminal's default dark theme)
@@ -95,7 +95,7 @@ Music: continues low.
 Transition mood: clean slide → Scene 5.
 
 ### Scene 5 — Proof — 5s
-Terminal snaps back to full focus. The real colored "AI PLATFORM READY (Hardened)" banner appears (Endpoint, `Bind: 127.0.0.1 ONLY`, `Firewall: Protected`). Then a real chat prompt is sent and a real response streams onto screen — the actual captured exchange from today's test.
+Terminal snaps back to full focus. The real colored "AI PLATFORM READY (Hardened)" banner appears (Endpoint, `Bind: 127.0.0.1 ONLY`, `Firewall: Inbound port 12345 BLOCKED`). Then a real chat prompt is sent and a real response streams onto screen — the actual captured exchange from today's test.
 Sequential/interaction: yes — banner reveals line by line and holds briefly; then the prompt appears, then the response streams in.
 Audio intent: payoff — the emotional peak of the video.
 Audio-coupled idea: confirm chime on the banner completing; distinct "message received" cue as the response lands.
