@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>System Design 3D Visualizer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d10; overflow: hidden; font-family: -apple-system, "Segoe UI", sans-serif; }
+  #canvas-host { position: fixed; inset: 0; }
+  #canvas-host canvas { display: block; }
+
+  #ui { position: fixed; top: 14px; left: 14px; z-index: 10; display: flex; flex-direction: column; gap: 8px; max-width: 320px; }
+  #ui .panel { background: rgba(20,22,26,0.88); border: 1px solid #2a2e35; border-radius: 8px; padding: 10px 12px; color: #d8dbe0; font-size: 13px; }
+  #ui .panel h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: #8b93a1; }
+  #ui button { display: block; width: 100%; margin-bottom: 6px; padding: 7px 10px; background: #1c2128; border: 1px solid #333a44; color: #e6e9ee; border-radius: 6px; cursor: pointer; font-size: 13px; text-align: left; }
+  #ui button:hover { background: #262c35; }
+  #ui button.playing { border-color: #4fd18b; color: #4fd18b; }
+  #ui button:disabled { opacity: .45; cursor: not-allowed; }
+  #ui label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aab1bd; cursor: pointer; }
+
+  #errors { position: fixed; top: 14px; right: 14px; z-index: 10; max-width: 380px; }
+  #errors .panel { background: rgba(58,20,20,0.92); border: 1px solid #7a2f2f; border-radius: 8px; padding: 10px 12px; color: #ffd7d7; font-size: 12.5px; }
+  #errors .panel h3 { margin: 0 0 6px; font-size: 12px; color: #ff9b9b; }
+  #errors ul { margin: 0; padding-left: 18px; }
+  #errors li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <div id="canvas-host"></div>
+
+  <div id="ui">
+    <div class="panel">
+      <h3>Workflows</h3>
+      <div id="flow-buttons"></div>
+      <label><input type="checkbox" id="labels-toggle" checked /> Show labels</label>
+    </div>
+  </div>
+
+  <div id="errors" style="display:none">
+    <div class="panel">
+      <h3>Scene validation errors</h3>
+      <ul id="error-list"></ul>
+    </div>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ======================================================================
+   SAMPLE SCENE DATA — exactly the schema the user specified:
+   nodes:  { id, label, pos: [x,y,z], type? }
+   edges:  { from, to, label?, style? }
+   flows:  { name, path: [nodeId, ...], loop?, speed? }
+
+   This is a small illustrative graph (11 nodes). The renderer below makes
+   no assumption about node count — the same code path handles 50+ nodes,
+   see the "Show labels" toggle and DECLUTTER_THRESHOLD note in D) below.
+   ====================================================================== */
+const SCENE_DATA = {
+  nodes: [
+    { id: "client",      label: "Client",           pos: [-8, 0, 0],  type: "external" },
+    { id: "gateway",     label: "API Gateway",       pos: [-4, 0, 0],  type: "service" },
+    { id: "auth",        label: "Auth Service",      pos: [-4, 3, -3], type: "service" },
+    { id: "orders",      label: "Orders Service",    pos: [0, 0, 0],   type: "service" },
+    { id: "inventory",   label: "Inventory Service", pos: [0, 3, -3],  type: "service" },
+    { id: "payments",    label: "Payments Service",  pos: [4, 0, 0],   type: "service" },
+    { id: "ledger_db",   label: "Ledger DB",         pos: [4, -3, -3], type: "datastore" },
+    { id: "orders_db",   label: "Orders DB",         pos: [0, -3, -3], type: "datastore" },
+    { id: "queue",       label: "Event Queue",       pos: [0, 0, 4],   type: "infra" },
+    { id: "notifier",    label: "Notification Svc",  pos: [4, 3, 4],   type: "service" },
+    { id: "webhook",     label: "Partner Webhook",   pos: [8, 3, 4],   type: "external" }
+  ],
+  edges: [
+    { from: "client",    to: "gateway",   label: "HTTPS" },
+    { from: "gateway",   to: "auth",      label: "verify token" },
+    { from: "auth",      to: "gateway",   label: "token ok" },
+    { from: "gateway",   to: "orders",    label: "create order" },
+    { from: "orders",    to: "inventory", label: "reserve stock" },
+    { from: "inventory", to: "orders",    label: "reserved" },
+    { from: "orders",    to: "orders_db", label: "write" },
+    { from: "orders",    to: "payments",  label: "charge" },
+    { from: "payments",  to: "ledger_db", label: "write" },
+    { from: "orders",    to: "queue",     label: "OrderCreated" },
+    { from: "queue",     to: "notifier",  label: "consume" },
+    { from: "notifier",  to: "webhook",   label: "POST" }
+  ],
+  flows: [
+    {
+      name: "Place order (happy path)",
+      path: ["client", "gateway", "auth", "gateway", "orders", "inventory", "orders", "payments", "ledger_db"],
+      loop: true,
+      speed: 3
+    },
+    {
+      name: "Order confirmation event",
+      path: ["orders", "queue", "notifier", "webhook"],
+      loop: true,
+      speed: 2.5
+    },
+    {
+      name: "BROKEN — missing edge (demonstrates error handling, see E)",
+      path: ["client", "payments"],
+      loop: false,
+      speed: 3
+    }
+  ]
+};
+
+/* ======================================================================
+   E) VALIDATION — fail loudly, never invent missing graph structure.
+   A flow that references a missing node, or steps between two nodes with
+   no matching directed edge, is rejected: it will not appear as playable,
+   and the exact missing id/edge is reported. Other valid flows still work.
+   ====================================================================== */
+function validateScene(data) {
+  const nodeIds = new Set(data.nodes.map(n => n.id));
+  const edgeKey = (a, b) => `${a}->${b}`;
+  const edgeSet = new Set(data.edges.map(e => edgeKey(e.from, e.to)));
+  const errors = [];
+
+  for (const e of data.edges) {
+    if (!nodeIds.has(e.from)) errors.push({ scope: "edge", message: `Edge references missing node "${e.from}"` });
+    if (!nodeIds.has(e.to))   errors.push({ scope: "edge", message: `Edge references missing node "${e.to}"` });
+  }
+
+  const flowErrors = new Map(); // flow.name -> [messages]
+  for (const flow of data.flows) {
+    const msgs = [];
+    for (const id of flow.path) {
+      if (!nodeIds.has(id)) msgs.push(`references missing node "${id}"`);
+    }
+    for (let i = 0; i < flow.path.length - 1; i++) {
+      const a = flow.path[i], b = flow.path[i + 1];
+      if (nodeIds.has(a) && nodeIds.has(b) && !edgeSet.has(edgeKey(a, b))) {
+        msgs.push(`no edge "${a}" → "${b}" (step ${i + 1})`);
+      }
+    }
+    if (msgs.length) flowErrors.set(flow.name, msgs);
+  }
+
+  return { errors, flowErrors };
+}
+
+/* ======================================================================
+   SCENE SETUP
+   ====================================================================== */
+const host = document.getElementById("canvas-host");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d10);
+scene.fog = new THREE.Fog(0x0b0d10, 20, 60);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(10, 9, 16);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+host.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.target.set(0, 0, 0);
+
+scene.add(new THREE.AmbientLight(0x8899aa, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.0);
+key.position.set(8, 14, 10);
+scene.add(key);
+
+const grid = new THREE.GridHelper(40, 40, 0x2a2e35, 0x1a1d22);
+grid.position.y = -5;
+scene.add(grid);
+
+const TYPE_COLOR = {
+  service: 0x4f8fd1,
+  datastore: 0xd1a84f,
+  infra: 0x8f5fd1,
+  external: 0x5fd18b,
+  default: 0x8b93a1
+};
+const NODE_SIZE = 1.0; // half-extent used for edge-surface offset in D)
+
+/* ======================================================================
+   NODE + EDGE BUILDING (registry keeps mesh/sprite refs keyed by id)
+   ====================================================================== */
+const registry = { nodes: new Map(), edges: new Map(), edgeMeshes: [] };
+
+function makeLabelSprite(text) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const fontSize = 48;
+  ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
+  const width = Math.ceil(ctx.measureText(text).width) + 40;
+  canvas.width = width;
+  canvas.height = fontSize + 24;
+  ctx.font = `600 ${fontSize}px -apple-system, sans-serif`;
+  ctx.fillStyle = "rgba(12,14,17,0.75)";
+  ctx.roundRect ? ctx.roundRect(0, 0, canvas.width, canvas.height, 10) : ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fill();
+  ctx.fillStyle = "#e8ecf1";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 20, canvas.height / 2 + 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true }));
+  const scale = 0.004; // world-units per canvas pixel — keeps a ~16-char label roughly 1.8 units wide, proportionate to a 1-unit node box at the default camera distance
+  sprite.scale.set(canvas.width * scale, canvas.height * scale, 1);
+  return sprite;
+}
+
+function buildNodes(data) {
+  for (const n of data.nodes) {
+    const color = TYPE_COLOR[n.type] || TYPE_COLOR.default;
+    const geo = new THREE.BoxGeometry(NODE_SIZE, NODE_SIZE, NODE_SIZE);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.15 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(...n.pos);
+    mesh.userData = { nodeId: n.id };
+    scene.add(mesh);
+
+    const label = makeLabelSprite(n.label);
+    label.position.set(n.pos[0], n.pos[1] + NODE_SIZE, n.pos[2]);
+    scene.add(label);
+
+    registry.nodes.set(n.id, { data: n, mesh, label });
+  }
+}
+
+/* ======================================================================
+   D) EDGE GEOMETRY — a thin cylinder between two node surfaces (not
+   centers: we shrink each end by NODE_SIZE/2 along the direction vector
+   so the edge visibly starts/ends at the box face) plus a cone arrowhead
+   near the target to show communication direction.
+   ====================================================================== */
+const UP = new THREE.Vector3(0, 1, 0);
+
+function buildEdges(data) {
+  for (const e of data.edges) {
+    const from = registry.nodes.get(e.from);
+    const to = registry.nodes.get(e.to);
+    if (!from || !to) continue; // reported by validateScene(); skip drawing broken refs
+
+    const start = from.mesh.position.clone();
+    const end = to.mesh.position.clone();
+    const dir = end.clone().sub(start);
+    const full = dir.length();
+    dir.normalize();
+    const a = start.clone().addScaledVector(dir, NODE_SIZE * 0.7);
+    const b = end.clone().addScaledVector(dir, -NODE_SIZE * 0.9);
+    const len = a.distanceTo(b);
+    // CylinderGeometry/ConeGeometry both default to their axis along +Y,
+    // centered at the origin — aligning UP to `dir` via quaternion is the
+    // standard, unambiguous way to point primitive geometry from a to b
+    // (avoids the sign/axis pitfalls of combining lookAt() with a
+    // pre-rotated geometry).
+    const quat = new THREE.Quaternion().setFromUnitVectors(UP, dir);
+
+    const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 6);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3a4048, emissive: 0x000000, roughness: 0.6 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(a).addScaledVector(dir, len / 2); // midpoint of a→b
+    mesh.quaternion.copy(quat);
+    scene.add(mesh);
+
+    const arrowHeight = 0.22;
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.09, arrowHeight, 8), mat.clone());
+    arrow.position.copy(b).addScaledVector(dir, -arrowHeight / 2); // apex lands at b
+    arrow.quaternion.copy(quat);
+    scene.add(arrow);
+
+    const key = `${e.from}->${e.to}`;
+    const entry = { data: e, mesh, arrow, start: a, end: b, length: full };
+    registry.edges.set(key, entry);
+    registry.edgeMeshes.push(mesh, arrow);
+  }
+}
+
+buildNodes(SCENE_DATA);
+buildEdges(SCENE_DATA);
+
+/* ======================================================================
+   D) EDGE PULSING / HOVER HIGHLIGHT — raycast against edge cylinders;
+   the hovered edge's material emissive pulses via a sine wave driven by
+   the render clock, everything else stays at rest color.
+   ====================================================================== */
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+let hoveredEdgeKey = null;
+
+renderer.domElement.addEventListener("pointermove", (ev) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(registry.edgeMeshes, false);
+  hoveredEdgeKey = null;
+  for (const [key, entry] of registry.edges) {
+    const isHit = hits.length && (hits[0].object === entry.mesh || hits[0].object === entry.arrow);
+    entry.mesh.material.emissive.setHex(0x000000);
+    entry.arrow.material.emissive.setHex(0x000000);
+    if (isHit) hoveredEdgeKey = key;
+  }
+});
+
+/* ======================================================================
+   D) FLOW ANIMATION — a glowing dot advances along a flow's path
+   segment-by-segment. Progress is tracked as total distance travelled
+   (flow.speed in world-units/sec) so the dot moves at constant visual
+   speed across segments of different length, rather than one segment
+   per fixed time slice.
+   ====================================================================== */
+class FlowAnimator {
+  constructor(flow, edgeRegistry) {
+    this.flow = flow;
+    this.segments = [];
+    for (let i = 0; i < flow.path.length - 1; i++) {
+      const key = `${flow.path[i]}->${flow.path[i + 1]}`;
+      const edge = edgeRegistry.get(key);
+      if (!edge) throw new Error(`FlowAnimator: missing edge "${key}" for flow "${flow.name}"`);
+      this.segments.push(edge);
+    }
+    this.totalLength = this.segments.reduce((sum, s) => sum + s.start.distanceTo(s.end), 0);
+    this.distance = 0;
+    this.playing = false;
+
+    const geo = new THREE.SphereGeometry(0.12, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xffb020, emissiveIntensity: 1.4 });
+    this.dot = new THREE.Mesh(geo, mat);
+    this.dot.visible = false;
+    scene.add(this.dot);
+  }
+
+  start() {
+    this.distance = 0;
+    this.playing = true;
+    this.dot.visible = true;
+  }
+
+  stop() {
+    this.playing = false;
+    this.dot.visible = false;
+  }
+
+  update(dt) {
+    if (!this.playing) return;
+    this.distance += (this.flow.speed || 2) * dt;
+
+    if (this.distance >= this.totalLength) {
+      if (this.flow.loop) {
+        this.distance %= this.totalLength;
+      } else {
+        this.stop();
+        return;
+      }
+    }
+
+    let remaining = this.distance;
+    for (const seg of this.segments) {
+      const segLen = seg.start.distanceTo(seg.end);
+      if (remaining <= segLen || seg === this.segments[this.segments.length - 1]) {
+        const t = segLen === 0 ? 0 : Math.min(remaining / segLen, 1);
+        this.dot.position.lerpVectors(seg.start, seg.end, t);
+        this._activeSegment = seg;
+        break;
+      }
+      remaining -= segLen;
+    }
+  }
+}
+
+/* ======================================================================
+   VALIDATION RESULTS -> UI (error panel + per-flow Play buttons)
+   ====================================================================== */
+const { errors: edgeErrors, flowErrors } = validateScene(SCENE_DATA);
+const errorPanel = document.getElementById("errors");
+const errorList = document.getElementById("error-list");
+const allErrors = [
+  ...edgeErrors.map(e => e.message),
+  ...[...flowErrors.entries()].flatMap(([name, msgs]) => msgs.map(m => `"${name}": ${m}`))
+];
+if (allErrors.length) {
+  errorPanel.style.display = "block";
+  for (const msg of allErrors) {
+    const li = document.createElement("li");
+    li.textContent = msg;
+    errorList.appendChild(li);
+  }
+}
+
+const animators = new Map();
+const flowButtonsHost = document.getElementById("flow-buttons");
+for (const flow of SCENE_DATA.flows) {
+  const btn = document.createElement("button");
+  const broken = flowErrors.has(flow.name);
+  btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
+  btn.disabled = broken;
+  flowButtonsHost.appendChild(btn);
+
+  if (!broken) {
+    const animator = new FlowAnimator(flow, registry.edges);
+    animators.set(flow.name, animator);
+    btn.addEventListener("click", () => {
+      if (animator.playing) {
+        animator.stop();
+        btn.classList.remove("playing");
+        btn.textContent = `▶ ${flow.name}`;
+      } else {
+        animator.start();
+        btn.classList.add("playing");
+        btn.textContent = `⏸ ${flow.name}`;
+      }
+    });
+  }
+}
+
+document.getElementById("labels-toggle").addEventListener("change", (ev) => {
+  for (const { label } of registry.nodes.values()) label.visible = ev.target.checked;
+});
+
+/* ======================================================================
+   RENDER LOOP
+   ====================================================================== */
+const clock = new THREE.Clock();
+function tick() {
+  const dt = clock.getDelta();
+  const t = clock.getElapsedTime();
+
+  for (const animator of animators.values()) animator.update(dt);
+
+  if (hoveredEdgeKey) {
+    const entry = registry.edges.get(hoveredEdgeKey);
+    const pulse = 0.6 + Math.sin(t * 6) * 0.4;
+    entry.mesh.material.emissive.setRGB(0.9 * pulse, 0.65 * pulse, 0.1 * pulse);
+    entry.arrow.material.emissive.setRGB(0.9 * pulse, 0.65 * pulse, 0.1 * pulse);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
