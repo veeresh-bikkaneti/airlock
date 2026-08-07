@@ -74,7 +74,7 @@ ai-start
 ai-health
 
 # Expected: All green indicators
-# - Processes: 1 (Ollama or vLLM)
+# - Processes: 2 (app + serve) if Ollama, 1 Docker container if vLLM
 # - API: HEALTHY
 # - Firewall: BLOCKED (if admin) or NO RULE (defense-in-depth: loopback-only listener)
 # - RAM: >20% free
