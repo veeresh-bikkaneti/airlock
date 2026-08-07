@@ -372,8 +372,11 @@ ai-start
 #   Endpoint: http://127.0.0.1:12345/v1
 #   Model   : devstral-small-2:24b
 #   Bind    : 127.0.0.1 ONLY (no external)
-#   Firewall: Inbound port 12345 BLOCKED
+#   Firewall: Inbound port 12345 BLOCKED (admin) / NO RULE (defense-in-depth, loopback-only)
 # ========================================
+# Note: Firewall status is conditional on admin privileges. If running as admin,
+# a BLOCK rule is created. If not, no rule is created, but the listener is still
+# loopback-only and unreachable from outside.
 
 # Check health
 ai-health
@@ -402,6 +405,11 @@ ai-code
 | `ai-auth-set <provider> <key>` | Store API key for cloud fallback |
 | `ai-hermes-start` | Launch containerized Hermes agent |
 | `ai-hermes-stop` | Stop Hermes and extract output |
+| `ai-memory-start` | Start memory service (FastAPI, Chroma vector DB, LangGraph) |
+| `ai-memory-stop` | Stop memory service |
+| `ai-memory-status` | Show memory service status (process, API health, firewall, routing) |
+| `ai-memory-on` | Route clients through memory service (retrieve → inject → forward) |
+| `ai-memory-off` | Revert clients to direct backend calls (disable memory routing) |
 
 ---
 
@@ -491,7 +499,9 @@ airlock/
 │   ├── Get-BackendCapability.ps1 # Detects vLLM viability (GPU + Docker)
 │   ├── Get-ModelAcquisition.ps1  # Hardware detection + auto model pull (Ollama/HF)
 │   ├── Stop-AI.ps1               # Clean shutdown (whichever backend is active)
-│   ├── profile-helpers.ps1       # CLI helpers (ai-start, ai-code, ai-health, etc.)
+│   ├── Start-MemoryService.ps1   # Starts memory service (FastAPI, Chroma, LangGraph)
+│   ├── Stop-MemoryService.ps1    # Stops memory service
+│   ├── profile-helpers.ps1       # CLI helpers (ai-start, ai-code, ai-health, ai-memory-*, etc.)
 │   ├── Invoke-CommitReview.ps1   # Pre-commit security gate
 │   └── Test-*.ps1                # Self-checks for model selection / capability logic
 ├── config/
@@ -512,13 +522,17 @@ airlock/
 │   ├── 07-Quickstart-Playbook.md
 │   ├── COMPONENTS.md
 │   └── adr/                      # Architecture Decision Records
-└── hermes-container/             # Sandboxed agent for job applications
-    ├── README.md
-    ├── PLAYBOOK.md
-    ├── Dockerfile
-    ├── docker-compose.yml
-    ├── run-hermes.ps1
-    └── stop-hermes.ps1
+├── hermes-container/             # Sandboxed agent for job applications
+│   ├── README.md
+│   ├── PLAYBOOK.md
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── run-hermes.ps1
+│   └── stop-hermes.ps1
+└── memory-service/               # FastAPI app: vector DB + RAG + LangGraph session memory
+    ├── app.py
+    ├── requirements.txt
+    └── ...
 ```
 
 ---

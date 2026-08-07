@@ -24,9 +24,12 @@ This document explains **what each file/folder in the repository does** and **wh
 | Script | What it does | Why you need it |
 |--------|--------------|----------------|
 | **`Start‑AI.ps1`** | • Scans for existing Ollama processes.<br>• Kills any rogue instances (single‑instance enforcement).<br>• Starts Ollama on **port 12345** bound to `127.0.0.1` only.<br>• Creates a Windows Firewall rule that **blocks inbound traffic** to that port (prevents accidental exposure).<br>• Performs RAM/VRAM health checks before loading a model.<br>• Verifies model digest and size.<br>• Writes structured audit logs (`logs/YYYY‑MM‑DD.jsonl`).<br>• Exposes environment variables (`OLLAMA_HOST`, `OPENAI_BASE_URL`). | Guarantees a clean, secure, and reproducible AI environment. Prevents the “multiple Ollama instances” problem that wastes GPU memory and breaks tools. |
-| **`Stop‑AI.ps1`** | • Finds and kills *both* the Ollama tray app and the server process.<br>• Optionally removes the firewall rule (`-CleanFirewall`).<br>• Clears environment variables and session‑state files (`.active‑port.json`, `active‑provider.json`).<br>• Writes a final audit‑log entry. | Clean shutdown – no stray processes, no open ports, and a tidy state for the next start. |
-| **`profile‑helpers.ps1`** | • Provides the **`ai‑*` command suite** that users source from their PowerShell profile.<br>• Wraps the underlying scripts to set environment variables automatically.<br>• Implements convenience helpers: `ai‑port`, `ai‑provider`, `ai‑switch`, `ai‑code`, `ai‑hermes‑start/stop`, `ai‑audit‑last`, `ai‑policy`, `ai‑models`, `ai‑auth`, `ai‑cache`, `ai‑config`, `ai‑health`.
-|   • Blocks direct `ollama serve` (users must use `ai‑start`). | Gives a **single, beginner‑friendly CLI**. Prevents users from accidentally bypassing the security/shutdown logic in `Start‑AI.ps1`. |
+| **`Start‑VLLM.ps1`** | • Detects hardware capability and Docker availability.<br>• Launches vLLM (OpenAI-compatible server) in a Docker container on port 12345.<br>• Health-checks the `/health` endpoint until it's ready.<br>• Writes state files (`active-provider.json`) for coordination with `Stop-AI.ps1`. | Optional higher-throughput backend for NVIDIA GPU owners. Called by `Start-AI.ps1` when the user chooses vLLM via backend selection prompt. |
+| **`Get‑BackendCapability.ps1`** | • Checks if NVIDIA GPU drivers are installed.<br>• Checks if Docker Desktop is running.<br>• Returns a capability flag (true/false) for vLLM readiness. | Lets `Start-AI.ps1` only prompt for vLLM as a backend option when it's actually viable; prevents false choices. |
+| **`Stop‑AI.ps1`** | • Finds and kills *both* the Ollama tray app and the server process, OR stops vLLM Docker container.<br>• Optionally removes the firewall rule (`-CleanFirewall`).<br>• Clears environment variables and session‑state files (`.active‑port.json`, `active‑provider.json`).<br>• Writes a final audit‑log entry. | Clean shutdown – no stray processes, no open ports, and a tidy state for the next start (works for both Ollama and vLLM). |
+| **`Start‑MemoryService.ps1`** | • Launches the memory-service FastAPI application.<br>• Starts Chroma vector DB + LangGraph session checkpointing.<br>• Integrates with active backend's embeddings (Ollama `/api/embeddings` endpoint).<br>• Health-checks the API and firewall rule.<br>• Writes state file for coordination with `ai-memory-status`. | Enables vector DB + RAG + session memory for local AI. Marked as "Ollama-only" — degrades to no-op under vLLM (no embeddings endpoint). |
+| **`Stop‑MemoryService.ps1`** | • Stops the FastAPI memory-service process.<br>• Cleans up state files. | Clean shutdown of memory-service without orphaned processes. |
+| **`profile‑helpers.ps1`** | • Provides the **`ai‑*` command suite** that users source from their PowerShell profile.<br>• Wraps the underlying scripts to set environment variables automatically.<br>• Implements convenience helpers: `ai‑port`, `ai‑provider`, `ai‑switch`, `ai‑code`, `ai‑hermes‑start/stop`, `ai‑memory‑start/stop/status/on/off`, `ai‑audit‑last`, `ai‑policy`, `ai‑models`, `ai‑auth`, `ai‑cache`, `ai‑config`, `ai‑health`.<br>• Blocks direct `ollama serve` (users must use `ai‑start`). | Gives a **single, beginner‑friendly CLI**. Prevents users from accidentally bypassing the security/shutdown logic in `Start‑AI.ps1`. |
 | **`Invoke‑CommitReview.ps1`** | • Reads `config/policies/commit‑policy.json` (list of regex/glob patterns).
 • Examines the Git **staged** file list (`git diff --cached`).
 • Categorises files as **BLOCKED**, **NEEDS‑APPROVAL**, or **AUTO‑APPROVED**.
@@ -83,25 +86,24 @@ This document explains **what each file/folder in the repository does** and **wh
 ## 🚀 Getting Started (quick recap)
 
 ```powershell
-# 1️⃣ Add helpers to your profile (once)
-Add-Content $PROFILE ". `"$env:USERPROFILE\.ai-platform\scripts\profile-helpers.ps1`""
+# 1️⃣ One-line installer
+irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex
 
-# 2️⃣ Reload profile or start a new PowerShell session
+# (Or manually: git clone + .\setup.ps1 if you prefer to review first)
+
+# 2️⃣ Restart PowerShell to load profile
 . $PROFILE
 
-# 3️⃣ Pull a model (once per machine)
-ollama pull devstral-small-2:24b
-
-# 4️⃣ Start the platform (single‑instance, secure)
+# 3️⃣ Start the platform (auto-pulls a model based on hardware)
 ai-start
 
-# 5️⃣ Verify everything is healthy
+# 4️⃣ Verify everything is healthy
 ai-health
 
-# 6️⃣ Use AI coding assistant
+# 5️⃣ Use AI coding assistant
 ai-code   # launches `aider` with the correct endpoint
 
-# 7️⃣ When done, cleanly shut down
+# 6️⃣ When done, cleanly shut down
 ai-stop   # (or `ai-stop -CleanFirewall` to also delete the firewall rule)
 ```
 
