@@ -372,11 +372,13 @@ ai-start
 #   Endpoint: http://127.0.0.1:12345/v1
 #   Model   : devstral-small-2:24b
 #   Bind    : 127.0.0.1 ONLY (no external)
-#   Firewall: Inbound port 12345 BLOCKED (admin) / NO RULE (defense-in-depth, loopback-only)
+#   Firewall: Inbound port 12345 BLOCKED
 # ========================================
-# Note: Firewall status is conditional on admin privileges. If running as admin,
-# a BLOCK rule is created. If not, no rule is created, but the listener is still
-# loopback-only and unreachable from outside.
+# Note: the Firewall line is conditional on admin privileges. Running as admin,
+# you'll see "Inbound port 12345 BLOCKED" (shown above). Without admin, you'll
+# see "NO RULE on port 12345 (defense-in-depth only — listener is loopback-only,
+# not externally reachable either way)" instead — the rule just didn't get created,
+# but nothing outside your machine could reach the port regardless.
 
 # Check health
 ai-health
@@ -530,9 +532,17 @@ airlock/
 │   ├── run-hermes.ps1
 │   └── stop-hermes.ps1
 └── memory-service/               # FastAPI app: vector DB + RAG + LangGraph session memory
-    ├── app.py
-    ├── requirements.txt
-    └── ...
+    ├── app/
+    │   ├── main.py                # FastAPI routes: /health, /v1/memory/*, /v1/chat/completions proxy
+    │   ├── memory_store.py        # Chroma vector DB (remember/recall)
+    │   ├── graph.py                # LangGraph retrieve -> inject -> forward pipeline
+    │   ├── checkpointer.py        # Per-session short-term/working memory
+    │   ├── embeddings.py          # Ollama /api/embeddings client
+    │   ├── proxy.py                # Forwards to the real backend, tracks active provider
+    │   ├── audit.py                # Structured audit logging
+    │   └── config.py
+    ├── tests/
+    └── requirements.txt
 ```
 
 ---
