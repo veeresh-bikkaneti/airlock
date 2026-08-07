@@ -504,8 +504,10 @@
       // ============================================================
       // TRANSITION 6->7 (clean cut) at 38.9
       // ============================================================
+      // fromTo (not set) so the cut survives a backward seek like every other
+      // scene entrance here; 0.01s lands it inside one frame at 30fps.
+      tl.fromTo("#scene7", { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, 38.885);
       tl.set("#scene6", { visibility: "hidden" }, 38.9);
-      tl.set("#scene7", { opacity: 1 }, 38.9);
 
       // ============================================================
       // SCENE 7 — Outro (38.9 - 41.8) — VO7 39.0-41.261
