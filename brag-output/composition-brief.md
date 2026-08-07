@@ -7,7 +7,7 @@ Create a short launch-style brag video for Airlock — but structured as a real 
 - Composition directory: `brag-output/composition/`
 - Rendered video: `brag-output/brag.mp4`
 - Format: landscape — 1920x1080
-- Duration: 35.9 seconds (deliberately extended past this format's normal 15-25s guidance — the model-sizing scene is the product's core insight and needed real reading room, and Scene 4 gained a memory-service beat after the first render; see brag-plan.md's Tone interpretation for the reasoning)
+- Duration: ~41.9 seconds (deliberately extended past this format's normal 15-25s guidance — the model-sizing scene is the product's core insight and needed real reading room, Scene 4 gained a memory-service beat after the first render, and a new Scene 6 bonus beat for the 3D system visualizer was added before the outro; see brag-plan.md's Tone interpretation for the reasoning)
 
 ## Source Material
 - Project root: `C:\Users\veere\source\repos\local-ai-platform`
@@ -18,6 +18,7 @@ Create a short launch-style brag video for Airlock — but structured as a real 
   - The real one-liner install command (verbatim, see below)
   - The real colored "AI PLATFORM READY (Hardened)" console banner
   - A real chat completion request/response pair (verbatim, from today's test — see below)
+  - The real `tools/3d-system-visualizer` node graph (captured screenshot at `tools/3d-system-visualizer/preview.png`, mid-workflow-playback), used as Scene 6's background
 - Copy that must appear verbatim:
   - `irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex`
   - `AI PLATFORM READY (Hardened)`
@@ -57,7 +58,8 @@ Use the storyboard in `brag-output/brag-plan.md` as the creative contract — fu
 3. **The gamble, offloaded (centerpiece)** — 11s — the model-sizing decision, given full room. 4 beats, each paired with a visual step: (1) framing the problem — picking model size is normally a guess; (2) a capacity meter fills to real numbers, "127.7 GB RAM · 16 GB GPU"; (3) 4 model-size cards appear (4.7GB/9GB/14GB/18GB), a fit-check sweeps across them; (4) non-fitting cards gray out and shrink, the winning card highlights green with a checkmark and slides forward, paired with text explaining the pull source (local registry first, HuggingFace fallback). This is the single most important sequence in the video — do not rush it.
 4. **What it locks down** — 7.1s — 4 short beats over the still-visible dimmed terminal: "One instance, ever." → "Port blocked from the outside." → "Every action logged." → "Remembers your session — on Ollama."
 5. **Proof** — 5s — terminal snaps to full focus; real "AI PLATFORM READY (Hardened)" banner reveals line by line and holds; then the real chat prompt appears, then the real response streams in. This is the emotional peak.
-6. **Outro** — 4s — "Airlock" wordmark → "Sealed. Tested. Then opened." → repo URL, staggered settle, quiet hold.
+6. **Bonus: the system in 3D** — 6s — clean cut to the real captured `tools/3d-system-visualizer` node graph (`preview.png`), same near-black background as the terminal. Slow camera drift/zoom over the real frame; a small dot travels the real edge path (Client → API Gateway → Orders Service → Payments Service → Ledger DB), recreating the tool's actual "Place order (happy path)" workflow playback. 2 text beats: "There's more than the terminal." → "A 3D map of how every piece actually talks to each other — free, in `tools/`." A light aside, not a second peak.
+7. **Outro** — 4s — "Airlock" wordmark → "Sealed. Tested. Then opened." → repo URL, staggered settle, quiet hold.
 
 ## Audio
 - Audio role: sparse professional accents over a low, mostly-under-the-surface ambient bed — never a hype layer
@@ -72,7 +74,8 @@ Use the storyboard in `brag-output/brag-plan.md` as the creative contract — fu
   - Scene 3 meter fill — soft tick as it fills; a distinct "elimination" tick (e.g. `ui/switch*` or `interface/switch_001`) as non-fitting cards gray out; a slightly brighter confirm tick (`interface/select_008` or similar) when the winning card locks in
   - Scene 5 banner reveal — `impact/impactBell_heavy_000` as the banner completes (matches this product's own "big reveal" banner styling)
   - Scene 5 chat response arrival — a distinct, different bell (e.g. `impact/impactBell_heavy_004`) as the real response lands — this is the video's true emotional peak, it should sound different from the banner chime, not just a repeat of it
-  - Scene 6 outro — no SFX; let the fade-out and the real product speak for itself
+  - Scene 6 workflow dot travel — reuse the same soft tick family as Scenes 2/4 as the dot passes each node — do not introduce a new sound for this bonus beat
+  - Scene 7 outro — no SFX; let the fade-out and the real product speak for itself
 - SFX selection guidance: prefer low/medium high-frequency-risk files per `sfx-analysis.md` for the repeated Scene 2-4 beat ticks (these repeat several times across the video); reserve the two bell moments (Scenes 5) for the only two "big" sounds in the whole piece so they actually stand out
 - SFX analysis guidance: read `sfx-analysis.md` (bundled beside the SFX library) before finalizing exact files
 - Exact SFX choice: Hyperframes should pick final filenames, timestamps, density, and volume once the animation exists — the above is guidance, not a locked cue sheet
@@ -84,7 +87,8 @@ Load the composition-building Hyperframes domain skills — `hyperframes-core` (
 Requirements:
 - Show real terminal text, the real banner, and the real chat exchange verbatim — this is a CLI product, the terminal recording IS the demo.
 - Keep all text readable in the final render, especially the Scene 3 explainer beats — this scene got extended screen time specifically so its text isn't rushed.
-- Total duration ~35.9 seconds (see Output section above for why this exceeds the format's normal ceiling).
+- Scene 6: copy `tools/3d-system-visualizer/preview.png` into `composition/assets/` and use it as the scene's background image; do not fabricate a different node graph — the real captured screenshot is the visual.
+- Total duration ~41.9 seconds (see Output section above for why this exceeds the format's normal ceiling).
 - Include the planned music/SFX layer as described above.
 - Treat the audio notes above as guidance, not a fixed cue sheet — choose exact SFX after the visual animation exists.
 - Use at most 1-3 strong cue locks if a beat/cue source is available; do not force other moments onto a beat grid.
