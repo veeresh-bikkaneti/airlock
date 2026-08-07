@@ -54,6 +54,11 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 /* ======================================================================
    SAMPLE SCENE DATA — exactly the schema the user specified:
@@ -164,11 +169,17 @@ camera.position.set(10, 9, 16);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0, 0);
+
+const DEFAULT_CAMERA_POS = camera.position.clone();
+const DEFAULT_CAMERA_TARGET = controls.target.clone();
 
 scene.add(new THREE.AmbientLight(0x8899aa, 0.9));
 const key = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -178,6 +189,114 @@ scene.add(key);
 const grid = new THREE.GridHelper(40, 40, 0x2a2e35, 0x1a1d22);
 grid.position.y = -5;
 scene.add(grid);
+
+/* ======================================================================
+   SELECTIVE BLOOM — only the flow packet and the currently-hovered edge
+   glow. Standard two-pass technique: render the scene with every
+   non-bloom object swapped to flat black, bloom that pass, then composite
+   it additively over a normal full-color render. Objects opt in by
+   enabling BLOOM_LAYER on their .layers (the camera itself stays on the
+   default layer 0 only, so it never needs to "see" layer 1 directly —
+   the darken/restore pass handles visibility instead).
+   ====================================================================== */
+const BLOOM_LAYER = 1;
+const bloomLayer = new THREE.Layers();
+bloomLayer.set(BLOOM_LAYER);
+const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const materialCache = new Map();
+const visibilityCache = new Map();
+
+function darkenNonBloomed(obj) {
+  if (bloomLayer.test(obj.layers)) return;
+  if (obj.isMesh) {
+    materialCache.set(obj.uuid, obj.material);
+    obj.material = darkMaterial;
+  } else if (obj.isSprite) {
+    // Sprites (the canvas-text node labels) use a dedicated billboard
+    // shader keyed off SpriteMaterial — swapping in a Mesh material would
+    // mismatch uniforms, so hide instead of darkening. Without this they'd
+    // keep their real bright texture through the bloom-only pass and glow
+    // as a false halo above every node. Cache the PRE-existing visibility
+    // (not assume true) so this doesn't fight the "Show labels" toggle.
+    visibilityCache.set(obj.uuid, obj.visible);
+    obj.visible = false;
+  }
+}
+function restoreMaterial(obj) {
+  if (materialCache.has(obj.uuid)) {
+    obj.material = materialCache.get(obj.uuid);
+    materialCache.delete(obj.uuid);
+  }
+  if (visibilityCache.has(obj.uuid)) {
+    obj.visible = visibilityCache.get(obj.uuid);
+    visibilityCache.delete(obj.uuid);
+  }
+}
+
+const renderPass = new RenderPass(scene, camera);
+
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.4, 0.15);
+const bloomComposer = new EffectComposer(renderer);
+bloomComposer.renderToScreen = false;
+bloomComposer.addPass(renderPass);
+bloomComposer.addPass(bloomPass);
+
+const mixPass = new ShaderPass(
+  new THREE.ShaderMaterial({
+    uniforms: {
+      baseTexture: { value: null },
+      bloomTexture: { value: bloomComposer.renderTarget2.texture }
+    },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform sampler2D baseTexture;
+      uniform sampler2D bloomTexture;
+      varying vec2 vUv;
+      void main() {
+        gl_FragColor = texture2D(baseTexture, vUv) + vec4(1.0) * texture2D(bloomTexture, vUv);
+      }
+    `,
+    defines: {}
+  }),
+  "baseTexture"
+);
+mixPass.needsSwap = true;
+
+const finalComposer = new EffectComposer(renderer);
+finalComposer.addPass(renderPass);
+finalComposer.addPass(mixPass);
+finalComposer.addPass(new OutputPass());
+
+/* ======================================================================
+   CONTACT SHADOWS — a soft radial-gradient decal under each node, cheap
+   depth cue without shadow maps. One shared texture, one plane per node.
+   ====================================================================== */
+function makeContactShadowTexture() {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, "rgba(0,0,0,0.55)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+const contactShadowTexture = makeContactShadowTexture();
+function addContactShadow(pos) {
+  const geo = new THREE.PlaneGeometry(NODE_SIZE * 2.4, NODE_SIZE * 2.4);
+  const mat = new THREE.MeshBasicMaterial({
+    map: contactShadowTexture,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const decal = new THREE.Mesh(geo, mat);
+  decal.rotation.x = -Math.PI / 2;
+  decal.position.set(pos[0], pos[1] - NODE_SIZE / 2 - 0.001, pos[2]);
+  scene.add(decal);
+}
 
 const TYPE_COLOR = {
   service: 0x4f8fd1,
@@ -226,6 +345,7 @@ function buildNodes(data) {
     mesh.position.set(...n.pos);
     mesh.userData = { nodeId: n.id };
     scene.add(mesh);
+    addContactShadow(n.pos);
 
     const label = makeLabelSprite(n.label);
     label.position.set(n.pos[0], n.pos[1] + NODE_SIZE, n.pos[2]);
@@ -307,7 +427,13 @@ renderer.domElement.addEventListener("pointermove", (ev) => {
     const isHit = hits.length && (hits[0].object === entry.mesh || hits[0].object === entry.arrow);
     entry.mesh.material.emissive.setHex(0x000000);
     entry.arrow.material.emissive.setHex(0x000000);
-    if (isHit) hoveredEdgeKey = key;
+    entry.mesh.layers.disable(BLOOM_LAYER);
+    entry.arrow.layers.disable(BLOOM_LAYER);
+    if (isHit) {
+      hoveredEdgeKey = key;
+      entry.mesh.layers.enable(BLOOM_LAYER);
+      entry.arrow.layers.enable(BLOOM_LAYER);
+    }
   }
 });
 
@@ -336,6 +462,7 @@ class FlowAnimator {
     const mat = new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xffb020, emissiveIntensity: 1.4 });
     this.dot = new THREE.Mesh(geo, mat);
     this.dot.visible = false;
+    this.dot.layers.enable(BLOOM_LAYER); // glows via the selective-bloom pass
     scene.add(this.dot);
   }
 
@@ -378,6 +505,34 @@ class FlowAnimator {
 }
 
 /* ======================================================================
+   CAMERA FLY-TO-FIT — when a workflow starts, ease the camera to frame
+   just that flow's nodes; ease back to the default view on stop. Plain
+   exponential-decay lerp toward a goal each frame, no tween dependency.
+   ====================================================================== */
+const camGoalPos = DEFAULT_CAMERA_POS.clone();
+const camGoalTarget = DEFAULT_CAMERA_TARGET.clone();
+const viewDir = DEFAULT_CAMERA_POS.clone().sub(DEFAULT_CAMERA_TARGET).normalize();
+
+function flyToFlow(flow) {
+  const ids = [...new Set(flow.path)];
+  const box = new THREE.Box3();
+  for (const id of ids) {
+    const n = registry.nodes.get(id);
+    if (n) box.expandByPoint(n.mesh.position);
+  }
+  const center = box.getCenter(new THREE.Vector3());
+  const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 3);
+  const fitDistance = radius / Math.sin((camera.fov * Math.PI) / 360) + 2;
+  camGoalTarget.copy(center);
+  camGoalPos.copy(center).addScaledVector(viewDir, fitDistance);
+}
+
+function flyToDefault() {
+  camGoalPos.copy(DEFAULT_CAMERA_POS);
+  camGoalTarget.copy(DEFAULT_CAMERA_TARGET);
+}
+
+/* ======================================================================
    VALIDATION RESULTS -> UI (error panel + per-flow Play buttons)
    ====================================================================== */
 const { errors: edgeErrors, flowErrors } = validateScene(SCENE_DATA);
@@ -413,10 +568,12 @@ for (const flow of SCENE_DATA.flows) {
         animator.stop();
         btn.classList.remove("playing");
         btn.textContent = `▶ ${flow.name}`;
+        flyToDefault();
       } else {
         animator.start();
         btn.classList.add("playing");
         btn.textContent = `⏸ ${flow.name}`;
+        flyToFlow(flow);
       }
     });
   }
@@ -443,8 +600,16 @@ function tick() {
     entry.arrow.material.emissive.setRGB(0.9 * pulse, 0.65 * pulse, 0.1 * pulse);
   }
 
+  const ease = 1 - Math.pow(0.0001, Math.min(dt, 0.1));
+  camera.position.lerp(camGoalPos, ease);
+  controls.target.lerp(camGoalTarget, ease);
   controls.update();
-  renderer.render(scene, camera);
+
+  scene.traverse(darkenNonBloomed);
+  bloomComposer.render();
+  scene.traverse(restoreMaterial);
+  finalComposer.render();
+
   requestAnimationFrame(tick);
 }
 tick();
@@ -453,6 +618,8 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  bloomComposer.setSize(window.innerWidth, window.innerHeight);
+  finalComposer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
 </body>
