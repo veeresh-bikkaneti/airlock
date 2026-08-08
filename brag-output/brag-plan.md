@@ -32,7 +32,7 @@ Entry → key action → result, and this time the "key action" beat is itself t
 - Interpretation: still restrained and real. Deliberately extended past this format's normal 15-25s guidance (to ~31s) because the model-sizing decision is the actual core insight and deserves full-sentence explanation with real reading time, not compressed labels. Everything else stays lean so the extra length buys depth in one place, not padding everywhere.
 
 ## Format: landscape — 1920x1080
-## Duration: ~41.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed three times: initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4, then again when Scene 6 — the 3D system visualizer bonus beat — was inserted before the outro on 2026-08-07)
+## Duration: ~44.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed four times: initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4, then again when Scene 6 — the 3D system visualizer bonus beat — was inserted before the outro on 2026-08-07, then again when Scene 6 gained a third beat for the data-depth pass — scene loading, click-to-inspect metadata, status overlay — on 2026-08-07)
 
 ## Visual identity (from the project)
 - Background: near-black terminal (`#0C0C0C`, matches Windows Terminal's default dark theme)
@@ -102,13 +102,14 @@ Audio-coupled idea: confirm chime on the banner completing; distinct "message re
 Music: small lift here, still restrained, not a swell.
 Transition mood: clean crossfade → Scene 6.
 
-### Scene 6 — Bonus: the system in 3D — 6s
+### Scene 6 — Bonus: the system in 3D — 9.2s
 Clean cut away from the terminal. The real `tools/3d-system-visualizer` scene fills the frame — the actual captured node graph (Client → API Gateway → Auth/Inventory/Orders/Notification/Payments services → Ledger DB → Partner Webhook), on the same near-black background as the terminal so the cut doesn't feel like a different product. A slow camera drift/zoom over the real captured frame, with a small animated dot traveling the real edge path — recreating exactly what the tool's "Place order (happy path)" workflow button does, not an invented animation.
 Beat 1 (~2.5s): Text: "There's more than the terminal." Visual: the node graph fades in.
 Beat 2 (~3.5s): Text: "A 3D map of how every piece actually talks to each other — free, in `tools/`." Visual: the workflow dot travels Client → API Gateway → Orders Service → Payments Service → Ledger DB, matching the real captured run.
-Sequential/interaction: yes — 2 beats, dot motion is continuous under beat 2.
+Beat 3 (~3.2s, added 2026-08-07 for the data-depth pass): the camera settles back to the full frame and crossfades to a second real capture — the scene-picker panel now visible (external scene loading), the Ledger DB node showing its status glow, and an open inspect panel reading Type/Status/Owner/Description for Payments Service. Text: "Now you can load your own map and click anything to inspect it." Silent — no new voiceover line, stays a light aside rather than a second narrated highlight.
+Sequential/interaction: yes — 3 beats; dot motion is continuous under beat 2, beat 3 is a static crossfade (no dot, no camera drift beyond settling back to frame).
 Audio intent: light, curious aside — not a second peak, Scene 5 already was that.
-Audio-coupled idea: soft tick as the dot passes each node (same tick family as Scenes 2/4, so it doesn't introduce a new sound).
+Audio-coupled idea: soft tick as the dot passes each node (same tick family as Scenes 2/4, so it doesn't introduce a new sound). Beat 3 adds no new sound.
 Music: stays low, no lift (this scene is a bonus beat, not another highlight).
 Transition mood: clean cut → Scene 7.
 

@@ -136,6 +136,9 @@
         transform-origin: 930px 550px;
       }
       #s6-viz-img { display: block; width: 1920px; height: 1080px; }
+      /* Second capture — same tool, post data-depth pass (scene picker,
+         status-tinted node, open inspect panel) — crossfades over the first. */
+      #s6-viz-img2 { position: absolute; left: 0; top: 0; display: block; width: 1920px; height: 1080px; opacity: 0; }
       /* The captured frame carries the tool's own UI panels and its own yellow
          playback dot; both are covered so the scene reads as the graph alone. */
       /* #0b0d10 is the captured frame's own empty-space colour, sampled from it —
@@ -161,7 +164,7 @@
     </style>
   </head>
   <body>
-    <div data-hf-id="hf-0xju" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="41.9">
+    <div data-hf-id="hf-0xju" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="44.9">
 
       <!-- ============ SCENE 1 — The one-liner ============ -->
       <div data-hf-id="hf-zet7" id="scene1" class="scene">
@@ -304,6 +307,7 @@
         <div data-hf-id="hf-v3d1" class="scene-bg"></div>
         <div data-hf-id="hf-v3d2" id="s6-viz" data-layout-allow-overflow="true">
           <img data-hf-id="hf-v3d3" id="s6-viz-img" src="assets/viz-3d.png" alt="3D system visualizer showing the service node graph">
+          <img data-hf-id="hf-dd01" id="s6-viz-img2" src="assets/viz-3d-data-depth.png" alt="3D system visualizer with the scene picker, a status-tinted node, and an open inspect panel">
           <div data-hf-id="hf-v3d4" id="s6-mask-panel" class="s6-mask"></div>
           <div data-hf-id="hf-v3d5" id="s6-mask-err" class="s6-mask"></div>
           <div data-hf-id="hf-v3d6" id="s6-mask-dot" class="s6-mask"></div>
@@ -312,6 +316,7 @@
         <div data-hf-id="hf-v3d8" id="s6-caption-wrap" data-layout-allow-overlap="true">
           <div data-hf-id="hf-v3d9" id="s6-cap-a" class="caption-line">There's more than the terminal.</div>
           <div data-hf-id="hf-v3da" id="s6-cap-b" class="caption-line">A 3D map of how every piece actually talks to each other — <span data-hf-id="hf-v3db" class="accent">free, in tools/</span></div>
+          <div data-hf-id="hf-dd02" id="s6-cap-c" class="caption-line">Now you can load your own map <span data-hf-id="hf-dd03" class="accent">and click anything to inspect it.</span></div>
         </div>
       </div>
 
@@ -327,7 +332,7 @@
       </div>
 
       <!-- ============ AUDIO ============ -->
-      <audio data-hf-id="hf-hu9x" id="bgm" data-start="0" data-duration="41.9" data-track-index="10" data-volume="0" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+      <audio data-hf-id="hf-hu9x" id="bgm" data-start="0" data-duration="44.9" data-track-index="10" data-volume="0" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
 
       <!-- Voiceover — own track, drives scene pacing -->
       <audio data-hf-id="hf-762b" id="vo1" data-start="0.4" data-duration="1.984" data-track-index="3" data-volume="1" src="assets/vo/vo1.wav"></audio>
@@ -336,7 +341,7 @@
       <audio data-hf-id="hf-30cz" id="vo4" data-start="20.3" data-duration="6.933" data-track-index="3" data-volume="1" src="assets/vo/vo4.wav"></audio>
       <audio data-hf-id="hf-c8oj" id="vo5" data-start="27.9" data-duration="3.456" data-track-index="3" data-volume="1" src="assets/vo/vo5.wav"></audio>
       <audio data-hf-id="hf-c45b" id="vo6" data-start="32.8" data-duration="5.760" data-track-index="3" data-volume="1" src="assets/vo/vo6.wav"></audio>
-      <audio data-hf-id="hf-v3dc" id="vo7" data-start="39.0" data-duration="2.261" data-track-index="3" data-volume="1" src="assets/vo/vo7.wav"></audio>
+      <audio data-hf-id="hf-v3dc" id="vo7" data-start="42.0" data-duration="2.261" data-track-index="3" data-volume="1" src="assets/vo/vo7.wav"></audio>
 
       <audio data-hf-id="hf-fbqg" id="sfx-cap-a" data-start="3.3" data-duration="0.11" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_001.ogg"></audio>
       <audio data-hf-id="hf-dp49" id="sfx-cap-b" data-start="5.9" data-duration="0.19" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_002.ogg"></audio>
@@ -485,6 +490,11 @@
       // ============================================================
       tl.fromTo("#s6-viz", { opacity: 0, scale: 1.12, x: 0, y: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 32.7);
       tl.fromTo("#s6-viz", { scale: 1.12, x: 0, y: 0 }, { scale: 1.26, x: -30, y: -14, duration: 6.2, ease: "none" }, 32.7);
+      // Beat 3 needs the full frame back (the inspect panel it reveals sits
+      // in the bottom-left corner the zoom above has pushed out of view).
+      // Starts just after the drift tween above ends (38.9) — avoids a
+      // zero-duration boundary overlap on the same properties.
+      tl.to("#s6-viz", { scale: 1.0, x: 0, y: 0, duration: 1.0, ease: "power2.inOut" }, 38.91);
 
       tl.fromTo("#s6-cap-a", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 32.9);
       tl.to("#s6-cap-a", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 34.7);
@@ -501,21 +511,33 @@
       });
       tl.to("#s6-dot", { opacity: 0, duration: 0.4, ease: "power2.in" }, 38.4);
 
+      // ------------------------------------------------------------
+      // Beat 3 (38.6 - 41.85) — data-depth pass: crossfade to the
+      // second capture, reveal the scene-picker panel (no longer
+      // masked — showing it off is the point now), swap caption.
+      // Silent (no new VO) — this stays a light aside, not a second
+      // narrated highlight.
+      // ------------------------------------------------------------
+      tl.to("#s6-cap-b", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 38.6);
+      tl.to("#s6-mask-panel", { opacity: 0, duration: 0.6, ease: "power2.inOut" }, 38.6);
+      tl.fromTo("#s6-viz-img2", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power2.inOut" }, 38.7);
+      tl.fromTo("#s6-cap-c", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 39.0);
+
       // ============================================================
-      // TRANSITION 6->7 (clean cut) at 38.9
+      // TRANSITION 6->7 (clean cut) at 41.9
       // ============================================================
       // fromTo (not set) so the cut survives a backward seek like every other
       // scene entrance here; 0.01s lands it inside one frame at 30fps.
-      tl.fromTo("#scene7", { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, 38.885);
-      tl.set("#scene6", { visibility: "hidden" }, 38.9);
+      tl.fromTo("#scene7", { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, 41.885);
+      tl.set("#scene6", { visibility: "hidden" }, 41.9);
 
       // ============================================================
-      // SCENE 7 — Outro (38.9 - 41.8) — VO7 39.0-41.261
+      // SCENE 7 — Outro (41.9 - 44.8) — VO7 42.0-44.261
       // ============================================================
-      tl.fromTo("#s7-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 39.0);
-      tl.fromTo("#s7-tag", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 39.6);
-      tl.fromTo("#s7-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 40.2);
-      tl.set("#scene7", { visibility: "hidden" }, 41.81);
+      tl.fromTo("#s7-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 42.0);
+      tl.fromTo("#s7-tag", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 42.6);
+      tl.fromTo("#s7-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 43.2);
+      tl.set("#scene7", { visibility: "hidden" }, 44.81);
 
       // ============================================================
       // MUSIC — fade in to a ducked baseline (voice covers most of the
@@ -523,7 +545,7 @@
       // per-clip), fade out after the last VO line finishes.
       // ============================================================
       tl.to("#bgm", { volume: 0.14, duration: 0.5, ease: "power1.out" }, 0);
-      tl.to("#bgm", { volume: 0, duration: 0.8, ease: "power1.in" }, 41.3);
+      tl.to("#bgm", { volume: 0, duration: 0.8, ease: "power1.in" }, 44.3);
 
       window.__timelines["main"] = tl;
     </script>
