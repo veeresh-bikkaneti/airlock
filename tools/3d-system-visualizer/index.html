@@ -16,18 +16,32 @@
   #ui button.playing { border-color: #4fd18b; color: #4fd18b; }
   #ui button:disabled { opacity: .45; cursor: not-allowed; }
   #ui label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aab1bd; cursor: pointer; }
+  #ui select { display: block; width: 100%; margin-bottom: 6px; padding: 7px 10px; background: #1c2128; border: 1px solid #333a44; color: #e6e9ee; border-radius: 6px; font-size: 13px; }
 
   #errors { position: fixed; top: 14px; right: 14px; z-index: 10; max-width: 380px; }
   #errors .panel { background: rgba(58,20,20,0.92); border: 1px solid #7a2f2f; border-radius: 8px; padding: 10px 12px; color: #ffd7d7; font-size: 12.5px; }
   #errors .panel h3 { margin: 0 0 6px; font-size: 12px; color: #ff9b9b; }
   #errors ul { margin: 0; padding-left: 18px; }
   #errors li { margin-bottom: 4px; }
+
+  #inspect { position: fixed; bottom: 14px; left: 14px; z-index: 10; max-width: 320px; }
+  #inspect .panel { position: relative; }
+  #inspect-close { position: absolute; top: 6px; right: 8px; width: auto; background: none; border: none; color: #8b93a1; font-size: 16px; cursor: pointer; padding: 0; margin: 0; }
+  #inspect dl { margin: 0; font-size: 12.5px; }
+  #inspect dt { color: #8b93a1; margin-top: 6px; }
+  #inspect dd { margin: 0; color: #d8dbe0; }
 </style>
 </head>
 <body>
   <div id="canvas-host"></div>
 
   <div id="ui">
+    <div class="panel">
+      <h3>Scene</h3>
+      <select id="scene-select"></select>
+      <button id="scene-upload-btn" type="button">Load file…</button>
+      <input id="scene-upload-input" type="file" accept="application/json" style="display:none" />
+    </div>
     <div class="panel">
       <h3>Workflows</h3>
       <div id="flow-buttons"></div>
@@ -39,6 +53,14 @@
     <div class="panel">
       <h3>Scene validation errors</h3>
       <ul id="error-list"></ul>
+    </div>
+  </div>
+
+  <div id="inspect" style="display:none">
+    <div class="panel">
+      <button id="inspect-close" type="button" aria-label="Close">×</button>
+      <h3 id="inspect-title"></h3>
+      <dl id="inspect-fields"></dl>
     </div>
   </div>
 
@@ -62,65 +84,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-/* ======================================================================
-   SAMPLE SCENE DATA — exactly the schema the user specified:
-   nodes:  { id, label, pos: [x,y,z], type? }
-   edges:  { from, to, label?, style? }
-   flows:  { name, path: [nodeId, ...], loop?, speed? }
-
-   This is a small illustrative graph (11 nodes). The renderer below makes
-   no assumption about node count — the same code path handles 50+ nodes,
-   see the "Show labels" toggle and DECLUTTER_THRESHOLD note in D) below.
-   ====================================================================== */
-const SCENE_DATA = {
-  nodes: [
-    { id: "client",      label: "Client",           pos: [-8, 0, 0],  type: "external" },
-    { id: "gateway",     label: "API Gateway",       pos: [-4, 0, 0],  type: "service" },
-    { id: "auth",        label: "Auth Service",      pos: [-4, 3, -3], type: "service" },
-    { id: "orders",      label: "Orders Service",    pos: [0, 0, 0],   type: "service" },
-    { id: "inventory",   label: "Inventory Service", pos: [0, 3, -3],  type: "service" },
-    { id: "payments",    label: "Payments Service",  pos: [4, 0, 0],   type: "service" },
-    { id: "ledger_db",   label: "Ledger DB",         pos: [4, -3, -3], type: "datastore" },
-    { id: "orders_db",   label: "Orders DB",         pos: [0, -3, -3], type: "datastore" },
-    { id: "queue",       label: "Event Queue",       pos: [0, 0, 4],   type: "infra" },
-    { id: "notifier",    label: "Notification Svc",  pos: [4, 3, 4],   type: "service" },
-    { id: "webhook",     label: "Partner Webhook",   pos: [8, 3, 4],   type: "external" }
-  ],
-  edges: [
-    { from: "client",    to: "gateway",   label: "HTTPS" },
-    { from: "gateway",   to: "auth",      label: "verify token" },
-    { from: "auth",      to: "gateway",   label: "token ok" },
-    { from: "gateway",   to: "orders",    label: "create order" },
-    { from: "orders",    to: "inventory", label: "reserve stock" },
-    { from: "inventory", to: "orders",    label: "reserved" },
-    { from: "orders",    to: "orders_db", label: "write" },
-    { from: "orders",    to: "payments",  label: "charge" },
-    { from: "payments",  to: "ledger_db", label: "write" },
-    { from: "orders",    to: "queue",     label: "OrderCreated" },
-    { from: "queue",     to: "notifier",  label: "consume" },
-    { from: "notifier",  to: "webhook",   label: "POST" }
-  ],
-  flows: [
-    {
-      name: "Place order (happy path)",
-      path: ["client", "gateway", "auth", "gateway", "orders", "inventory", "orders", "payments", "ledger_db"],
-      loop: true,
-      speed: 3
-    },
-    {
-      name: "Order confirmation event",
-      path: ["orders", "queue", "notifier", "webhook"],
-      loop: true,
-      speed: 2.5
-    },
-    {
-      name: "BROKEN — missing edge (demonstrates error handling, see E)",
-      path: ["client", "payments"],
-      loop: false,
-      speed: 3
-    }
-  ]
-};
+const MANIFEST_PATH = "scenes/manifest.json";
+const DEFAULT_SCENE_PATH = "scenes/ecommerce-demo.json";
 
 /* ======================================================================
    E) VALIDATION — fail loudly, never invent missing graph structure.
@@ -425,9 +390,6 @@ function buildEdges(data) {
   }
 }
 
-buildNodes(SCENE_DATA);
-buildEdges(SCENE_DATA);
-
 /* ======================================================================
    D) EDGE PULSING / HOVER HIGHLIGHT — raycast against edge cylinders;
    the hovered edge's material emissive pulses via a sine wave driven by
@@ -456,6 +418,66 @@ renderer.domElement.addEventListener("pointermove", (ev) => {
       entry.arrow.layers.enable(BLOOM_LAYER);
     }
   }
+});
+
+/* ======================================================================
+   CLICK-TO-INSPECT — raycast against node meshes first, then edges;
+   show whatever optional metadata fields are present on the clicked
+   node/edge in a bottom-left panel. Empty canvas or the × clears it.
+   ====================================================================== */
+const inspectPanel = document.getElementById("inspect");
+const inspectTitle = document.getElementById("inspect-title");
+const inspectFields = document.getElementById("inspect-fields");
+document.getElementById("inspect-close").addEventListener("click", () => {
+  inspectPanel.style.display = "none";
+});
+
+function showInspect(title, fields) {
+  inspectTitle.textContent = title;
+  inspectFields.innerHTML = "";
+  for (const [key, value] of fields) {
+    if (value === undefined || value === null || value === "") continue;
+    const dt = document.createElement("dt");
+    dt.textContent = key;
+    const dd = document.createElement("dd");
+    dd.textContent = String(value);
+    inspectFields.append(dt, dd);
+  }
+  inspectPanel.style.display = "block";
+}
+
+renderer.domElement.addEventListener("click", (ev) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNdc, camera);
+
+  const nodeMeshes = [...registry.nodes.values()].map(n => n.mesh);
+  const nodeHit = raycaster.intersectObjects(nodeMeshes, false)[0];
+  if (nodeHit) {
+    const entry = [...registry.nodes.values()].find(n => n.mesh === nodeHit.object);
+    showInspect(entry.data.label, [
+      ["Type", entry.data.type],
+      ["Status", entry.data.status],
+      ["Owner", entry.data.owner],
+      ["Description", entry.data.description]
+    ]);
+    return;
+  }
+
+  const edgeHit = raycaster.intersectObjects(registry.edgeMeshes, false)[0];
+  if (edgeHit) {
+    const entry = [...registry.edges.values()].find(e => e.mesh === edgeHit.object || e.arrow === edgeHit.object);
+    showInspect(entry.data.label ?? `${entry.data.from} → ${entry.data.to}`, [
+      ["From", entry.data.from],
+      ["To", entry.data.to],
+      ["Protocol", entry.data.protocol],
+      ["Latency", entry.data.latencyMs !== undefined ? `${entry.data.latencyMs} ms` : undefined]
+    ]);
+    return;
+  }
+
+  inspectPanel.style.display = "none";
 });
 
 /* ======================================================================
@@ -496,6 +518,13 @@ class FlowAnimator {
   stop() {
     this.playing = false;
     this.dot.visible = false;
+  }
+
+  dispose() {
+    this.stop();
+    scene.remove(this.dot);
+    this.dot.geometry.dispose();
+    this.dot.material.dispose();
   }
 
   update(dt) {
@@ -554,52 +583,159 @@ function flyToDefault() {
 }
 
 /* ======================================================================
-   VALIDATION RESULTS -> UI (error panel + per-flow Play buttons)
+   SCENE LOADING — reusable across the initial boot, the manifest
+   dropdown, the ?scene= URL param, and file upload. teardownScene() is
+   safe to call on an empty registry, so switchScene() always tears down
+   then loads, uniformly.
    ====================================================================== */
-const { errors: edgeErrors, flowErrors } = validateScene(SCENE_DATA);
 const errorPanel = document.getElementById("errors");
 const errorList = document.getElementById("error-list");
-const allErrors = [
-  ...edgeErrors.map(e => e.message),
-  ...[...flowErrors.entries()].flatMap(([name, msgs]) => msgs.map(m => `"${name}": ${m}`))
-];
-if (allErrors.length) {
-  errorPanel.style.display = "block";
-  for (const msg of allErrors) {
-    const li = document.createElement("li");
-    li.textContent = msg;
-    errorList.appendChild(li);
-  }
-}
-
-const animators = new Map();
 const flowButtonsHost = document.getElementById("flow-buttons");
-for (const flow of SCENE_DATA.flows) {
-  const btn = document.createElement("button");
-  const broken = flowErrors.has(flow.name);
-  btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
-  btn.disabled = broken;
-  flowButtonsHost.appendChild(btn);
+const animators = new Map();
 
-  if (!broken) {
-    const animator = new FlowAnimator(flow, registry.edges);
-    animators.set(flow.name, animator);
-    btn.addEventListener("click", () => {
-      if (animator.playing) {
-        animator.stop();
-        btn.classList.remove("playing");
-        btn.textContent = `▶ ${flow.name}`;
-        flyToDefault();
-      } else {
-        animator.start();
-        btn.classList.add("playing");
-        btn.textContent = `⏸ ${flow.name}`;
-        flyToFlow(flow);
-        scheduleIdleAutoRotate();
-      }
-    });
-  }
+async function fetchScene(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} loading ${url}`);
+  return res.json();
 }
+
+function teardownScene() {
+  for (const { mesh, label } of registry.nodes.values()) {
+    scene.remove(mesh, label);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    label.material.map.dispose();
+    label.material.dispose();
+  }
+  for (const { mesh, arrow } of registry.edges.values()) {
+    scene.remove(mesh, arrow);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    arrow.geometry.dispose();
+    arrow.material.dispose();
+  }
+  for (const animator of animators.values()) animator.dispose();
+  animators.clear();
+  registry.nodes.clear();
+  registry.edges.clear();
+  registry.edgeMeshes.length = 0;
+  hoveredEdgeKey = null;
+  errorPanel.style.display = "none";
+  errorList.innerHTML = "";
+  flowButtonsHost.innerHTML = "";
+}
+
+async function loadAndRenderScene(data) {
+  const { errors: edgeErrors, flowErrors } = validateScene(data);
+
+  buildNodes(data);
+  buildEdges(data);
+
+  const allErrors = [
+    ...edgeErrors.map(e => e.message),
+    ...[...flowErrors.entries()].flatMap(([name, msgs]) => msgs.map(m => `"${name}": ${m}`))
+  ];
+  if (allErrors.length) {
+    errorPanel.style.display = "block";
+    for (const msg of allErrors) {
+      const li = document.createElement("li");
+      li.textContent = msg;
+      errorList.appendChild(li);
+    }
+  }
+
+  for (const flow of data.flows) {
+    const btn = document.createElement("button");
+    const broken = flowErrors.has(flow.name);
+    btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
+    btn.disabled = broken;
+    flowButtonsHost.appendChild(btn);
+
+    if (!broken) {
+      const animator = new FlowAnimator(flow, registry.edges);
+      animators.set(flow.name, animator);
+      btn.addEventListener("click", () => {
+        if (animator.playing) {
+          animator.stop();
+          btn.classList.remove("playing");
+          btn.textContent = `▶ ${flow.name}`;
+          flyToDefault();
+        } else {
+          animator.start();
+          btn.classList.add("playing");
+          btn.textContent = `⏸ ${flow.name}`;
+          flyToFlow(flow);
+          scheduleIdleAutoRotate();
+        }
+      });
+    }
+  }
+
+  flyToDefault();
+  scheduleIdleAutoRotate();
+}
+
+async function switchScene(data) {
+  teardownScene();
+  await loadAndRenderScene(data);
+}
+
+function currentSceneParam() {
+  return new URLSearchParams(window.location.search).get("scene");
+}
+
+async function boot() {
+  const manifest = await fetchScene(MANIFEST_PATH);
+  const sceneSelect = document.getElementById("scene-select");
+  for (const entry of manifest) {
+    const opt = document.createElement("option");
+    opt.value = `scenes/${entry.file}`;
+    opt.textContent = entry.name;
+    sceneSelect.appendChild(opt);
+  }
+
+  const requested = currentSceneParam();
+  const initialPath = manifest.some(e => `scenes/${e.file}` === requested)
+    ? requested
+    : (sceneSelect.options[0]?.value ?? DEFAULT_SCENE_PATH);
+  sceneSelect.value = initialPath;
+
+  sceneSelect.addEventListener("change", async () => {
+    try {
+      const data = await fetchScene(sceneSelect.value);
+      await switchScene(data);
+    } catch (err) {
+      errorPanel.style.display = "block";
+      const li = document.createElement("li");
+      li.textContent = `Failed to load "${sceneSelect.value}": ${err.message}`;
+      errorList.appendChild(li);
+    }
+  });
+
+  const uploadBtn = document.getElementById("scene-upload-btn");
+  const uploadInput = document.getElementById("scene-upload-input");
+  uploadBtn.addEventListener("click", () => uploadInput.click());
+  uploadInput.addEventListener("change", async () => {
+    const file = uploadInput.files[0];
+    uploadInput.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await switchScene(data);
+      sceneSelect.value = ""; // no manifest entry matches an uploaded file
+    } catch (err) {
+      errorPanel.style.display = "block";
+      const li = document.createElement("li");
+      li.textContent = `Failed to load "${file.name}": ${err.message}`;
+      errorList.appendChild(li);
+    }
+  });
+
+  const data = await fetchScene(initialPath);
+  await switchScene(data);
+}
+boot();
 
 document.getElementById("labels-toggle").addEventListener("change", (ev) => {
   for (const { label } of registry.nodes.values()) label.visible = ev.target.checked;
@@ -639,6 +775,18 @@ function tick() {
     const pulse = 0.6 + Math.sin(t * 6) * 0.4;
     entry.mesh.material.emissive.setRGB(0.9 * pulse, 0.65 * pulse, 0.1 * pulse);
     entry.arrow.material.emissive.setRGB(0.9 * pulse, 0.65 * pulse, 0.1 * pulse);
+  }
+
+  for (const { data, mesh } of registry.nodes.values()) {
+    if (data.status === "degraded") {
+      const pulse = 0.5 + Math.sin(t * 2.5) * 0.35;
+      mesh.material.emissive.setRGB(0.75 * pulse, 0.5 * pulse, 0.0);
+    } else if (data.status === "down") {
+      const pulse = 0.55 + Math.sin(t * 4) * 0.35;
+      mesh.material.emissive.setRGB(1.0 * pulse, 0.05 * pulse, 0.05 * pulse);
+    } else if (mesh.material.emissive.getHex() !== 0x000000) {
+      mesh.material.emissive.setHex(0x000000); // scene switched to a healthy node reusing this material instance's prior tint
+    }
   }
 
   const ease = 1 - Math.pow(0.0001, Math.min(dt, 0.1));
