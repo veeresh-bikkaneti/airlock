@@ -32,6 +32,8 @@
     <div class="panel">
       <h3>Scene</h3>
       <select id="scene-select"></select>
+      <button id="scene-upload-btn" type="button">Load file…</button>
+      <input id="scene-upload-input" type="file" accept="application/json" style="display:none" />
     </div>
     <div class="panel">
       <h3>Workflows</h3>
@@ -631,6 +633,26 @@ async function boot() {
       errorPanel.style.display = "block";
       const li = document.createElement("li");
       li.textContent = `Failed to load "${sceneSelect.value}": ${err.message}`;
+      errorList.appendChild(li);
+    }
+  });
+
+  const uploadBtn = document.getElementById("scene-upload-btn");
+  const uploadInput = document.getElementById("scene-upload-input");
+  uploadBtn.addEventListener("click", () => uploadInput.click());
+  uploadInput.addEventListener("change", async () => {
+    const file = uploadInput.files[0];
+    uploadInput.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await switchScene(data);
+      sceneSelect.value = ""; // no manifest entry matches an uploaded file
+    } catch (err) {
+      errorPanel.style.display = "block";
+      const li = document.createElement("li");
+      li.textContent = `Failed to load "${file.name}": ${err.message}`;
       errorList.appendChild(li);
     }
   });
