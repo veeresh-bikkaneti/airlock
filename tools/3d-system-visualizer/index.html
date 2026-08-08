@@ -16,6 +16,7 @@
   #ui button.playing { border-color: #4fd18b; color: #4fd18b; }
   #ui button:disabled { opacity: .45; cursor: not-allowed; }
   #ui label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aab1bd; cursor: pointer; }
+  #ui select { display: block; width: 100%; margin-bottom: 6px; padding: 7px 10px; background: #1c2128; border: 1px solid #333a44; color: #e6e9ee; border-radius: 6px; font-size: 13px; }
 
   #errors { position: fixed; top: 14px; right: 14px; z-index: 10; max-width: 380px; }
   #errors .panel { background: rgba(58,20,20,0.92); border: 1px solid #7a2f2f; border-radius: 8px; padding: 10px 12px; color: #ffd7d7; font-size: 12.5px; }
@@ -28,6 +29,10 @@
   <div id="canvas-host"></div>
 
   <div id="ui">
+    <div class="panel">
+      <h3>Scene</h3>
+      <select id="scene-select"></select>
+    </div>
     <div class="panel">
       <h3>Workflows</h3>
       <div id="flow-buttons"></div>
@@ -598,8 +603,39 @@ async function switchScene(data) {
   await loadAndRenderScene(data);
 }
 
+function currentSceneParam() {
+  return new URLSearchParams(window.location.search).get("scene");
+}
+
 async function boot() {
-  const data = await fetchScene(DEFAULT_SCENE_PATH);
+  const manifest = await fetchScene(MANIFEST_PATH);
+  const sceneSelect = document.getElementById("scene-select");
+  for (const entry of manifest) {
+    const opt = document.createElement("option");
+    opt.value = `scenes/${entry.file}`;
+    opt.textContent = entry.name;
+    sceneSelect.appendChild(opt);
+  }
+
+  const requested = currentSceneParam();
+  const initialPath = manifest.some(e => `scenes/${e.file}` === requested)
+    ? requested
+    : (sceneSelect.options[0]?.value ?? DEFAULT_SCENE_PATH);
+  sceneSelect.value = initialPath;
+
+  sceneSelect.addEventListener("change", async () => {
+    try {
+      const data = await fetchScene(sceneSelect.value);
+      await switchScene(data);
+    } catch (err) {
+      errorPanel.style.display = "block";
+      const li = document.createElement("li");
+      li.textContent = `Failed to load "${sceneSelect.value}": ${err.message}`;
+      errorList.appendChild(li);
+    }
+  });
+
+  const data = await fetchScene(initialPath);
   await switchScene(data);
 }
 boot();
