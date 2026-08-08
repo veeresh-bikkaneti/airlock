@@ -62,65 +62,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-/* ======================================================================
-   SAMPLE SCENE DATA — exactly the schema the user specified:
-   nodes:  { id, label, pos: [x,y,z], type? }
-   edges:  { from, to, label?, style? }
-   flows:  { name, path: [nodeId, ...], loop?, speed? }
-
-   This is a small illustrative graph (11 nodes). The renderer below makes
-   no assumption about node count — the same code path handles 50+ nodes,
-   see the "Show labels" toggle and DECLUTTER_THRESHOLD note in D) below.
-   ====================================================================== */
-const SCENE_DATA = {
-  nodes: [
-    { id: "client",      label: "Client",           pos: [-8, 0, 0],  type: "external" },
-    { id: "gateway",     label: "API Gateway",       pos: [-4, 0, 0],  type: "service" },
-    { id: "auth",        label: "Auth Service",      pos: [-4, 3, -3], type: "service" },
-    { id: "orders",      label: "Orders Service",    pos: [0, 0, 0],   type: "service" },
-    { id: "inventory",   label: "Inventory Service", pos: [0, 3, -3],  type: "service" },
-    { id: "payments",    label: "Payments Service",  pos: [4, 0, 0],   type: "service" },
-    { id: "ledger_db",   label: "Ledger DB",         pos: [4, -3, -3], type: "datastore" },
-    { id: "orders_db",   label: "Orders DB",         pos: [0, -3, -3], type: "datastore" },
-    { id: "queue",       label: "Event Queue",       pos: [0, 0, 4],   type: "infra" },
-    { id: "notifier",    label: "Notification Svc",  pos: [4, 3, 4],   type: "service" },
-    { id: "webhook",     label: "Partner Webhook",   pos: [8, 3, 4],   type: "external" }
-  ],
-  edges: [
-    { from: "client",    to: "gateway",   label: "HTTPS" },
-    { from: "gateway",   to: "auth",      label: "verify token" },
-    { from: "auth",      to: "gateway",   label: "token ok" },
-    { from: "gateway",   to: "orders",    label: "create order" },
-    { from: "orders",    to: "inventory", label: "reserve stock" },
-    { from: "inventory", to: "orders",    label: "reserved" },
-    { from: "orders",    to: "orders_db", label: "write" },
-    { from: "orders",    to: "payments",  label: "charge" },
-    { from: "payments",  to: "ledger_db", label: "write" },
-    { from: "orders",    to: "queue",     label: "OrderCreated" },
-    { from: "queue",     to: "notifier",  label: "consume" },
-    { from: "notifier",  to: "webhook",   label: "POST" }
-  ],
-  flows: [
-    {
-      name: "Place order (happy path)",
-      path: ["client", "gateway", "auth", "gateway", "orders", "inventory", "orders", "payments", "ledger_db"],
-      loop: true,
-      speed: 3
-    },
-    {
-      name: "Order confirmation event",
-      path: ["orders", "queue", "notifier", "webhook"],
-      loop: true,
-      speed: 2.5
-    },
-    {
-      name: "BROKEN — missing edge (demonstrates error handling, see E)",
-      path: ["client", "payments"],
-      loop: false,
-      speed: 3
-    }
-  ]
-};
+const MANIFEST_PATH = "scenes/manifest.json";
+const DEFAULT_SCENE_PATH = "scenes/ecommerce-demo.json";
 
 /* ======================================================================
    E) VALIDATION — fail loudly, never invent missing graph structure.
@@ -425,9 +368,6 @@ function buildEdges(data) {
   }
 }
 
-buildNodes(SCENE_DATA);
-buildEdges(SCENE_DATA);
-
 /* ======================================================================
    D) EDGE PULSING / HOVER HIGHLIGHT — raycast against edge cylinders;
    the hovered edge's material emissive pulses via a sine wave driven by
@@ -498,6 +438,13 @@ class FlowAnimator {
     this.dot.visible = false;
   }
 
+  dispose() {
+    this.stop();
+    scene.remove(this.dot);
+    this.dot.geometry.dispose();
+    this.dot.material.dispose();
+  }
+
   update(dt) {
     if (!this.playing) return;
     this.distance += (this.flow.speed || 2) * dt;
@@ -554,52 +501,108 @@ function flyToDefault() {
 }
 
 /* ======================================================================
-   VALIDATION RESULTS -> UI (error panel + per-flow Play buttons)
+   SCENE LOADING — reusable across the initial boot, the manifest
+   dropdown, the ?scene= URL param, and file upload. teardownScene() is
+   safe to call on an empty registry, so switchScene() always tears down
+   then loads, uniformly.
    ====================================================================== */
-const { errors: edgeErrors, flowErrors } = validateScene(SCENE_DATA);
 const errorPanel = document.getElementById("errors");
 const errorList = document.getElementById("error-list");
-const allErrors = [
-  ...edgeErrors.map(e => e.message),
-  ...[...flowErrors.entries()].flatMap(([name, msgs]) => msgs.map(m => `"${name}": ${m}`))
-];
-if (allErrors.length) {
-  errorPanel.style.display = "block";
-  for (const msg of allErrors) {
-    const li = document.createElement("li");
-    li.textContent = msg;
-    errorList.appendChild(li);
-  }
-}
-
-const animators = new Map();
 const flowButtonsHost = document.getElementById("flow-buttons");
-for (const flow of SCENE_DATA.flows) {
-  const btn = document.createElement("button");
-  const broken = flowErrors.has(flow.name);
-  btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
-  btn.disabled = broken;
-  flowButtonsHost.appendChild(btn);
+const animators = new Map();
 
-  if (!broken) {
-    const animator = new FlowAnimator(flow, registry.edges);
-    animators.set(flow.name, animator);
-    btn.addEventListener("click", () => {
-      if (animator.playing) {
-        animator.stop();
-        btn.classList.remove("playing");
-        btn.textContent = `▶ ${flow.name}`;
-        flyToDefault();
-      } else {
-        animator.start();
-        btn.classList.add("playing");
-        btn.textContent = `⏸ ${flow.name}`;
-        flyToFlow(flow);
-        scheduleIdleAutoRotate();
-      }
-    });
-  }
+async function fetchScene(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} loading ${url}`);
+  return res.json();
 }
+
+function teardownScene() {
+  for (const { mesh, label } of registry.nodes.values()) {
+    scene.remove(mesh, label);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    label.material.map.dispose();
+    label.material.dispose();
+  }
+  for (const { mesh, arrow } of registry.edges.values()) {
+    scene.remove(mesh, arrow);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    arrow.geometry.dispose();
+    arrow.material.dispose();
+  }
+  for (const animator of animators.values()) animator.dispose();
+  animators.clear();
+  registry.nodes.clear();
+  registry.edges.clear();
+  registry.edgeMeshes.length = 0;
+  hoveredEdgeKey = null;
+  errorPanel.style.display = "none";
+  errorList.innerHTML = "";
+  flowButtonsHost.innerHTML = "";
+}
+
+async function loadAndRenderScene(data) {
+  const { errors: edgeErrors, flowErrors } = validateScene(data);
+
+  buildNodes(data);
+  buildEdges(data);
+
+  const allErrors = [
+    ...edgeErrors.map(e => e.message),
+    ...[...flowErrors.entries()].flatMap(([name, msgs]) => msgs.map(m => `"${name}": ${m}`))
+  ];
+  if (allErrors.length) {
+    errorPanel.style.display = "block";
+    for (const msg of allErrors) {
+      const li = document.createElement("li");
+      li.textContent = msg;
+      errorList.appendChild(li);
+    }
+  }
+
+  for (const flow of data.flows) {
+    const btn = document.createElement("button");
+    const broken = flowErrors.has(flow.name);
+    btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
+    btn.disabled = broken;
+    flowButtonsHost.appendChild(btn);
+
+    if (!broken) {
+      const animator = new FlowAnimator(flow, registry.edges);
+      animators.set(flow.name, animator);
+      btn.addEventListener("click", () => {
+        if (animator.playing) {
+          animator.stop();
+          btn.classList.remove("playing");
+          btn.textContent = `▶ ${flow.name}`;
+          flyToDefault();
+        } else {
+          animator.start();
+          btn.classList.add("playing");
+          btn.textContent = `⏸ ${flow.name}`;
+          flyToFlow(flow);
+          scheduleIdleAutoRotate();
+        }
+      });
+    }
+  }
+
+  flyToDefault();
+  scheduleIdleAutoRotate();
+}
+
+async function switchScene(data) {
+  teardownScene();
+  await loadAndRenderScene(data);
+}
+
+async function boot() {
+  const data = await fetchScene(DEFAULT_SCENE_PATH);
+  await switchScene(data);
+}
+boot();
 
 document.getElementById("labels-toggle").addEventListener("change", (ev) => {
   for (const { label } of registry.nodes.values()) label.visible = ev.target.checked;
