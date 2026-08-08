@@ -7,7 +7,7 @@ Create a short launch-style brag video for Airlock — but structured as a real 
 - Composition directory: `brag-output/composition/`
 - Rendered video: `brag-output/brag.mp4`
 - Format: landscape — 1920x1080
-- Duration: ~41.9 seconds (deliberately extended past this format's normal 15-25s guidance — the model-sizing scene is the product's core insight and needed real reading room, Scene 4 gained a memory-service beat after the first render, and a new Scene 6 bonus beat for the 3D system visualizer was added before the outro; see brag-plan.md's Tone interpretation for the reasoning)
+- Duration: ~44.9 seconds (deliberately extended past this format's normal 15-25s guidance — the model-sizing scene is the product's core insight and needed real reading room, Scene 4 gained a memory-service beat after the first render, a Scene 6 bonus beat for the 3D system visualizer was added before the outro, and Scene 6 gained a third beat for the visualizer's data-depth pass; see brag-plan.md's Tone interpretation for the reasoning)
 
 ## Source Material
 - Project root: `C:\Users\veere\source\repos\local-ai-platform`
@@ -58,7 +58,7 @@ Use the storyboard in `brag-output/brag-plan.md` as the creative contract — fu
 3. **The gamble, offloaded (centerpiece)** — 11s — the model-sizing decision, given full room. 4 beats, each paired with a visual step: (1) framing the problem — picking model size is normally a guess; (2) a capacity meter fills to real numbers, "127.7 GB RAM · 16 GB GPU"; (3) 4 model-size cards appear (4.7GB/9GB/14GB/18GB), a fit-check sweeps across them; (4) non-fitting cards gray out and shrink, the winning card highlights green with a checkmark and slides forward, paired with text explaining the pull source (local registry first, HuggingFace fallback). This is the single most important sequence in the video — do not rush it.
 4. **What it locks down** — 7.1s — 4 short beats over the still-visible dimmed terminal: "One instance, ever." → "Port blocked from the outside." → "Every action logged." → "Remembers your session — on Ollama."
 5. **Proof** — 5s — terminal snaps to full focus; real "AI PLATFORM READY (Hardened)" banner reveals line by line and holds; then the real chat prompt appears, then the real response streams in. This is the emotional peak.
-6. **Bonus: the system in 3D** — 6s — clean cut to the real captured `tools/3d-system-visualizer` node graph (`preview.png`), same near-black background as the terminal. Slow camera drift/zoom over the real frame; a small dot travels the real edge path (Client → API Gateway → Orders Service → Payments Service → Ledger DB), recreating the tool's actual "Place order (happy path)" workflow playback. 2 text beats: "There's more than the terminal." → "A 3D map of how every piece actually talks to each other — free, in `tools/`." A light aside, not a second peak.
+6. **Bonus: the system in 3D** — 9.2s — clean cut to the real captured `tools/3d-system-visualizer` node graph (`preview.png`), same near-black background as the terminal. Slow camera drift/zoom over the real frame; a small dot travels the real edge path (Client → API Gateway → Orders Service → Payments Service → Ledger DB), recreating the tool's actual "Place order (happy path)" workflow playback. 2 text beats: "There's more than the terminal." → "A 3D map of how every piece actually talks to each other — free, in `tools/`." Then a third beat: the camera settles back to the full frame and crossfades to a second real capture (`viz-3d-data-depth.png`) showing the tool's data-depth pass — the scene-picker panel, a status-tinted node, and an open inspect panel — with the caption "Now you can load your own map and click anything to inspect it." Silent, no new voiceover. A light aside, not a second peak.
 7. **Outro** — 4s — "Airlock" wordmark → "Sealed. Tested. Then opened." → repo URL, staggered settle, quiet hold.
 
 ## Audio
@@ -87,8 +87,8 @@ Load the composition-building Hyperframes domain skills — `hyperframes-core` (
 Requirements:
 - Show real terminal text, the real banner, and the real chat exchange verbatim — this is a CLI product, the terminal recording IS the demo.
 - Keep all text readable in the final render, especially the Scene 3 explainer beats — this scene got extended screen time specifically so its text isn't rushed.
-- Scene 6: copy `tools/3d-system-visualizer/preview.png` into `composition/assets/` and use it as the scene's background image; do not fabricate a different node graph — the real captured screenshot is the visual.
-- Total duration ~41.9 seconds (see Output section above for why this exceeds the format's normal ceiling).
+- Scene 6: copy `tools/3d-system-visualizer/preview.png` into `composition/assets/` and use it as the scene's background image; do not fabricate a different node graph — the real captured screenshot is the visual. Beat 3 (added 2026-08-07) crossfades to a second real capture, `viz-3d-data-depth.png`, showing the tool's data-depth pass (scene picker, status glow, inspect panel) — same rule: the real captured screenshot is the visual, nothing fabricated.
+- Total duration ~44.9 seconds (see Output section above for why this exceeds the format's normal ceiling).
 - Include the planned music/SFX layer as described above.
 - Treat the audio notes above as guidance, not a fixed cue sheet — choose exact SFX after the visual animation exists.
 - Use at most 1-3 strong cue locks if a beat/cue source is available; do not force other moments onto a beat grid.
