@@ -41,12 +41,6 @@
       "path": ["orders", "queue", "notifier", "webhook"],
       "loop": true,
       "speed": 2.5
-    },
-    {
-      "name": "BROKEN — missing edge (demonstrates error handling, see E)",
-      "path": ["client", "payments"],
-      "loop": false,
-      "speed": 3
     }
   ]
 }

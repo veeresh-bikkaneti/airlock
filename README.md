@@ -552,7 +552,7 @@ airlock/
 
 ## 🧊 3D System Visualizer
 
-Standalone, single-file Three.js scene (`tools/3d-system-visualizer/index.html`) for visualizing a system's services, data stores, and edges as a 3D node graph — with animated workflow playback (a packet travels the actual call path, step by step) and built-in scene validation (catches edges referencing missing nodes, like the intentional "BROKEN" demo entry).
+Standalone, single-file Three.js scene (`tools/3d-system-visualizer/index.html`) for visualizing a system's services, data stores, and edges as a 3D node graph — with animated workflow playback (a packet travels the actual call path, step by step) and built-in scene validation (catches edges referencing missing nodes or steps with no matching edge, reported per flow).
 
 No build step, no dependencies to install — it pulls Three.js from a CDN via an import map.
 
