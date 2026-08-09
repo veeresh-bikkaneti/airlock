@@ -92,7 +92,13 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 
 #### Configuring Agent CLIs
 
-The platform exposes one OpenAI-compatible **Chat Completions** endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`). Any tool that speaks Chat Completions can point straight at it — verified below against the real installed CLIs, not just their docs. Codex CLI and Claude Code cannot; both speak a different, incompatible protocol (details in their entries below).
+The platform exposes an OpenAI-compatible **Chat Completions** endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`) — and, on the installed Ollama build, also **OpenAI's Responses API** (`/v1/responses`) and **Anthropic's Messages API** (`/v1/messages`). Ollama's own published docs (ollama.readthedocs.io/en/openai) only document Chat Completions; the other two are real but undocumented there. Older Ollama installs may not have them — check yours before relying on the Codex/Claude Code/Copilot entries below:
+
+```powershell
+curl http://127.0.0.1:12345/v1/responses -d '{"model":"<any model from ai-models>","input":"hi"}'
+```
+
+A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/opencode/jcode/aider below, which only need Chat Completions). A `200` means everything below applies. Every entry below was verified against the platform's actual running instance — a real prompt in, a real completion out — not just a matching HTTP shape.
 
 **Pi.dev** — copy `config/pi-models.json.template` to `%USERPROFILE%\.pi\agent\models.json` and confirm its `ollama.baseUrl` matches the platform's port (default `12345`; edit both if you change `ai-start -Port`).
 
@@ -106,11 +112,42 @@ The platform exposes one OpenAI-compatible **Chat Completions** endpoint at `htt
   ```
   `--provider ollama` is jcode's built-in provider type — it already knows Ollama needs no API key, so nothing else to pass. jcode has no per-project config — this writes into `%USERPROFILE%\.jcode\config.toml`.
 
-**Codex CLI (OpenAI's) — does not work against this platform, confirmed by direct testing.** Codex's `wire_api` only supports `"responses"` — `wire_api = "chat"` is hard-rejected by the CLI itself ("no longer supported"). Pointed a custom `model_providers` entry at a logging stub and inspected the actual request: Codex POSTs to `{base_url}/responses` using OpenAI's newer Responses API shape, not Chat Completions. Ollama's OpenAI-compatible layer (checked against the current Ollama docs) only implements `/v1/chat/completions`, `/v1/completions`, `/v1/models`, and `/v1/embeddings` — no `/v1/responses`. There's no config that bridges this; it's the same class of problem as Claude Code below, just a different protocol pairing. Codex's own `--oss --local-provider ollama` flag exists but targets Ollama's default port `11434`, not this platform's `12345`, and wouldn't fix the protocol mismatch anyway. If a future Codex or Ollama release adds the missing side, that'll unblock it — not before.
+**Codex CLI (OpenAI's)** — works, confirmed with a live `codex exec` round-trip against the platform. Codex's `wire_api` only supports `"responses"` (`wire_api = "chat"` is hard-rejected: "no longer supported"), so it needs the `/v1/responses` route from the check above. No template ships for this — Codex has no per-project config — add a provider block to `%USERPROFILE%\.codex\config.toml`:
+  ```toml
+  [model_providers.airlock]
+  name = "airlock"
+  base_url = "http://127.0.0.1:12345/v1"
+  wire_api = "responses"
+
+  model_provider = "airlock"
+  model = "qwen2.5-coder:7b"
+  ```
+  Codex's own `--oss --local-provider ollama` flag also exists but targets Ollama's default port `11434`, not this platform's `12345` — use the config above instead if you've moved the platform's port with `ai-start -Port`.
 
 **aider** — no config file needed; `ai-code` (in `profile-helpers.ps1`) already launches it with `--openai-api-base` pointed at the platform.
 
-> **Claude Code cannot be pointed at this platform.** Claude Code (the `claude` CLI) only speaks Anthropic's Messages API (`/v1/messages`) — never the OpenAI-compatible Chat Completions shape this platform's `/v1/chat/completions` endpoint exposes, and Anthropic's own docs are explicit that they "[don't] support routing Claude Code to non-Claude models through any gateway." Setting `ANTHROPIC_BASE_URL` to `127.0.0.1:12345` in `settings.json`'s `env` block will not work — you'll get exactly the base-url/auth-token error this used to promise it'd fix (the repo previously shipped a `claude-settings.json.template` that invented a settings.json schema that was never real; it's been removed). If you want Claude Code itself, authenticate it normally with a real Anthropic API key or `claude login` — it's a separate, cloud-only tool from the local backend this platform manages. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) talks to Anthropic's real API directly and is unaffected by this limitation.
+**Claude Code** — works too, confirmed with a live `claude -p` call that got a real completion back from the platform, not a connection error. Point it at `/v1/messages` via `settings.json`'s `env` block:
+  ```json
+  {
+    "env": {
+      "ANTHROPIC_BASE_URL": "http://127.0.0.1:12345",
+      "ANTHROPIC_API_KEY": "ollama"
+    }
+  }
+  ```
+  Ollama doesn't check the API key — any non-empty string works. Anthropic's own docs say they don't *support* routing Claude Code to non-Claude models through a gateway; that's a support-policy statement, not a technical block, and this repo's earlier "Claude Code cannot be pointed at this platform" claim was wrong — it was written against Ollama's documented API surface, which stops at Chat Completions, before testing found the undocumented `/v1/messages` route above. The repo previously also shipped a `claude-settings.json.template` inventing a fake settings schema (`api.ollama.baseUrl`/etc.); that's what caused the original base-url/token error and it's been deleted — use the `env` block above instead. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) is unrelated — that talks to Anthropic's real API for genuine Claude models, unaffected either way.
+
+  **Model choice matters more here than for the other tools above.** Claude Code's system prompt is large and its agentic loop assumes a competent instruction-following model. A quick test with a tiny model (`qwen2.5:0.5b`) connected fine but ignored the prompt and rambled — use something in the `qwen2.5-coder:7b`+ range (the same tier this platform already auto-selects for you), not a toy model.
+
+**GitHub Copilot CLI** — works natively, no gateway trickery: GitHub added BYOK/local-model support in April 2026. Set these before launching `copilot` (env vars, not a config file):
+  ```powershell
+  $env:COPILOT_PROVIDER_BASE_URL = "http://127.0.0.1:12345/v1"
+  $env:COPILOT_MODEL = "qwen2.5-coder:7b"
+  copilot
+  ```
+  `COPILOT_PROVIDER_TYPE` defaults to `openai`, which is what Ollama speaks — no need to set it. `COPILOT_PROVIDER_API_KEY` isn't needed either, same reason as Claude Code above. GitHub's docs require the model to support tool calling and streaming (`qwen2.5-coder` does) and recommend 128k+ context for best results. Not installed on this machine, so unlike everything else in this section this one is unverified end-to-end here — the env-var mechanism itself is officially documented (GitHub's own docs), not guessed.
+
+**Gemini CLI — does not work with this platform, and there's no config that fixes it.** `GOOGLE_GEMINI_BASE_URL` will redirect Gemini CLI's requests to any host, but the CLI still sends Google's own Gemini wire format there — and Ollama doesn't implement that shape (checked the installed binary directly: no `generateContent`/`v1beta`-style routes, only the OpenAI and Anthropic ones documented above). The CLI's own `gemini gemma` subcommand runs a *different* local model — Google's Gemma, via Google's own LiteRT-LM runtime — it's local, but it isn't this platform and doesn't proxy anywhere else. Community forks of Gemini CLI (`ollama-code`, `open-gemini-cli`) add real OpenAI-compatible routing, but that's a different tool than the officially-installed `gemini` CLI this section is about.
 
 ### 🧩 VS Code Extension (`src/extension.ts`)
 
