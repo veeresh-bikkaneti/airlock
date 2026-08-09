@@ -117,3 +117,4 @@ agentdb.rvf.idmap.json
 .agents/
 skills-lock.json
 .gstack/
+.aider*
