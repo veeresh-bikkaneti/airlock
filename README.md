@@ -10,6 +10,14 @@ One door open at a time — exactly one local model backend running, walled off 
 
 ---
 
+## 🎥 Demo
+
+[![Airlock demo video](brag-output/brag.jpg)](https://github.com/veeresh-bikkaneti/airlock/raw/main/brag-output/brag.mp4)
+
+Click the image to play/download the demo (GitHub doesn't play video inline in README files — this opens it in your browser's video player).
+
+---
+
 ## 🎯 The Problem We Solve
 
 ### Before This Platform
