@@ -88,9 +88,12 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 | **`05-Provider-Fallback-Matrix.md`** | Decision matrix for when to use local vs. cloud |
 | **`06-Model-Acquisition-Backlog.md`** | Zero-touch model auto-selection/pull backlog and review history |
 | **`07-Quickstart-Playbook.md`** | Step-by-step operational playbook (start, switch models, troubleshoot) |
+| **`08-Agent-CLI-Setup-Guide.md`** | Beginner-friendly, tested setup steps for every agent CLI (Pi.dev, opencode, jcode, Codex, Claude Code, aider, Copilot CLI, Gemini CLI) |
 | **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option) |
 
 #### Configuring Agent CLIs
+
+New to one of these tools, or want the full walkthrough with verified commands and troubleshooting for each? See [`docs/08-Agent-CLI-Setup-Guide.md`](docs/08-Agent-CLI-Setup-Guide.md) — this section is the condensed reference version.
 
 The platform exposes an OpenAI-compatible **Chat Completions** endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`) — and, on the installed Ollama build, also **OpenAI's Responses API** (`/v1/responses`) and **Anthropic's Messages API** (`/v1/messages`). Ollama's own published docs (ollama.readthedocs.io/en/openai) only document Chat Completions; the other two are real but undocumented there. Older Ollama installs may not have them — check yours before relying on the Codex/Claude Code/Copilot entries below:
 
@@ -585,6 +588,7 @@ airlock/
 │   ├── 05-Provider-Fallback-Matrix.md
 │   ├── 06-Model-Acquisition-Backlog.md
 │   ├── 07-Quickstart-Playbook.md
+│   ├── 08-Agent-CLI-Setup-Guide.md
 │   ├── COMPONENTS.md
 │   └── adr/                      # Architecture Decision Records
 ├── hermes-container/             # Sandboxed agent for job applications
