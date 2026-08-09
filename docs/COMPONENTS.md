@@ -54,7 +54,6 @@ This document explains **what each file/folder in the repository does** and **wh
 - `requireApprovalPatterns` – patterns that trigger a **user prompt** before committing (e.g., `*.md` containing sensitive sections). |
 | **`auth.json.template`** | Template for cloud API keys. **Never** commit real keys – run `ai-auth-set <provider> <key>` to fill it in. |
 | **`opencode.json.template`** | Configuration for the `opencode.ai` agent – points it at the local Ollama endpoint. |
-| **`claude-settings.json.template`** | Claude Code settings pointed at the local endpoint. |
 | **`hermes-config.json.template`** | Config for the Hermes container's agent (cloud-model settings). |
 | **`jcode-config.toml.template`** | Configuration for the `jcode` agent. |
 | **`pi-models.json.template`** | Model registry mirror for the Pi.dev agent. |

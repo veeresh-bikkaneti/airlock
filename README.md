@@ -65,7 +65,6 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 | **`provider-policy.json`** | Routing rules (local-first, cloud fallback, data privacy) | Explicit control over when/whether data leaves your machine |
 | **`auth.json.template`** | Template for cloud provider API keys | Separates secrets from code; run `ai-auth-set <provider> <key>` to fill it in — never commit the real `auth.json` |
 | **`opencode.json.template`** | Template for opencode.ai agent configuration | Pre-configures agents to use local Ollama endpoint |
-| **`claude-settings.json.template`** | Template for Claude Code settings pointed at the local endpoint | Pre-configures Claude Code to use the platform's port |
 | **`hermes-config.json.template`** | Template for the Hermes container's agent config | Configures Hermes's cloud-model settings before first run |
 | **`jcode-config.toml.template`** | Template for the jcode agent configuration | Pre-configures jcode to use the local Ollama endpoint |
 | **`pi-models.json.template`** | Template for Pi.dev's model registry | Mirrors `models.json` for the Pi.dev agent |
@@ -91,8 +90,37 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 | **`07-Quickstart-Playbook.md`** | Step-by-step operational playbook (start, switch models, troubleshoot) |
 | **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option) |
 
-#### Pi.dev Agent Configuration
-- Ensure the Pi.dev agent baseUrl points to the same port used by the platform (default **12345**). Update `%USERPROFILE%\.pi\agent\models.json` if you change the platform port.
+#### Configuring Agent CLIs
+
+The platform exposes one OpenAI-compatible endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`). Any tool that speaks OpenAI's Chat Completions API can point straight at it. Claude Code cannot — see the callout at the end of this section before you try.
+
+**Pi.dev** — copy `config/pi-models.json.template` to `%USERPROFILE%\.pi\agent\models.json` and confirm its `ollama.baseUrl` matches the platform's port (default `12345`; edit both if you change `ai-start -Port`).
+
+**opencode.ai** — copy `config/opencode.json.template` to `~/.config/opencode/opencode.json` for a global config, or to `opencode.json` in a project root for a project-scoped one. It already points `provider.ollama.options.baseURL` at `http://127.0.0.1:12345/v1` and sets `model` to `ollama/devstral-small-2:24b`. Run `opencode` from anywhere and it picks it up.
+
+**jcode** — no template file; apply directly with the command documented in the header comment of `config/jcode-config.toml.template`:
+  ```powershell
+  jcode provider add local-ollama --base-url "http://127.0.0.1:12345/v1" `
+    --model "qwen2.5-coder:7b" --no-api-key --auth none `
+    --set-default --model-catalog --overwrite
+  ```
+  jcode has no per-project config — this writes into `%USERPROFILE%\.jcode\config.toml`.
+
+**Codex CLI (OpenAI's)** — add a custom provider to `~/.codex/config.toml`:
+  ```toml
+  [model_providers.local-airlock]
+  name = "Airlock (local)"
+  base_url = "http://127.0.0.1:12345/v1"
+  env_key = "OPENAI_API_KEY"   # any non-empty value; the local endpoint doesn't check it
+
+  model_provider = "local-airlock"
+  model = "qwen2.5-coder:7b"
+  ```
+  This part is unverified against a running Codex install, flagging it rather than guessing further: current Codex docs list `wire_api` as accepting only `"responses"` (Codex's newer protocol), with no documented `"chat"`/Chat-Completions option — but Ollama's `/v1` endpoint only speaks Chat Completions, and Codex has historically supported pointing at exactly this kind of local server. If the config above 400s or silently gets no replies, check `codex --version`'s own config reference for the current `wire_api` options before assuming the endpoint is broken — this is the one piece of this section not confirmed end-to-end.
+
+**aider** — no config file needed; `ai-code` (in `profile-helpers.ps1`) already launches it with `--openai-api-base` pointed at the platform.
+
+> **Claude Code cannot be pointed at this platform.** Claude Code (the `claude` CLI) only speaks Anthropic's Messages API (`/v1/messages`) — never the OpenAI-compatible Chat Completions shape this platform's `/v1/chat/completions` endpoint exposes, and Anthropic's own docs are explicit that they "[don't] support routing Claude Code to non-Claude models through any gateway." Setting `ANTHROPIC_BASE_URL` to `127.0.0.1:12345` in `settings.json`'s `env` block will not work — you'll get exactly the base-url/auth-token error this used to promise it'd fix (the repo previously shipped a `claude-settings.json.template` that invented a settings.json schema that was never real; it's been removed). If you want Claude Code itself, authenticate it normally with a real Anthropic API key or `claude login` — it's a separate, cloud-only tool from the local backend this platform manages. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) talks to Anthropic's real API directly and is unaffected by this limitation.
 
 ### 🧩 VS Code Extension (`src/extension.ts`)
 
@@ -519,7 +547,7 @@ airlock/
 │   ├── policies/
 │   │   ├── provider-policy.json  # Routing rules (local/cloud, preferredLocalProvider)
 │   │   └── commit-policy.json    # Patterns blocked/needing approval before commit
-│   └── *.template                # Copy-and-fill templates: auth, opencode, claude-settings,
+│   └── *.template                # Copy-and-fill templates: auth, opencode,
 │                                  # hermes-config, jcode-config, pi-models
 ├── docs/
 │   ├── 00-Artifact-Index.md
