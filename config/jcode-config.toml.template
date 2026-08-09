@@ -1,7 +1,8 @@
 # jcode provider profile for the local Ollama endpoint.
-# Apply with:
+# Apply with (verified against jcode v0.65.0 -- --no-api-key/--auth flags from an
+# older jcode version don't exist anymore; --provider ollama covers auth automatically):
 #   jcode provider add local-ollama --base-url "http://127.0.0.1:12345/v1" \
-#     --model "qwen2.5-coder:7b" --no-api-key --auth none \
+#     --model "qwen2.5-coder:7b" --provider ollama \
 #     --set-default --model-catalog --overwrite
 # (writes this block into %USERPROFILE%\.jcode\config.toml — jcode has no per-project config)
 #

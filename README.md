@@ -92,31 +92,21 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 
 #### Configuring Agent CLIs
 
-The platform exposes one OpenAI-compatible endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`). Any tool that speaks OpenAI's Chat Completions API can point straight at it. Claude Code cannot — see the callout at the end of this section before you try.
+The platform exposes one OpenAI-compatible **Chat Completions** endpoint at `http://127.0.0.1:12345/v1` (`ollama` as a dummy API key, real model names from `ai-models`). Any tool that speaks Chat Completions can point straight at it — verified below against the real installed CLIs, not just their docs. Codex CLI and Claude Code cannot; both speak a different, incompatible protocol (details in their entries below).
 
 **Pi.dev** — copy `config/pi-models.json.template` to `%USERPROFILE%\.pi\agent\models.json` and confirm its `ollama.baseUrl` matches the platform's port (default `12345`; edit both if you change `ai-start -Port`).
 
 **opencode.ai** — copy `config/opencode.json.template` to `~/.config/opencode/opencode.json` for a global config, or to `opencode.json` in a project root for a project-scoped one. It already points `provider.ollama.options.baseURL` at `http://127.0.0.1:12345/v1` and sets `model` to `ollama/devstral-small-2:24b`. Run `opencode` from anywhere and it picks it up.
 
-**jcode** — no template file; apply directly with the command documented in the header comment of `config/jcode-config.toml.template`:
+**jcode** — no template file; the `--no-api-key`/`--auth` flags this section used to document don't exist in current jcode (verified against a real install, jcode v0.65.0). The real command:
   ```powershell
   jcode provider add local-ollama --base-url "http://127.0.0.1:12345/v1" `
-    --model "qwen2.5-coder:7b" --no-api-key --auth none `
+    --model "qwen2.5-coder:7b" --provider ollama `
     --set-default --model-catalog --overwrite
   ```
-  jcode has no per-project config — this writes into `%USERPROFILE%\.jcode\config.toml`.
+  `--provider ollama` is jcode's built-in provider type — it already knows Ollama needs no API key, so nothing else to pass. jcode has no per-project config — this writes into `%USERPROFILE%\.jcode\config.toml`.
 
-**Codex CLI (OpenAI's)** — add a custom provider to `~/.codex/config.toml`:
-  ```toml
-  [model_providers.local-airlock]
-  name = "Airlock (local)"
-  base_url = "http://127.0.0.1:12345/v1"
-  env_key = "OPENAI_API_KEY"   # any non-empty value; the local endpoint doesn't check it
-
-  model_provider = "local-airlock"
-  model = "qwen2.5-coder:7b"
-  ```
-  This part is unverified against a running Codex install, flagging it rather than guessing further: current Codex docs list `wire_api` as accepting only `"responses"` (Codex's newer protocol), with no documented `"chat"`/Chat-Completions option — but Ollama's `/v1` endpoint only speaks Chat Completions, and Codex has historically supported pointing at exactly this kind of local server. If the config above 400s or silently gets no replies, check `codex --version`'s own config reference for the current `wire_api` options before assuming the endpoint is broken — this is the one piece of this section not confirmed end-to-end.
+**Codex CLI (OpenAI's) — does not work against this platform, confirmed by direct testing.** Codex's `wire_api` only supports `"responses"` — `wire_api = "chat"` is hard-rejected by the CLI itself ("no longer supported"). Pointed a custom `model_providers` entry at a logging stub and inspected the actual request: Codex POSTs to `{base_url}/responses` using OpenAI's newer Responses API shape, not Chat Completions. Ollama's OpenAI-compatible layer (checked against the current Ollama docs) only implements `/v1/chat/completions`, `/v1/completions`, `/v1/models`, and `/v1/embeddings` — no `/v1/responses`. There's no config that bridges this; it's the same class of problem as Claude Code below, just a different protocol pairing. Codex's own `--oss --local-provider ollama` flag exists but targets Ollama's default port `11434`, not this platform's `12345`, and wouldn't fix the protocol mismatch anyway. If a future Codex or Ollama release adds the missing side, that'll unblock it — not before.
 
 **aider** — no config file needed; `ai-code` (in `profile-helpers.ps1`) already launches it with `--openai-api-base` pointed at the platform.
 
