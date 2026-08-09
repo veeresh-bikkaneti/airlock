@@ -556,7 +556,7 @@ Standalone, single-file Three.js scene (`tools/3d-system-visualizer/index.html`)
 
 No build step, no dependencies to install — it pulls Three.js from a CDN via an import map.
 
-![3D system visualizer mid-workflow](tools/3d-system-visualizer/preview.png)
+![3D system visualizer node graph](tools/3d-system-visualizer/preview.png)
 
 **Run it locally:**
 
