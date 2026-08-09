@@ -1,6 +1,6 @@
 # Agent CLI Setup Guide
 
-A step-by-step guide to connecting your favorite AI coding tool to Airlock. Every command in this guide was actually run against a live Airlock instance while writing it — not copied from a vendor's docs and hoped to work. Where something doesn't work, that's stated plainly, with the reason.
+A step-by-step guide to connecting your favorite AI coding tool to Airlock. Every tool in this guide was actually run against a live Airlock instance while writing it, except one — GitHub Copilot CLI, flagged in its own section, since it isn't installed on the machine this was written on. Nothing here is copied from a vendor's docs and hoped to work. Where something doesn't work, that's stated plainly, with the reason and the actual error.
 
 You don't need to read this front to back. Find your tool in the table of contents, follow its section, done.
 
@@ -169,10 +169,11 @@ The last two lines (`model_provider`, `model`) are top-level keys, not part of t
 echo "Reply with exactly: OK" | codex exec
 ```
 
-Tested live: this returned `OK` (with a couple of harmless startup warnings about model metadata and a skills-budget notice — normal, not errors).
+Tested live against the platform's actual `12345` endpoint: ran this twice back to back. First run returned `OK` cleanly. Second run, same command, same model, came back with a confused reply about an unsupported `rtk` command and a router error in the logs — the connection itself was fine both times (real round trip, real token counts, no connection error), the *model* just isn't reliable. We're testing with `qwen2.5:0.5b`, a tiny model chosen for speed, not quality — **don't read the connectivity result as a verdict on the model.** Use `qwen2.5-coder:7b` or bigger for actual work; the config above already defaults to it.
 
 **Troubleshooting:**
 - Codex's own `--oss --local-provider ollama` flag exists and looks tempting, but it hard-codes Ollama's *default* port (`11434`), not Airlock's (`12345`). Use the config above instead unless you've deliberately run Ollama on its default port outside Airlock.
+- Getting a coherent-looking but wrong answer rather than a connection error? That's model quality, not setup — see above.
 
 ---
 
@@ -206,7 +207,7 @@ $env:ANTHROPIC_MODEL = "qwen2.5-coder:7b"
 claude -p "Reply with exactly: OK"
 ```
 
-Tested live, but with an honest caveat: this setup connects and gets real answers back — confirmed. What we tested with, though, was a tiny 0.5B-parameter model, and it **ignored the instruction and rambled instead of replying `OK`.** That's not a connection failure, it's a model-quality problem: Claude Code's system prompt is long and its agentic loop expects a genuinely capable instruction-following model. **Use a real coding model here** — `qwen2.5-coder:7b` or bigger, the same tier Airlock already auto-selects for you — not whatever's smallest and fastest to test with.
+Tested live against the platform's actual `12345` endpoint, with an honest caveat: this setup connects and gets real answers back — confirmed (twice, in two separate test sessions, same result both times). What we tested with, though, was a tiny 0.5B-parameter model, and both times it **ignored the instruction** — once rambling, once inventing a fake tool call instead of just replying `OK`. That's not a connection failure (no error, no timeout, a real response came back each time) — it's a model-quality problem: Claude Code's system prompt is long and its agentic loop expects a genuinely capable instruction-following model. **Use a real coding model here** — `qwen2.5-coder:7b` or bigger, the same tier Airlock already auto-selects for you — not whatever's smallest and fastest to test with.
 
 **Troubleshooting:**
 - Getting the base-url/auth-token error this section exists to prevent? Double check you're editing `settings.json`'s `env` block, not setting a `ANTHROPIC_BASE_URL` shell variable that only lasts for one terminal session and gets lost the next time you open Claude Code from your editor or a shortcut.
@@ -293,7 +294,7 @@ copilot
 
 **Short answer: no, and there's currently no config that fixes it.** This was tested, not assumed — the two paths that might plausibly work were checked and ruled out:
 
-1. **`GOOGLE_GEMINI_BASE_URL`** — an environment variable that does redirect Gemini CLI's requests to a different host. Setting it to Airlock's endpoint doesn't help, though: the CLI still sends Google's own Gemini wire format to that host, and Airlock's Ollama backend doesn't speak it (checked directly — no `generateContent` or `v1beta`-style routes exist anywhere in the installed Ollama binary, only the OpenAI and Anthropic ones the sections above use).
+1. **`GOOGLE_GEMINI_BASE_URL`** — an environment variable that does redirect Gemini CLI's requests to a different host. We actually ran it pointed at the platform (`GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:12345 gemini --skip-trust -p "..."`) rather than assuming — it fails with `ModelNotFoundError: 404 page not found`. Reason: the CLI still sends Google's own Gemini wire format to that host, and Airlock's Ollama backend doesn't speak it (also checked directly — no `generateContent` or `v1beta`-style routes exist anywhere in the installed Ollama binary, only the OpenAI and Anthropic ones the sections above use). Both checks agree: real 404 in practice, and no matching route in the binary to explain why.
 2. **`gemini gemma`** — a built-in subcommand for running a local model. This looked promising by name, but it's a *different* local-model path entirely: it downloads Google's own Gemma model and runs it through Google's own LiteRT-LM runtime, with no way to point it at Airlock or any other OpenAI-compatible server instead.
 
 If you specifically want Gemini CLI's interface pointed at local/Ollama models, there are community forks that add real OpenAI-compatible routing (`ollama-code`, `open-gemini-cli` are two) — but that's a different tool than the official `gemini` CLI this section covers, and outside what this guide sets up.
