@@ -19,12 +19,13 @@ An initial AI-generated spec proposed a custom Python daemon, a systemd user ser
 
 2. **Plain markdown, not JSON.** Every consumer of this file is an LLM, so no parser is needed — adapters just surface file content into context. Canonical fields: `saved_at` (ISO8601 UTC), `session_id`, `branch`, `last_commit`, `changed_files[]`, `conversation_summary[]` (last 10 user turns). Harness-specific detail may be appended below the canonical block but must not reorder/remove it.
 
-3. **Single writer.** Only Claude Code's `SessionEnd` hook writes the file (atomic: temp file + rename). All other harness integrations are read-only adapters — avoids concurrent-write races, no file locking required. Writing from additional harnesses is out of scope for this pass; revisit if a concrete need shows up.
+3. **Single writer script, three triggers.** Only Claude Code writes the file, via `ai-context-sync.py` (atomic: temp file + rename, tmp filename suffixed with `session_id` so two sessions writing concurrently can't collide on each other's in-flight temp file). All other harness integrations are read-only adapters — no file locking required beyond the per-session tmp suffix. Originally wired to `SessionEnd` only; that leaves a gap where a hard context-limit cutoff or crash never fires `SessionEnd` at all, so the snapshot goes stale with no warning. Also wired to `Stop` (fires after every completed turn — bounds staleness to at most one turn) and `PreCompact` (fires immediately before compaction, auto or manual — the exact moment a session's context is about to be cut). Both confirmed via Claude Code hooks docs to carry `transcript_path`/`cwd`/`session_id` in their stdin payload, same as `SessionEnd`. Writing from additional harnesses is still out of scope for this pass; revisit if a concrete need shows up.
 
 4. **Claude Code integration (Phase 1, done):**
-   - `SessionEnd` hook — `~/.claude/hooks/ai-context-sync.py` — gathers git branch/status/last-commit and the last 10 user turns from the session transcript (`transcript_path` from the hook's stdin JSON payload), writes atomically to `<project>/.ai-context/SESSION_STATE.md`.
+   - `SessionEnd` / `Stop` / `PreCompact` hooks — `~/.claude/hooks/ai-context-sync.py` — gathers git branch/status/last-commit and the last 10 user turns from the session transcript (`transcript_path` from the hook's stdin JSON payload), writes atomically to `<project>/.ai-context/SESSION_STATE.md`.
    - `SessionStart` hook — `~/.claude/hooks/ai-context-resume.py` — reads the file if present, warns if `saved_at` is >2 hours old, prints content into context. Silent no-op if the file doesn't exist.
-   - Both wired into `~/.claude/settings.json` (`hooks.SessionEnd` / `hooks.SessionStart`), appended alongside the pre-existing Calorieschart-specific `SessionEnd` hook without modifying it.
+   - All wired into `~/.claude/settings.json` (`hooks.SessionEnd` / `hooks.Stop` / `hooks.PreCompact` / `hooks.SessionStart`), appended alongside the pre-existing Calorieschart-specific `SessionEnd` hook without modifying it.
+   - Hook commands use forward slashes (`C:/Users/...`) rather than Windows backslashes — backslash paths were silently mangled by the hook dispatcher's POSIX-mode argument parsing (each `\x` collapsed to `x`, `\.` to `.`), which broke `SessionStart` invocation without erroring loudly. Forward slashes are accepted by both Windows and the parser.
    - Tested against this repo's real transcript and git state before wiring.
 
 5. **OpenCode / Pi CLI / Grok CLI integrations (Phase 2):** read-only adapters built per-tool, each verifying that tool's actual convention (existing skill/config file formats, real auto-trigger mechanisms) before writing anything, rather than assuming a shared mechanism across tools.
@@ -39,6 +40,7 @@ An initial AI-generated spec proposed a custom Python daemon, a systemd user ser
 - Zero external state to keep in sync — the handoff file lives with the code it describes.
 - No new daemon, no new supervisor process, no OS-specific service unit — reuses hooks Claude Code already runs natively.
 - Format survives even where auto-trigger isn't possible (Antigravity): a human can open and read the file directly.
+- Staleness is bounded to one turn (`Stop`) and closed entirely at the moment of highest risk (`PreCompact`), not just at graceful session end — a hard context-limit cutoff or crash no longer leaves the snapshot silently stale.
 
 **Negative**
 - State is per-repo, not a single cross-project view — resuming "everything I was doing across all projects" isn't covered, only one repo at a time.

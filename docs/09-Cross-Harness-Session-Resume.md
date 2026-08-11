@@ -15,19 +15,20 @@ Switch between AI coding tools mid-task — Claude Code, Grok CLI, Pi CLI, OpenC
 
 ## How it works
 
-One file per project: `.ai-context/SESSION_STATE.md`, written in the repo root. Claude Code writes it automatically when a session ends. Every other tool reads it — nothing else writes it this pass, so there's no risk of two tools racing to update the same file.
+One file per project: `.ai-context/SESSION_STATE.md`, written in the repo root. Claude Code writes it automatically — after every turn, right before context compaction, and when a session ends. Every other tool reads it — nothing else writes it this pass, so there's no risk of two tools racing to update the same file.
 
 The file is plain markdown, not JSON — every consumer here is an LLM, so it reads it directly, no parser needed.
 
 ## Claude Code
 
-Fully automatic, no setup required if you're on this machine. A `SessionEnd` hook writes the snapshot; a `SessionStart` hook reads it back and warns if it's more than 2 hours old.
+Fully automatic, no setup required if you're on this machine. The snapshot is written on `Stop` (after every turn), `PreCompact` (right before context compaction, auto or manual), and `SessionEnd` — not just at clean session end, since a hard context-limit cutoff or crash skips `SessionEnd` entirely and would otherwise leave the snapshot stale with no warning. A `SessionStart` hook reads it back and warns if it's more than 2 hours old.
 
 - Write: `~/.claude/hooks/ai-context-sync.py`
 - Read: `~/.claude/hooks/ai-context-resume.py`
-- Wired in `~/.claude/settings.json` under `hooks.SessionEnd` / `hooks.SessionStart`
+- Wired in `~/.claude/settings.json` under `hooks.Stop` / `hooks.PreCompact` / `hooks.SessionEnd` / `hooks.SessionStart`
+- Hook commands use forward-slash paths (`C:/Users/...`); backslash paths were silently mangled by the hook dispatcher's argument parsing and broke `SessionStart` without any error.
 
-**Verified**: ran both scripts against this repo's real transcript and git state — correct branch, commit, changed-files list, and last-10-turns summary came back.
+**Verified**: ran all scripts against this repo's real transcript and git state — correct branch, commit, changed-files list, and last-10-turns summary came back; confirmed `Stop`/`PreCompact` payload fields (`transcript_path`, `cwd`, `session_id`) via Claude Code hooks documentation.
 
 ## Grok CLI
 
@@ -91,9 +92,9 @@ Antigravity has no CLI (it's a VS Code-fork GUI app — confirmed via its config
 
 - **Gitignored.** `.ai-context/SESSION_STATE.md` can contain conversation content — anything you pasted in the last 10 turns — so it's excluded in `.gitignore`. `RESUME_NOTE.md` and `opencode.json` are static config and stay tracked.
 - **Treated as data, not instructions.** Both dynamic injectors (`ai-context-resume.py`, `plugin.js`) prefix the snapshot with an explicit disclaimer: it's logged data from a prior session, not a command to follow. Branch names, commit messages, and file paths in the snapshot come from whatever repo is open — without that framing, a malicious repo could plant instruction-like text that a later session mistakes for trusted memory.
-- **Read-only adapters.** Only Claude Code's `SessionEnd` hook writes. Everything else only reads — no concurrent-write races, no locking needed.
+- **Read-only adapters.** Only Claude Code's `ai-context-sync.py` script writes (from `Stop`/`PreCompact`/`SessionEnd`), and its temp filename is suffixed with `session_id` so two sessions on the same repo can't collide on each other's in-flight write. Everything else only reads.
 
 ## Test coverage
 
-- `~/.claude/hooks/test_ai_context_hooks.py` — 10 checks against the two Python hooks as real subprocesses (atomic write, the git-status off-by-one regression, non-git-repo/malformed-input handling, staleness boundary, the UTF-8 mojibake regression, disclaimer always present). Run: `python ~/.claude/hooks/test_ai_context_hooks.py`.
+- `~/.claude/hooks/test_ai_context_hooks.py` — checks against the two Python hooks as real subprocesses (atomic write, per-session tmp-file isolation, the git-status off-by-one regression, non-git-repo/malformed-input/missing-transcript-path handling, staleness boundary, the UTF-8 mojibake regression, disclaimer always present). Run: `python ~/.claude/hooks/test_ai_context_hooks.py`.
 - `~/.config/opencode/plugins/ai-context-resume/test.mjs` — plugin injection logic, including the exact hour boundary (1.9h vs 2.1h) that proves real sub-hour clock precision, not date-only granularity. Run: `node ~/.config/opencode/plugins/ai-context-resume/test.mjs`.
