@@ -32,7 +32,7 @@ Entry → key action → result, and this time the "key action" beat is itself t
 - Interpretation: still restrained and real. Deliberately extended past this format's normal 15-25s guidance (to ~31s) because the model-sizing decision is the actual core insight and deserves full-sentence explanation with real reading time, not compressed labels. Everything else stays lean so the extra length buys depth in one place, not padding everywhere.
 
 ## Format: landscape — 1920x1080
-## Duration: ~44.9s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed four times: initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4, then again when Scene 6 — the 3D system visualizer bonus beat — was inserted before the outro on 2026-08-07, then again when Scene 6 gained a third beat for the data-depth pass — scene loading, click-to-inspect metadata, status overlay — on 2026-08-07)
+## Duration: ~51.1s (extended past the format's normal 15-25s ceiling — see Tone interpretation above; retimed five times: initial 31s cut once voiceover was added on 2026-08-07, then again the same day when the memory-service beat was added to Scene 4, then again when Scene 6 — the 3D system visualizer bonus beat — was inserted before the outro on 2026-08-07, then again when Scene 6 gained a third beat for the data-depth pass on 2026-08-07, then again on 2026-08-10 when Scene 6B — cross-harness session resume, a feature that shipped after the prior render — was inserted before the outro)
 
 ## Visual identity (from the project)
 - Background: near-black terminal (`#0C0C0C`, matches Windows Terminal's default dark theme)
@@ -113,6 +113,17 @@ Audio-coupled idea: soft tick as the dot passes each node (same tick family as S
 Music: stays low, no lift (this scene is a bonus beat, not another highlight).
 Transition mood: clean cut → Scene 7.
 
+### Scene 6B — Bonus: switch tools mid-task — 6.2s (added 2026-08-10, cross-harness session resume shipped since the last render)
+Clean cut from Scene 6. A dim terminal (real file path, real field names from `docs/09-Cross-Harness-Session-Resume.md`) shows `cat .ai-context/SESSION_STATE.md` with `branch: main` / `last_commit: ...`. Two caption beats over it, then four tool chips (Claude Code, Grok CLI, Pi CLI, OpenCode) pop in with checkmarks.
+Beat 1 (~1.9s): Text: "Switch tools mid-task?"
+Beat 2 (~5.5s, runs under the chip reveal): Text: "Claude Code writes the snapshot — Grok, Pi, and OpenCode read it back. **No re-explaining.**"
+Chips: four checkmark chips pop in one by one, staggered 0.35s apart, starting ~44.5s.
+Sequential/interaction: yes — caption swap, then four staggered chip pops.
+Audio intent: light continuation of the Scene 6 bonus-beat energy, not a second peak (Scene 5 is still the peak).
+Audio-coupled idea: soft tick per chip (same tick family as Scenes 2/4/6).
+Music: stays low, no lift.
+Transition mood: clean cut in from Scene 6, clean crossfade out → Scene 7.
+
 ### Scene 7 — Outro — 4s
 Clean dark card: "Airlock" wordmark, then "Sealed. Tested. Then opened.", then "github.com/veeresh-bikkaneti/airlock" in small type.
 Sequential/interaction: none — three lines settle in with a brief stagger, then hold.
@@ -134,6 +145,7 @@ Added 2026-08-07 per explicit request. Six lines, one per scene, natural spoken 
 4. (Scene 4 — lockdown) "Then it locks everything down — one instance, port blocked, fully logged. On Ollama, it even remembers your session."
 5. (Scene 5 — proof) "And it proves itself — a real response, before you ever touch it."
 6. (Scene 6 — 3D visualizer bonus) "And there's more than the terminal — a 3D map of how every piece talks to each other, free in the repo."
-7. (Scene 7 — outro) "Airlock. Sealed, tested, then opened."
+7. (Scene 6B — cross-harness resume, added 2026-08-10) "Switch from Claude Code to Grok, Pi, or OpenCode mid-task — nobody makes you start over." (`vo7b.wav`, 5.781s, Kokoro `af_heart`)
+8. (Scene 7 — outro) "Airlock. Sealed, tested, then opened."
 
-~95 words total (added 3D visualizer line on 2026-08-07), targets ~38-41s at natural pace (2.5 words/sec) with room for pauses — actual scene lengths follow whatever Kokoro actually renders.
+~110 words total (added cross-harness resume line on 2026-08-10), targets ~44-48s at natural pace (2.5 words/sec) with room for pauses — actual scene lengths follow whatever Kokoro actually renders.
