@@ -488,6 +488,17 @@ renderer.domElement.addEventListener("click", (ev) => {
    speed across segments of different length, rather than one segment
    per fixed time slice.
    ====================================================================== */
+const TRAIL_LENGTH = 6;
+
+// Fast/low-latency edges read cool (cyan), slow/high-latency edges read warm
+// (orange-red) - reuses the latencyMs field that was already in the schema
+// but only shown in the click-to-inspect panel, never in the render itself.
+function colorForLatency(latencyMs) {
+  if (latencyMs === undefined) return new THREE.Color(0xffe27a); // original amber default
+  const t = THREE.MathUtils.clamp(latencyMs / 200, 0, 1); // 0ms -> cool, 200ms+ -> hot
+  return new THREE.Color().setHSL(THREE.MathUtils.lerp(0.5, 0.02, t), 0.9, 0.6);
+}
+
 class FlowAnimator {
   constructor(flow, edgeRegistry) {
     this.flow = flow;
@@ -501,24 +512,46 @@ class FlowAnimator {
     this.totalLength = this.segments.reduce((sum, s) => sum + s.start.distanceTo(s.end), 0);
     this.distance = 0;
     this.playing = false;
+    this.age = 0; // seconds since start(), drives the pulse
 
+    const color = colorForLatency(this.segments[0]?.data.latencyMs);
     const geo = new THREE.SphereGeometry(0.12, 16, 16);
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffe27a, emissive: 0xffb020, emissiveIntensity: 1.4 });
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.4 });
     this.dot = new THREE.Mesh(geo, mat);
     this.dot.visible = false;
     this.dot.layers.enable(BLOOM_LAYER); // glows via the selective-bloom pass
     scene.add(this.dot);
+
+    // Trail: a short pool of shrinking, dimming copies of the head dot,
+    // each one frame's worth of position further back. Cheap (no particle
+    // system, no shader) and reuses the same bloom layer as the head.
+    this.trail = [];
+    for (let i = 0; i < TRAIL_LENGTH; i++) {
+      const t = (i + 1) / (TRAIL_LENGTH + 1); // 0 (near head) .. 1 (tail end)
+      const trailGeo = new THREE.SphereGeometry(0.12 * (1 - t * 0.7), 8, 8);
+      const trailMat = new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: 1.4 * (1 - t), transparent: true, opacity: 1 - t,
+      });
+      const mesh = new THREE.Mesh(trailGeo, trailMat);
+      mesh.visible = false;
+      mesh.layers.enable(BLOOM_LAYER);
+      scene.add(mesh);
+      this.trail.push({ mesh, distance: 0 });
+    }
   }
 
   start() {
     this.distance = 0;
+    this.age = 0;
     this.playing = true;
     this.dot.visible = true;
+    for (const t of this.trail) t.mesh.visible = true;
   }
 
   stop() {
     this.playing = false;
     this.dot.visible = false;
+    for (const t of this.trail) t.mesh.visible = false;
   }
 
   dispose() {
@@ -526,10 +559,31 @@ class FlowAnimator {
     scene.remove(this.dot);
     this.dot.geometry.dispose();
     this.dot.material.dispose();
+    for (const t of this.trail) {
+      scene.remove(t.mesh);
+      t.mesh.geometry.dispose();
+      t.mesh.material.dispose();
+    }
+  }
+
+  _positionAt(distance, target) {
+    const d = ((distance % this.totalLength) + this.totalLength) % this.totalLength;
+    let remaining = d;
+    for (const seg of this.segments) {
+      const segLen = seg.start.distanceTo(seg.end);
+      if (remaining <= segLen || seg === this.segments[this.segments.length - 1]) {
+        const t = segLen === 0 ? 0 : Math.min(remaining / segLen, 1);
+        target.lerpVectors(seg.start, seg.end, t);
+        return seg;
+      }
+      remaining -= segLen;
+    }
+    return this.segments[this.segments.length - 1];
   }
 
   update(dt) {
     if (!this.playing) return;
+    this.age += dt;
     this.distance += (this.flow.speed || 2) * dt;
 
     if (this.distance >= this.totalLength) {
@@ -541,17 +595,19 @@ class FlowAnimator {
       }
     }
 
-    let remaining = this.distance;
-    for (const seg of this.segments) {
-      const segLen = seg.start.distanceTo(seg.end);
-      if (remaining <= segLen || seg === this.segments[this.segments.length - 1]) {
-        const t = segLen === 0 ? 0 : Math.min(remaining / segLen, 1);
-        this.dot.position.lerpVectors(seg.start, seg.end, t);
-        this._activeSegment = seg;
-        break;
-      }
-      remaining -= segLen;
-    }
+    this._activeSegment = this._positionAt(this.distance, this.dot.position);
+
+    // Gentle "living" pulse on the head, independent of travel speed.
+    const pulse = 1 + 0.25 * Math.sin(this.age * 6);
+    this.dot.scale.setScalar(pulse);
+
+    // Trail dots trace the same path some fixed distance behind the head -
+    // constant spacing regardless of dt jitter, since it's keyed off the
+    // head's own travelled distance rather than a per-frame history buffer.
+    const gap = 0.35;
+    this.trail.forEach((t, i) => {
+      this._positionAt(this.distance - gap * (i + 1), t.mesh.position);
+    });
   }
 }
 

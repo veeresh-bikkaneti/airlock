@@ -16,6 +16,11 @@ desktop.ini
 *.active-port.json
 active-provider.json
 
+# Cross-harness session snapshot (personal/ephemeral, may include conversation
+# content - DO NOT COMMIT). RESUME_NOTE.md is static guidance and stays tracked.
+.ai-context/SESSION_STATE.md
+.ai-context/.SESSION_STATE.md.tmp
+
 # Logs
 logs/
 *.jsonl

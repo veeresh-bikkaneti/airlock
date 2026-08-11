@@ -89,7 +89,8 @@ Click the image to play/download the demo (GitHub doesn't play video inline in R
 | **`06-Model-Acquisition-Backlog.md`** | Zero-touch model auto-selection/pull backlog and review history |
 | **`07-Quickstart-Playbook.md`** | Step-by-step operational playbook (start, switch models, troubleshoot) |
 | **`08-Agent-CLI-Setup-Guide.md`** | Beginner-friendly, tested setup steps for every agent CLI (Pi.dev, opencode, jcode, Codex, Claude Code, aider, Copilot CLI, Gemini CLI) |
-| **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option) |
+| **`09-Cross-Harness-Session-Resume.md`** | Resume work across Claude Code, Grok CLI, Pi CLI, and OpenCode without re-explaining context — how it works per tool, plus security notes |
+| **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option, cross-harness session resume) |
 
 #### Configuring Agent CLIs
 
@@ -155,6 +156,10 @@ A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/ope
 ### 🧩 VS Code Extension (`src/extension.ts`)
 
 Thin wrapper over the `ai-*` PowerShell helpers — status bar model indicator plus commands to start, stop, health-check, and switch models without leaving the editor. See [`EXTENSION.md`](EXTENSION.md) for setup and command list.
+
+### 🔄 Cross-Harness Session Resume
+
+Hit a limit in Claude Code, switch to Grok CLI, Pi CLI, or OpenCode, and pick up the same task without re-explaining it — a project-local snapshot file each tool reads automatically (or near-automatically; see the doc for per-tool specifics). See [`docs/09-Cross-Harness-Session-Resume.md`](docs/09-Cross-Harness-Session-Resume.md).
 
 ### 🤖 Hermes Agent (`hermes-container/`)
 
@@ -641,6 +646,16 @@ Open `http://localhost:8347` and click a workflow button in the top-left panel t
 **Load your own scene:** the "Scene" panel picks between scenes listed in `tools/3d-system-visualizer/scenes/manifest.json`, accepts `?scene=scenes/your-file.json` on the URL, or a local file via "Load file…" — any scene using the same `{nodes, edges, flows}` schema as `scenes/ecommerce-demo.json` works. A bad or malformed scene shows an error instead of clearing the one currently on screen.
 
 **Inspect a node or edge:** click any box or connector to open a panel with its metadata — nodes can carry `description`, `owner`, and `status` (`healthy`/`degraded`/`down`); edges can carry `protocol` and `latencyMs`. A `degraded` or `down` node also glows amber or red in the scene itself, so problems read at a glance without clicking anything.
+
+**Flow animation:** each running workflow shows a glowing head with a short fading trail (not a single bare dot), colored cool-to-warm by the edge's `latencyMs` where the schema provides it (falls back to the original amber if not). Purely visual — no schema changes required for existing scenes.
+
+**See this platform's own real activity, not just the fictional demo:** `scenes/Generate-LiveScene.ps1` reads `~/.ai-platform/logs/<date>.jsonl` (this platform's own audit log) and turns real recorded actions — backend selection, model pulls, firewall guards, start/stop — into a scene using the same schema, registering it in `manifest.json` automatically. Re-run it after using the platform to refresh with whatever happened since; it's an on-demand snapshot, not a live stream.
+
+```powershell
+.\tools\3d-system-visualizer\scenes\Generate-LiveScene.ps1
+# then pick "local-ai-platform (live)" from the Scene dropdown, or:
+# ?scene=scenes/local-ai-platform-live.json
+```
 
 ---
 

@@ -2,6 +2,8 @@
 
 A sandboxed AI agent that helps you apply for jobs using the [career-ops](https://github.com/your-org/career-ops) platform. Your personal files stay private — Hermes only sees your career-ops repo.
 
+> **Not yet live-tested.** Unlike the agent CLIs in [`docs/08-Agent-CLI-Setup-Guide.md`](../docs/08-Agent-CLI-Setup-Guide.md) (each verified with a real round trip against a running Airlock instance), this container hasn't been built and run end-to-end as part of that testing pass. Everything below is the documented/intended behavior, not confirmed behavior — treat it as such until someone actually runs `run-hermes.ps1` against a live Docker Desktop and checks the security guarantees hold. TODO: test this.
+
 ## What this does
 
 - Runs **pi.dev Hermes agent** inside a locked-down Docker container

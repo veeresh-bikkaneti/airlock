@@ -1,7 +1,7 @@
 # vLLM as an optional local backend — design
 
 Date: 2026-08-05
-Status: Approved (design phase), not yet implemented
+Status: Implemented — `Get-BackendCapability.ps1`, `Start-VLLM.ps1`, `Start-AI.ps1` backend-selection block, and `Stop-AI.ps1` vLLM-stop path all match this design.
 
 ## Problem
 

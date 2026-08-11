@@ -1,3 +1,10 @@
 [
-  { "name": "E-commerce order flow", "file": "ecommerce-demo.json" }
+  {
+    "name": "E-commerce order flow",
+    "file": "ecommerce-demo.json"
+  },
+  {
+    "name": "local-ai-platform (live)",
+    "file": "local-ai-platform-live.json"
+  }
 ]
