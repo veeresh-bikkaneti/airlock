@@ -22,7 +22,8 @@
       #scene4 { z-index: 4; opacity: 0; }
       #scene5 { z-index: 5; opacity: 0; }
       #scene6 { z-index: 6; opacity: 0; }
-      #scene7 { z-index: 7; opacity: 0; }
+      #scene6b { z-index: 7; opacity: 0; }
+      #scene7 { z-index: 8; opacity: 0; }
 
       /* ---------- ambient background layer (persistent tint per-scene) ---------- */
       .scene-bg {
@@ -154,6 +155,18 @@
       }
       #s6-caption-wrap { position: absolute; left: 50%; top: 800px; transform: translateX(-50%); width: 1500px; text-align: center; }
 
+      /* ---------- Scene 6B — switch tools mid-task ---------- */
+      #s6b-term { width: 900px; height: 240px; left: 130px; top: 130px; opacity: 0.45; }
+      #s6b-caption-wrap { position: absolute; left: 50%; top: 430px; transform: translateX(-50%); width: 1400px; text-align: center; }
+      #s6b-chip-row { position: absolute; left: 50%; top: 700px; transform: translateX(-50%); display: flex; gap: 32px; }
+      .s6b-chip {
+        display: flex; align-items: center; gap: 16px; opacity: 0; transform: scale(0);
+        background: #14181c; border: 1px solid #23282e; border-radius: 999px; padding: 14px 28px 14px 18px;
+      }
+      .s6b-chip-icon { width: 34px; height: 34px; border-radius: 50%; background: #16302a; border: 2px solid #3ddc84;
+        display: flex; align-items: center; justify-content: center; color: #3ddc84; font-size: 18px; flex-shrink: 0; }
+      .s6b-chip-text { color: #e8e8e8; font-size: 28px; font-weight: 500; }
+
       /* ---------- Scene 7 — Outro ---------- */
       #s7-content { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
       #s7-word { font-family: "Inter", sans-serif; font-size: 108px; font-weight: 700; color: #e8e8e8;
@@ -164,7 +177,7 @@
     </style>
   </head>
   <body>
-    <div data-hf-id="hf-0xju" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="44.9">
+    <div data-hf-id="hf-0xju" id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="51.1">
 
       <!-- ============ SCENE 1 — The one-liner ============ -->
       <div data-hf-id="hf-zet7" id="scene1" class="scene">
@@ -320,6 +333,33 @@
         </div>
       </div>
 
+      <!-- ============ SCENE 6B — Bonus: switch tools mid-task ============ -->
+      <div data-hf-id="hf-cx01" id="scene6b" class="scene">
+        <div data-hf-id="hf-cx02" class="scene-bg"></div>
+        <div data-hf-id="hf-cx03" class="scene-glow" data-layout-allow-overflow="true"></div>
+        <div data-hf-id="hf-cx04" id="s6b-term" class="term">
+          <div data-hf-id="hf-cx05" class="term-bar">
+            <span data-hf-id="hf-cx06" class="term-tab">PowerShell 7.6.3</span>
+            <span data-hf-id="hf-cx07" class="term-ctrls">─&#160;&#160;□&#160;&#160;×</span>
+          </div>
+          <div data-hf-id="hf-cx08" class="term-body">
+            <div data-hf-id="hf-cx09" class="term-line"><span data-hf-id="hf-cx0a" class="term-prompt">PS C:\repo&gt;</span> cat .ai-context/SESSION_STATE.md</div>
+            <div data-hf-id="hf-cx0b" class="term-line term-dim-line" style="margin-top:10px">branch: main</div>
+            <div data-hf-id="hf-cx0c" class="term-line term-dim-line" style="margin-top:6px">last_commit: 42a4208 docs: verify remaining test gaps</div>
+          </div>
+        </div>
+        <div data-hf-id="hf-cx0d" id="s6b-caption-wrap" data-layout-allow-overlap="true">
+          <div data-hf-id="hf-cx0e" id="s6b-cap-a" class="caption-line">Switch tools mid-task?</div>
+          <div data-hf-id="hf-cx0f" id="s6b-cap-b" class="caption-line">Claude Code writes the snapshot — Grok, Pi, and OpenCode read it back. <span data-hf-id="hf-cx0g" class="accent">No re-explaining.</span></div>
+        </div>
+        <div data-hf-id="hf-cx0h" id="s6b-chip-row">
+          <div data-hf-id="hf-cx0i" id="s6b-chip-1" class="s6b-chip"><div data-hf-id="hf-cx0j" class="s6b-chip-icon">✓</div><div data-hf-id="hf-cx0k" class="s6b-chip-text">Claude Code</div></div>
+          <div data-hf-id="hf-cx0l" id="s6b-chip-2" class="s6b-chip"><div data-hf-id="hf-cx0m" class="s6b-chip-icon">✓</div><div data-hf-id="hf-cx0n" class="s6b-chip-text">Grok CLI</div></div>
+          <div data-hf-id="hf-cx0o" id="s6b-chip-3" class="s6b-chip"><div data-hf-id="hf-cx0p" class="s6b-chip-icon">✓</div><div data-hf-id="hf-cx0q" class="s6b-chip-text">Pi CLI</div></div>
+          <div data-hf-id="hf-cx0r" id="s6b-chip-4" class="s6b-chip"><div data-hf-id="hf-cx0s" class="s6b-chip-icon">✓</div><div data-hf-id="hf-cx0t" class="s6b-chip-text">OpenCode</div></div>
+        </div>
+      </div>
+
       <!-- ============ SCENE 7 — Outro ============ -->
       <div data-hf-id="hf-bxbo" id="scene7" class="scene">
         <div data-hf-id="hf-kw5o" class="scene-bg"></div>
@@ -332,7 +372,7 @@
       </div>
 
       <!-- ============ AUDIO ============ -->
-      <audio data-hf-id="hf-hu9x" id="bgm" data-start="0" data-duration="44.9" data-track-index="10" data-volume="0" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+      <audio data-hf-id="hf-hu9x" id="bgm" data-start="0" data-duration="51.1" data-track-index="10" data-volume="0" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
 
       <!-- Voiceover — own track, drives scene pacing -->
       <audio data-hf-id="hf-762b" id="vo1" data-start="0.4" data-duration="1.984" data-track-index="3" data-volume="1" src="assets/vo/vo1.wav"></audio>
@@ -341,7 +381,8 @@
       <audio data-hf-id="hf-30cz" id="vo4" data-start="20.3" data-duration="6.933" data-track-index="3" data-volume="1" src="assets/vo/vo4.wav"></audio>
       <audio data-hf-id="hf-c8oj" id="vo5" data-start="27.9" data-duration="3.456" data-track-index="3" data-volume="1" src="assets/vo/vo5.wav"></audio>
       <audio data-hf-id="hf-c45b" id="vo6" data-start="32.8" data-duration="5.760" data-track-index="3" data-volume="1" src="assets/vo/vo6.wav"></audio>
-      <audio data-hf-id="hf-v3dc" id="vo7" data-start="42.0" data-duration="2.261" data-track-index="3" data-volume="1" src="assets/vo/vo7.wav"></audio>
+      <audio data-hf-id="hf-cx0u" id="vo7b" data-start="42.0" data-duration="5.781" data-track-index="3" data-volume="1" src="assets/vo/vo7b.wav"></audio>
+      <audio data-hf-id="hf-v3dc" id="vo7" data-start="48.2" data-duration="2.261" data-track-index="3" data-volume="1" src="assets/vo/vo7.wav"></audio>
 
       <audio data-hf-id="hf-fbqg" id="sfx-cap-a" data-start="3.3" data-duration="0.11" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_001.ogg"></audio>
       <audio data-hf-id="hf-dp49" id="sfx-cap-b" data-start="5.9" data-duration="0.19" data-track-index="11" data-volume="0.6" src="assets/sfx/interface/drop_002.ogg"></audio>
@@ -364,6 +405,12 @@
       <audio data-hf-id="hf-v3de" id="sfx-node2" data-start="36.7" data-duration="0.19" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
       <audio data-hf-id="hf-v3df" id="sfx-node3" data-start="37.45" data-duration="0.11" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_001.ogg"></audio>
       <audio data-hf-id="hf-v3dg" id="sfx-node4" data-start="38.2" data-duration="0.19" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
+
+      <!-- Scene 6B — chip row; same tick family, quieter (bonus beat) -->
+      <audio data-hf-id="hf-cx0v" id="sfx-chip1" data-start="44.5" data-duration="0.11" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-cx0w" id="sfx-chip2" data-start="44.85" data-duration="0.19" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
+      <audio data-hf-id="hf-cx0x" id="sfx-chip3" data-start="45.2" data-duration="0.11" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio data-hf-id="hf-cx0y" id="sfx-chip4" data-start="45.55" data-duration="0.19" data-track-index="11" data-volume="0.45" src="assets/sfx/interface/drop_002.ogg"></audio>
     </div>
 
     <script>
@@ -524,20 +571,41 @@
       tl.fromTo("#s6-cap-c", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 39.0);
 
       // ============================================================
-      // TRANSITION 6->7 (clean cut) at 41.9
+      // TRANSITION 6->6B (clean cut) at 41.9
       // ============================================================
       // fromTo (not set) so the cut survives a backward seek like every other
       // scene entrance here; 0.01s lands it inside one frame at 30fps.
-      tl.fromTo("#scene7", { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, 41.885);
+      tl.fromTo("#scene6b", { opacity: 0 }, { opacity: 1, duration: 0.01, ease: "none" }, 41.885);
       tl.set("#scene6", { visibility: "hidden" }, 41.9);
 
       // ============================================================
-      // SCENE 7 — Outro (41.9 - 44.8) — VO7 42.0-44.261
+      // SCENE 6B — Bonus: switch tools mid-task (41.9 - 48.1) — VO7b 42.0-47.781
+      // Real snapshot file + field names from docs/09-Cross-Harness-Session-Resume.md.
       // ============================================================
-      tl.fromTo("#s7-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 42.0);
-      tl.fromTo("#s7-tag", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 42.6);
-      tl.fromTo("#s7-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 43.2);
-      tl.set("#scene7", { visibility: "hidden" }, 44.81);
+      tl.fromTo("#s6b-term", { opacity: 0 }, { opacity: 0.45, duration: 0.4, ease: "power2.out" }, 41.9);
+
+      tl.fromTo("#s6b-cap-a", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 42.1);
+      tl.to("#s6b-cap-a", { opacity: 0, duration: 0.3, ease: "power2.inOut" }, 44.0);
+      tl.fromTo("#s6b-cap-b", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 44.3);
+
+      ["#s6b-chip-1", "#s6b-chip-2", "#s6b-chip-3", "#s6b-chip-4"].forEach((sel, i) => {
+        tl.fromTo(sel, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease: "power3.out" }, 44.5 + i * 0.35);
+      });
+
+      // ============================================================
+      // TRANSITION 6B->7 (crossfade) at 48.1, 0.5s
+      // ============================================================
+      tl.to("#scene6b", { opacity: 0, duration: 0.5, ease: "power2.inOut" }, 48.1);
+      tl.fromTo("#scene7", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power2.inOut" }, 48.1);
+      tl.set("#scene6b", { visibility: "hidden" }, 48.6);
+
+      // ============================================================
+      // SCENE 7 — Outro (48.1 - 51.0) — VO7 48.2-50.461
+      // ============================================================
+      tl.fromTo("#s7-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 48.2);
+      tl.fromTo("#s7-tag", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 48.8);
+      tl.fromTo("#s7-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 49.4);
+      tl.set("#scene7", { visibility: "hidden" }, 51.01);
 
       // ============================================================
       // MUSIC — fade in to a ducked baseline (voice covers most of the
@@ -545,7 +613,7 @@
       // per-clip), fade out after the last VO line finishes.
       // ============================================================
       tl.to("#bgm", { volume: 0.14, duration: 0.5, ease: "power1.out" }, 0);
-      tl.to("#bgm", { volume: 0, duration: 0.8, ease: "power1.in" }, 44.3);
+      tl.to("#bgm", { volume: 0, duration: 0.8, ease: "power1.in" }, 50.5);
 
       window.__timelines["main"] = tl;
     </script>
