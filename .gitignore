@@ -123,3 +123,4 @@ agentdb.rvf.idmap.json
 skills-lock.json
 .gstack/
 .aider*
+.serena/
