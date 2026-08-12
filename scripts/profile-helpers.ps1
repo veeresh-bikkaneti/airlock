@@ -48,6 +48,18 @@ function global:ai-port {
     } else {
         Write-Host "No active AI session. Run ai-start first." -ForegroundColor Yellow
     }
+
+    # Background model pulls/imports (ModelPull-*, HFImport-*) are Start-Job jobs in this session —
+    # surface their state so "is it hung?" has an answer without grepping the JSONL log.
+    $pullJobs = Get-Job | Where-Object { $_.Name -like "ModelPull-*" -or $_.Name -like "HFImport-*" }
+    if ($pullJobs) {
+        Write-Host ""
+        Write-Host "Background pulls:" -ForegroundColor Cyan
+        foreach ($j in $pullJobs) {
+            $color = switch ($j.State) { 'Running' { 'Yellow' }; 'Completed' { 'Green' }; 'Failed' { 'Red' }; default { 'Gray' } }
+            Write-Host "  $($j.Name): $($j.State)" -ForegroundColor $color
+        }
+    }
 }
 
 # Display details about the selected AI provider (local Ollama or cloud fallback).
@@ -136,14 +148,51 @@ function global:ai-switch {
 
 # Launch the 'aider' tool configured to talk to the current Ollama model.
 function global:ai-code {
+    param([string]$Model)
+
     $file = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
     if (-not (Test-Path $file)) {
         Write-Host "No active session. Run ai-start first." -ForegroundColor Red
         return
     }
     $data = Get-Content $file -Raw | ConvertFrom-Json
-    $modelArg = "openai/$($data.model)"
-    aider --model $modelArg
+    $targetModel = if ($Model) { $Model } else { $data.model }
+
+    try {
+        $installed = & ollama list 2>$null
+    } catch {
+        Write-Host "Cannot run 'ollama list' — is Ollama installed and on PATH?" -ForegroundColor Red
+        return
+    }
+    if (-not ($installed -match [regex]::Escape($targetModel))) {
+        Write-Host "Model '$targetModel' not found in 'ollama list'." -ForegroundColor Red
+        Write-Host "Available models:" -ForegroundColor Gray
+        $installed | Select-Object -Skip 1 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        return
+    }
+
+    # $data.endpoint may be the raw Ollama endpoint, or — if ai-memory-on is active — the
+    # memory-service RAG proxy, which only implements /health, /v1/chat/completions, and
+    # /v1/memory/*, not /v1/models. Probe whichever route the target actually has.
+    $memPortFile = "$env:USERPROFILE\.ai-platform\.memory-port.json"
+    $isMemoryProxy = $false
+    if (Test-Path $memPortFile) {
+        $memPort = (Get-Content $memPortFile -Raw | ConvertFrom-Json).port
+        $isMemoryProxy = ([uri]$data.endpoint).Port -eq $memPort
+    }
+    $probeUrl = if ($isMemoryProxy) { ($data.endpoint -replace '/v1/?$', '') + "/health" } else { $data.endpoint.TrimEnd('/') + "/models" }
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(5)
+        $ok = $c.GetAsync($probeUrl).Result.IsSuccessStatusCode
+    } catch { $ok = $false }
+    if (-not $ok) {
+        Write-Host "Endpoint $($data.endpoint) is not responding. Run ai-start or ai-health first." -ForegroundColor Red
+        return
+    }
+
+    Write-Host "Launching aider — model: $targetModel  endpoint: $($data.endpoint)" -ForegroundColor Green
+    aider --model "openai/$targetModel" --openai-api-base $data.endpoint --openai-api-key "ollama"
 }
 
 # Convenience wrappers to start/stop the Hermes container (cloud-enabled assistant).
@@ -411,6 +460,111 @@ function global:ai-memory-off {
     Write-Host "Memory OFF — clients back to direct endpoint $($providerState.endpoint)" -ForegroundColor Green
 }
 
+# Point Claude Code at the local platform for THIS shell session only — never persisted to
+# settings.json or User/Machine env scope. Fixes the failure mode where a permanent
+# ANTHROPIC_BASE_URL redirect outlives the platform and breaks Claude Code entirely (see ai-doctor).
+function global:ai-claude-on {
+    $file = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
+    if (-not (Test-Path $file)) {
+        Write-Host "No active session. Run ai-start first." -ForegroundColor Red
+        return
+    }
+    $data = Get-Content $file -Raw | ConvertFrom-Json
+    # Claude Code needs Ollama's /v1/messages route directly - the memory-service RAG proxy
+    # doesn't implement it, so always use the real Ollama endpoint, never a memory-routed one.
+    $realEndpoint = if ($data.directEndpoint) { $data.directEndpoint } else { $data.endpoint }
+    $port = ([uri]$realEndpoint).Port
+
+    $check = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -WarningAction SilentlyContinue
+    if (-not $check.TcpTestSucceeded) {
+        Write-Host "Nothing listening on 127.0.0.1:$port — run ai-start first." -ForegroundColor Red
+        return
+    }
+
+    $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:$port"
+    $env:ANTHROPIC_API_KEY  = "ollama"
+    Write-Host "Claude Code ON — this shell now points at the local platform (http://127.0.0.1:$port)." -ForegroundColor Green
+    Write-Host "Session-scoped only. Run ai-claude-off (or just close this shell) before using cloud Claude Code again." -ForegroundColor Gray
+}
+
+# Undo ai-claude-on: clear the redirect from this shell only.
+function global:ai-claude-off {
+    Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+    Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again." -ForegroundColor Green
+}
+
+# Diagnose stale AI-tool endpoint variables — at any scope — that point at a local port with
+# nothing listening. Covers the ANTHROPIC_BASE_URL incident: a redirect that outlived the
+# platform it pointed at, surfacing as a misleading "firewall or proxy" error in the actual tool.
+function global:ai-doctor {
+    Write-Host "AI Platform Doctor" -ForegroundColor Cyan
+    Write-Host "===================" -ForegroundColor DarkCyan
+
+    $checks = @(
+        @{ Name = 'ANTHROPIC_BASE_URL';             KeyVar = 'ANTHROPIC_API_KEY' }
+        @{ Name = 'OPENAI_BASE_URL';                KeyVar = 'OPENAI_API_KEY' }
+        @{ Name = 'OPENAI_API_BASE';                KeyVar = 'OPENAI_API_KEY' }
+        @{ Name = 'COPILOT_PROVIDER_BASE_URL';       KeyVar = $null }
+        @{ Name = 'GROK_MODEL_GROK_BUILD_BASE_URL';  KeyVar = $null }
+        @{ Name = 'GROK_CLI_CHAT_PROXY_BASE_URL';    KeyVar = $null }
+    )
+    $scopes = @('Process', 'User', 'Machine')
+    $issues = 0
+
+    foreach ($check in $checks) {
+        foreach ($scope in $scopes) {
+            $value = [Environment]::GetEnvironmentVariable($check.Name, $scope)
+            if (-not $value) { continue }
+            try { $uri = [uri]$value } catch { continue }
+            if ($uri.Host -notin @('127.0.0.1', 'localhost')) { continue }
+
+            $alive = (Test-NetConnection -ComputerName $uri.Host -Port $uri.Port -WarningAction SilentlyContinue).TcpTestSucceeded
+            if (-not $alive) {
+                $issues++
+                Write-Host ""
+                Write-Host "  DEAD REDIRECT: $($check.Name) [$scope scope] = $value" -ForegroundColor Red
+                Write-Host "    Nothing listening on $($uri.Host):$($uri.Port)." -ForegroundColor Yellow
+                if ($scope -eq 'Process') {
+                    $clearCmd = "Remove-Item Env:\$($check.Name)" + $(if ($check.KeyVar) { ", Env:\$($check.KeyVar)" } else { "" }) + " -ErrorAction SilentlyContinue"
+                    Write-Host "    Fix (this shell): $clearCmd" -ForegroundColor Gray
+                } else {
+                    Write-Host "    Fix ($scope scope, persists across shells): [Environment]::SetEnvironmentVariable('$($check.Name)', `$null, '$scope')" -ForegroundColor Gray
+                }
+            }
+        }
+    }
+
+    $settingsPaths = @("$env:USERPROFILE\.claude\settings.json", "$env:USERPROFILE\.claude\settings.local.json")
+    foreach ($rel in @(".claude\settings.json", ".claude\settings.local.json")) {
+        if (Test-Path $rel) { $settingsPaths += (Resolve-Path $rel).Path }
+    }
+    foreach ($path in ($settingsPaths | Select-Object -Unique)) {
+        if (-not (Test-Path $path)) { continue }
+        try {
+            $json = Get-Content $path -Raw | ConvertFrom-Json
+            $baseUrl = $json.env.ANTHROPIC_BASE_URL
+            if ($baseUrl) {
+                $uri = [uri]$baseUrl
+                $alive = (Test-NetConnection -ComputerName $uri.Host -Port $uri.Port -WarningAction SilentlyContinue).TcpTestSucceeded
+                if (-not $alive) {
+                    $issues++
+                    Write-Host ""
+                    Write-Host "  DEAD REDIRECT: $path -> env.ANTHROPIC_BASE_URL = $baseUrl" -ForegroundColor Red
+                    Write-Host "    Nothing listening on $($uri.Host):$($uri.Port). This disables cloud Claude Code entirely while it's set." -ForegroundColor Yellow
+                    Write-Host "    Fix: remove the 'env' block from $path, or switch to ai-claude-on / ai-claude-off (session-scoped, not permanent)." -ForegroundColor Gray
+                }
+            }
+        } catch {}
+    }
+
+    Write-Host ""
+    if ($issues -eq 0) {
+        Write-Host "  No dead redirects found." -ForegroundColor Green
+    } else {
+        Write-Host "  $issues dead redirect(s) found. After clearing, restart every open shell and every running agent CLI — they hold stale copies of the environment." -ForegroundColor Yellow
+    }
+}
+
 function global:ai-health {
     $portFile = "$env:USERPROFILE\.ai-platform\.active-port.json"
     if (-not (Test-Path $portFile)) {
@@ -470,6 +624,9 @@ function global:ai-health {
 # Write-Host "  ai-stop          Shut down platform (kills all Ollama, cleans state)" -ForegroundColor Gray
 # Write-Host "  ai-port          Check Ollama status" -ForegroundColor Gray
 # Write-Host "  ai-health        Full health check (processes, API, firewall, resources)" -ForegroundColor Gray
+# Write-Host "  ai-doctor        Diagnose dead ANTHROPIC_*/OPENAI_*/COPILOT_*/GROK_* redirects" -ForegroundColor Gray
+# Write-Host "  ai-claude-on     Point Claude Code at the local platform (this shell only)" -ForegroundColor Gray
+# Write-Host "  ai-claude-off    Undo ai-claude-on" -ForegroundColor Gray
 # Write-Host "  ai-provider      Show active provider/model" -ForegroundColor Gray
 # Write-Host "  ai-switch        Switch model mid-session (ai-switch <model>)" -ForegroundColor Gray
 # Write-Host "  ai-code          Launch aider for coding" -ForegroundColor Gray

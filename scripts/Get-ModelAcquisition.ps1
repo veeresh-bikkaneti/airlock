@@ -150,15 +150,35 @@ function Test-ResourceAvailability {
 }
 
 function Get-ModelSizingCeilingGB {
-    # Fixed sizing logic: model ceiling is always system RAM (FreeMemGB), regardless of GPU presence.
-    # GPU info is computed and logged as informational/speed context only.
-    # Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM,
-    # so GPU only affects inference speed, not whether a model can run at all.
-    # See: ADR-001-model-acquisition-placement.md decision point 3; backlog story 2.
+    # Sizing ceiling is free VRAM when a GPU is present, else free system RAM.
+    # Rationale: a model that spills to CPU still "runs" but is unusably slow for an
+    # interactive agentic loop - GPU fit, not RAM fit, determines whether the result
+    # is actually usable. See ADR-005-model-sizing-against-vram.md (supersedes
+    # ADR-001 decision point 3 - this used to be RAM-only on purpose; see that ADR
+    # for why it changed).
     param(
         [Parameter(Mandatory)][object]$Resources
     )
+    if ($Resources.GpuTotalGB -ne "N/A") {
+        return $Resources.GpuFreeGB
+    }
     return $Resources.FreeMemGB
+}
+
+function Get-InstalledModelNames {
+    # Best-effort list of models already pulled into the running Ollama instance.
+    # Never blocks selection on failure - an empty list just means no installed-model
+    # preference kicks in, falling back to plain size-based selection.
+    param([Parameter(Mandatory)][int]$LivePort)
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(10)
+        $resp = $c.GetAsync("http://127.0.0.1:$LivePort/api/tags").Result
+        $json = $resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        return @($json.models | ForEach-Object { $_.name })
+    } catch {
+        return @()
+    }
 }
 
 function Get-HuggingFaceGGUFCandidate {
@@ -363,15 +383,28 @@ function Select-BestCuratedModel {
     # it's directly testable, same reason Get-ModelSizingCeilingGB was extracted.
     param(
         [Parameter(Mandatory)][double]$AvailableGB,
-        [Parameter(Mandatory)][object]$ModelsConfig
+        [Parameter(Mandatory)][object]$ModelsConfig,
+        [string[]]$InstalledModels = @()
     )
     $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
         $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
-        [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($AvailableGB -ge ($sizeGB * 1.2)) }
+        [pscustomobject]@{
+            Name      = $candidate
+            SizeGB    = $sizeGB
+            Fits      = ($AvailableGB -ge ($sizeGB * 1.2))
+            Installed = $InstalledModels -contains $candidate
+        }
     }
-    $candidateSummary = ($candidates | ForEach-Object { "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))" }) -join ", "
-    # Prefer the largest model that still fits comfortably (with 20% headroom).
-    $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
+    $candidateSummary = ($candidates | ForEach-Object {
+        "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))$(if ($_.Installed) {'[installed]'} else {''})"
+    }) -join ", "
+    # Among models that fit, prefer one already pulled over one requiring a download,
+    # then prefer the largest. Pulling an 18GB model when a working 4.7GB model is
+    # already on disk is never the right default (PBI-airlock-local-fallback-architecture,
+    # child item 1) - "installed" outranks "bigger" for this tiebreak specifically.
+    $winner = $candidates | Where-Object { $_.Fits } |
+        Sort-Object -Property @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
+        Select-Object -First 1
     [pscustomobject]@{
         Model   = if ($winner) { $winner.Name } else { $null }
         Summary = $candidateSummary
@@ -398,7 +431,8 @@ function Select-BestModel {
     if (Test-Path $modelsConfigPath) {
         try {
             $modelsConfig = Get-Content $modelsConfigPath -Raw | ConvertFrom-Json
-            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig
+            $installedModels = Get-InstalledModelNames -LivePort $LivePort
+            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig -InstalledModels $installedModels
             $candidateSummary = $selection.Summary
 
             if ($selection.Model) {

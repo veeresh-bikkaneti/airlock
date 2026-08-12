@@ -122,6 +122,9 @@ if ($ActiveBackend -eq "vllm") {
 $env:OLLAMA_HOST     = ""
 $env:OPENAI_API_KEY  = ""
 $env:OPENAI_BASE_URL = ""
+# Clear ai-claude-on's session-scoped redirect too, if it was used — this is the only place
+# Airlock ever sets ANTHROPIC_BASE_URL, and only at Process scope, but it should not outlive ai-stop.
+Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
 
 # ------------------------------------------------------------
 # 3️⃣ Delete session state files (active‑port.json, active‑provider.json)

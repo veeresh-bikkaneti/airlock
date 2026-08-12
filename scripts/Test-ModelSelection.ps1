@@ -34,16 +34,18 @@ foreach ($c in $cases) {
     }
 }
 
-# Test sizing ceiling: verify it always uses FreeMemGB regardless of GPU presence.
-# Regression test for fix: sizing should ignore GPU VRAM and always use system RAM.
+# Test sizing ceiling: verify it uses free VRAM when a GPU is present, else free RAM.
+# Regression test for ADR-005 (supersedes ADR-001 decision point 3): a model that spills
+# to CPU still "runs" but is too slow for an interactive agentic loop to be usable, so GPU
+# fit - not RAM fit - is the ceiling whenever a GPU exists.
 Write-Host ""
 Write-Host "Testing model sizing ceiling (GPU vs RAM priority)..." -ForegroundColor Cyan
 
 $sizingTests = @(
     @{
-        name   = "4GB GPU free, 32GB RAM free (should return 32, not 4)"
+        name   = "4GB GPU free, 32GB RAM free (should return 4 - GPU is the ceiling)"
         resources = @{ FreeMemGB = 32; GpuTotalGB = 4; GpuFreeGB = 4 }
-        expect = 32
+        expect = 4
     }
     @{
         name   = "No GPU, 16GB RAM free (should return 16)"
@@ -64,6 +66,37 @@ foreach ($test in $sizingTests) {
         $failures++
     } else {
         Write-Host "PASS: $($test.name) -> $result GB" -ForegroundColor Green
+    }
+}
+
+# Test the "prefer already-installed model" tiebreak added alongside the VRAM fix
+# (PBI-airlock-local-fallback-architecture, child item 1): don't pull a bigger model
+# when a smaller one that fits is already on disk.
+Write-Host ""
+Write-Host "Testing installed-model preference..." -ForegroundColor Cyan
+
+$installTests = @(
+    @{
+        name      = "30B and 7B both fit, only 7B installed -> pick installed 7B, not bigger 30B"
+        gb        = 22
+        installed = @("qwen2.5-coder:7b")
+        expect    = "qwen2.5-coder:7b"
+    }
+    @{
+        name      = "30B and 7B both fit, nothing installed -> pick biggest (unchanged default)"
+        gb        = 22
+        installed = @()
+        expect    = "qwen3-coder:30b"
+    }
+)
+
+foreach ($test in $installTests) {
+    $selection = Select-BestCuratedModel -AvailableGB $test.gb -ModelsConfig $modelsConfig -InstalledModels $test.installed
+    if ($selection.Model -ne $test.expect) {
+        Write-Host "FAIL: $($test.name) -> got '$($selection.Model)', expected '$($test.expect)'" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: $($test.name) -> $($selection.Model)" -ForegroundColor Green
     }
 }
 
