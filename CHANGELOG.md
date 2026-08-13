@@ -6,6 +6,7 @@ All notable changes to Airlock are recorded here, newest first. This file exists
 
 Still pending, in order:
 
+- **Small fix, next up — `ai-claude-on` should call `ai-handoff` automatically.** Found while explaining the cloud-limit-switch flow to a user: switching to local today doesn't log *why*, even though `ai-handoff` (0.3.0) exists to do exactly that — it's just never called automatically. See [`ADR-006`](docs/adr/ADR-006-task-router-and-handoff-policy.md#known-gap-ai-claude-on-doesnt-call-ai-handoff) for the full writeup. Small, one-file change; not started.
 - **0.5.0 — Harness parity.** Download-progress for the HuggingFace import path (currently only `ollama pull` shows real progress — see `0.2.0` below). Re-verify opencode/Pi.dev/jcode/Copilot CLI/Gemini CLI now that the platform-level bugs they were blamed for are fixed, and file real PBIs only for confirmed defects. Not started.
 - **0.6.0 — 3D visualizer, passes 2 and 3.** "Visual grandeur" and "interactivity/UX," per the visualizer's own sequenced roadmap (`docs/superpowers/plans/2026-08-07-3d-visualizer-data-depth-plan.md`) — pass 1 (data depth) shipped in `0.2.0`. No spec written yet for passes 2/3, so not started.
 

@@ -1,7 +1,7 @@
 # ADR-006: Task router and cloud-limit handoff policy
 
 ## Status
-Proposed — not yet implemented. Written as the spec a build swarm executes against.
+Accepted — implemented and merged (shipped in `0.3.0`). One known gap found after merge: see "Known gap: `ai-claude-on` doesn't call `ai-handoff`" below.
 
 ## Context
 
@@ -51,6 +51,20 @@ A new function, `Get-TaskRoute` (pure, testable — no I/O), and a thin CLI wrap
 - **Auto-routing (router decides and switches automatically).** Rejected for this pass: the router's signals are cheap heuristics, not verified predictions — silently switching a user's active backend based on a heuristic that's sometimes wrong is a worse failure mode than asking them to read one line and decide. Revisit once the advisory version has enough real usage to know its false-positive/negative rate.
 - **LLM-based routing (ask a model to classify the task).** Rejected: adds latency and a dependency on the very backend choice it's trying to make, for a decision that's answerable from file count and keywords alone.
 - **Fold into `ai-code` directly instead of a separate `ai-route` command.** Rejected: `ai-code` already does real work (validates the model, launches aider); bolting a policy decision onto it conflates "check if this is a good idea" with "do the thing," and makes the router impossible to invoke standalone for planning.
+
+## Known gap: `ai-claude-on` doesn't call `ai-handoff`
+
+Found 2026-08-13, after merge, while explaining the cloud-limit-switch flow to a user.
+
+`ai-claude-on` and `ai-handoff` were built as independent commands — confirmed directly (`ai-claude-on`'s function body has zero reference to `ai-handoff` or `SESSION_STATE.md`). The actual flow today:
+
+1. Cloud Claude Code hits a usage limit. ADR-004's `Stop` hook already wrote a session snapshot after the last completed turn — this part works, is provider-agnostic, and needs no fix.
+2. User runs `ai-start` then `ai-claude-on` to switch to local. The redirect works. Nothing logs *why* the switch happened.
+3. `ai-handoff` (this ADR) would append that reason below the snapshot's canonical block — but only if the user remembers to run it separately.
+
+**Why this matters:** the whole point of the handoff policy (AIR-16) was to make the return-to-cloud path informative instead of a replay. A silent `ai-claude-on` with no `ai-handoff` degrades back to exactly that — informative in theory, replay in practice, because the note-taking step is optional and easy to forget under the pressure that caused the switch in the first place.
+
+**Proposed fix, not yet built:** `ai-claude-on` calls `ai-handoff` automatically after a successful redirect (liveness check already passed by that point, so the route decision is known). `ai-claude-off` does not need a symmetric call — there's nothing new to hand off when returning to cloud normally. Small, contained change (`scripts/profile-helpers.ps1` only); does not need its own ADR.
 
 ## Links
 - Supersedes nothing; extends ADR-004 (cross-harness session resume) with a policy layer on top of its mechanism.
