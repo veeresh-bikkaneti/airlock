@@ -402,12 +402,21 @@ function Select-BestCuratedModel {
     # then prefer the largest. Pulling an 18GB model when a working 4.7GB model is
     # already on disk is never the right default (PBI-airlock-local-fallback-architecture,
     # child item 1) - "installed" outranks "bigger" for this tiebreak specifically.
-    $winner = $candidates | Where-Object { $_.Fits } |
+    $fitting = $candidates | Where-Object { $_.Fits }
+    $winner = $fitting |
         Sort-Object -Property @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
         Select-Object -First 1
+    # Say which rule actually fired - "largest that fits" is false whenever a bigger,
+    # not-yet-installed candidate also fit and lost only because it wasn't installed.
+    $reason = if ($winner -and $winner.Installed -and ($fitting | Where-Object { $_.SizeGB -gt $winner.SizeGB })) {
+        "already installed - preferred over a larger download that also fit"
+    } else {
+        "largest model that fits with headroom"
+    }
     [pscustomobject]@{
         Model   = if ($winner) { $winner.Name } else { $null }
         Summary = $candidateSummary
+        Reason  = $reason
     }
 }
 
@@ -437,7 +446,7 @@ function Select-BestModel {
 
             if ($selection.Model) {
                 $Model = $selection.Model
-                $reason = "largest model that fits in $([math]::Round($AvailableGB,1)) GB with headroom"
+                $reason = "$($selection.Reason) (ceiling: $([math]::Round($AvailableGB,1)) GB)"
                 Write-Host "  Auto-selected model: $Model (fits $([math]::Round($AvailableGB,1)) GB available)" -ForegroundColor Cyan
                 Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
                     -Message "$($Resources.TotalMemGB) GB RAM, $GpuDesc - selected $Model as the $reason" `

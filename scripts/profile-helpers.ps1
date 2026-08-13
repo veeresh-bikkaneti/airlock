@@ -191,6 +191,14 @@ function global:ai-code {
         return
     }
 
+    # --openai-api-base is not enough on its own: LiteLLM (what aider uses under the hood)
+    # silently prefers OPENAI_API_BASE/OPENAI_BASE_URL env vars over CLI flags whenever
+    # they're already set to something else - documented the hard way in this repo's own
+    # docs/08-Agent-CLI-Setup-Guide.md. Force them to match so the flag can't lose.
+    $env:OPENAI_API_BASE = $data.endpoint
+    $env:OPENAI_BASE_URL = $data.endpoint
+    $env:OPENAI_API_KEY  = "ollama"
+
     Write-Host "Launching aider — model: $targetModel  endpoint: $($data.endpoint)" -ForegroundColor Green
     aider --model "openai/$targetModel" --openai-api-base $data.endpoint --openai-api-key "ollama"
 }
@@ -470,6 +478,13 @@ function global:ai-claude-on {
         return
     }
     $data = Get-Content $file -Raw | ConvertFrom-Json
+    # This feature has only ever been tested against Ollama's /v1/messages route - vLLM's
+    # OpenAI-compatible server has no documented Messages-API support anywhere in this repo.
+    if ($data.provider -ne 'ollama') {
+        Write-Host "Active backend is '$($data.provider)', not Ollama - ai-claude-on doesn't know if it speaks the Messages API Claude Code needs." -ForegroundColor Red
+        Write-Host "Switch to Ollama first (ai-start -Backend ollama), or use the settings.json env block manually at your own risk." -ForegroundColor Gray
+        return
+    }
     # Claude Code needs Ollama's /v1/messages route directly - the memory-service RAG proxy
     # doesn't implement it, so always use the real Ollama endpoint, never a memory-routed one.
     $realEndpoint = if ($data.directEndpoint) { $data.directEndpoint } else { $data.endpoint }
@@ -481,16 +496,36 @@ function global:ai-claude-on {
         return
     }
 
+    # Stash whatever was there before ai-claude-on's first call this shell, so ai-claude-off
+    # can restore it instead of just deleting it (a real ANTHROPIC_API_KEY may already be set).
+    if (-not $env:AI_CLAUDE_ON_ACTIVE) {
+        $env:AI_CLAUDE_PREV_BASE_URL = $env:ANTHROPIC_BASE_URL
+        $env:AI_CLAUDE_PREV_API_KEY  = $env:ANTHROPIC_API_KEY
+        $env:AI_CLAUDE_ON_ACTIVE     = "1"
+    }
+
     $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:$port"
     $env:ANTHROPIC_API_KEY  = "ollama"
     Write-Host "Claude Code ON — this shell now points at the local platform (http://127.0.0.1:$port)." -ForegroundColor Green
     Write-Host "Session-scoped only. Run ai-claude-off (or just close this shell) before using cloud Claude Code again." -ForegroundColor Gray
 }
 
-# Undo ai-claude-on: clear the redirect from this shell only.
+# Undo ai-claude-on: restore whatever ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had
+# before (a real cloud key, or nothing) instead of unconditionally deleting them.
 function global:ai-claude-off {
-    Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-    Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again." -ForegroundColor Green
+    if ($env:AI_CLAUDE_ON_ACTIVE) {
+        if ($env:AI_CLAUDE_PREV_BASE_URL) { $env:ANTHROPIC_BASE_URL = $env:AI_CLAUDE_PREV_BASE_URL } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
+        if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_API_KEY = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
+        Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
+        if ($env:ANTHROPIC_API_KEY) {
+            Write-Host "Claude Code OFF — restored this shell's previous Anthropic settings." -ForegroundColor Green
+        } else {
+            Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again (no key was set before ai-claude-on, so Claude Code may prompt you to log in)." -ForegroundColor Green
+        }
+    } else {
+        Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+        Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again." -ForegroundColor Green
+    }
 }
 
 # Diagnose stale AI-tool endpoint variables — at any scope — that point at a local port with
@@ -535,8 +570,13 @@ function global:ai-doctor {
     }
 
     $settingsPaths = @("$env:USERPROFILE\.claude\settings.json", "$env:USERPROFILE\.claude\settings.local.json")
-    foreach ($rel in @(".claude\settings.json", ".claude\settings.local.json")) {
-        if (Test-Path $rel) { $settingsPaths += (Resolve-Path $rel).Path }
+    # These two are relative to the current directory - only found if run from inside a
+    # project checkout. Said explicitly below so "no dead redirects" can't be misread as
+    # "checked every project", when a project-local file just wasn't reachable from here.
+    $projectRel = @(".claude\settings.json", ".claude\settings.local.json")
+    $projectFound = 0
+    foreach ($rel in $projectRel) {
+        if (Test-Path $rel) { $settingsPaths += (Resolve-Path $rel).Path; $projectFound++ }
     }
     foreach ($path in ($settingsPaths | Select-Object -Unique)) {
         if (-not (Test-Path $path)) { continue }
@@ -559,7 +599,10 @@ function global:ai-doctor {
 
     Write-Host ""
     if ($issues -eq 0) {
-        Write-Host "  No dead redirects found." -ForegroundColor Green
+        Write-Host "  No dead redirects found in User/Machine/process env vars or $env:USERPROFILE\.claude\settings*.json." -ForegroundColor Green
+        if ($projectFound -eq 0) {
+            Write-Host "  Not checked: this directory's own .claude\settings*.json - $(Get-Location) doesn't have one, or you're not in a project root. cd there and re-run if you expect one." -ForegroundColor Yellow
+        }
     } else {
         Write-Host "  $issues dead redirect(s) found. After clearing, restart every open shell and every running agent CLI — they hold stale copies of the environment." -ForegroundColor Yellow
     }
