@@ -1,0 +1,9 @@
+{
+  "embeddingModel": "nomic-embed-text",
+  "vectorStore": "chroma",
+  "indexPath": "~/.ai-platform/memory/chroma",
+  "chunkingStrategy": "none",
+  "topK": 3,
+  "similarityThreshold": 1.2,
+  "projectPath": null
+}

@@ -96,7 +96,52 @@ def test_different_thread_id_has_no_shared_context():
         assert not any("blue" in c for c in second_call_context)
 
 
+def test_empty_store_marks_response_unaugmented():
+    """ADR-007 R-16/R-17: zero retrievable chunks -> the graph must mark the
+    turn unaugmented, not silently proceed as if retrieval succeeded."""
+    with _tmp_dir() as tmp:
+        store = MemoryStore(embedding_function=FakeEmbedding(), persist_dir=tmp / "chroma")
+        checkpointer = get_checkpointer(tmp / "checkpoints.sqlite")
+
+        def fake_forward(messages: list[dict]) -> dict:
+            return {"role": "assistant", "content": "no memories yet"}
+
+        compiled = build_graph(store, fake_forward).compile(checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": "session-empty"}}
+
+        final_state = compiled.invoke(
+            {"project_id": "proj-empty", "messages": [{"role": "user", "content": "anything"}]},
+            config,
+        )
+
+        assert final_state["augmented"] is False
+        assert final_state["retrieved"] == []
+
+
+def test_stored_memory_marks_response_augmented():
+    with _tmp_dir() as tmp:
+        store = MemoryStore(embedding_function=FakeEmbedding(), persist_dir=tmp / "chroma")
+        store.remember("proj-full", "some prior context")
+        checkpointer = get_checkpointer(tmp / "checkpoints.sqlite")
+
+        def fake_forward(messages: list[dict]) -> dict:
+            return {"role": "assistant", "content": "ack"}
+
+        compiled = build_graph(store, fake_forward).compile(checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": "session-full"}}
+
+        final_state = compiled.invoke(
+            {"project_id": "proj-full", "messages": [{"role": "user", "content": "anything"}]},
+            config,
+        )
+
+        assert final_state["augmented"] is True
+        assert final_state["retrieved"] == ["some prior context"]
+
+
 if __name__ == "__main__":
     test_second_call_sees_first_calls_context_without_resend()
     test_different_thread_id_has_no_shared_context()
+    test_empty_store_marks_response_unaugmented()
+    test_stored_memory_marks_response_augmented()
     print("OK: checkpointer continuity + thread isolation checks passed")

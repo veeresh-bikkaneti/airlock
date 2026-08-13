@@ -4,3 +4,9 @@ chromadb>=0.5.0
 requests>=2.28.0
 langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=2.0.0
+# ADR-007 point 4: pinned exact, not left floating via langgraph's transitive
+# resolution — these were resolved (pip show) in a fresh venv against the
+# constraints above; langsmith is a telemetry client that can transmit
+# externally, so its version is a reviewed decision, not an accident.
+langchain-core==1.5.4
+langsmith==0.10.18

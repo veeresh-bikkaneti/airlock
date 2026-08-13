@@ -416,6 +416,22 @@ function global:ai-memory-status {
         $c.Timeout = [TimeSpan]::FromSeconds(5)
         $resp = $c.GetAsync("http://127.0.0.1:$($state.port)/health").Result
         Write-Host "  API       : $(if ($resp.IsSuccessStatusCode) { "HEALTHY (port $($state.port))" } else { "UNHEALTHY (HTTP $($resp.StatusCode))" })" -ForegroundColor $(if ($resp.IsSuccessStatusCode) { "Green" } else { "Red" })
+
+        # ADR-007 point 2: /health now carries index freshness alongside the
+        # liveness check, so this reuses the same round-trip instead of a
+        # second request.
+        if ($resp.IsSuccessStatusCode) {
+            $healthBody = $resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+            $freshness = $healthBody.memoryFreshness
+            if ($freshness -and $freshness.indexed) {
+                $behindText = if ($null -ne $freshness.commitsBehind) { "$($freshness.commitsBehind) commits behind" } else { "commits-behind unknown (git unavailable)" }
+                $hoursText = if ($null -ne $freshness.hoursSinceIndex) { "{0:N1}h since index" -f $freshness.hoursSinceIndex } else { "age unknown" }
+                $staleColor = if ($freshness.commitsBehind -gt 0) { "Yellow" } else { "Green" }
+                Write-Host "  Index     : $behindText, $hoursText" -ForegroundColor $staleColor
+            } elseif ($freshness) {
+                Write-Host "  Index     : NOT YET INDEXED (no memories stored)" -ForegroundColor Gray
+            }
+        }
     } catch {
         Write-Host "  API       : UNREACHABLE (port $($state.port))" -ForegroundColor Red
     }
