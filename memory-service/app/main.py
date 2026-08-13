@@ -1,10 +1,21 @@
 """Airlock memory-service — FastAPI app.
 
-/health — liveness check.
+/health — liveness check, plus (ADR-007) index freshness for ai-memory-status.
 /v1/memory/remember, /v1/memory/recall — long-term memory (Chroma + Ollama embeddings).
 /v1/chat/completions — OpenAI-compatible proxy: retrieve -> inject -> forward
 to the real backend, checkpointed per session for short-term/working memory.
 """
+import os
+
+# ADR-007 point 4: tracing must require a deliberate opt-in from this
+# service's own startup, not just "nobody's set the env var yet" on the
+# host machine. Set before any other import so langsmith's cached env-var
+# lookup (functools.lru_cache) never observes a stale/host-set value.
+# langsmith 0.10+ checks LANGSMITH_TRACING_V2 first, then LANGCHAIN_TRACING_V2
+# (see langsmith.utils.get_env_var) — both are pinned off here.
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_TRACING_V2"] = "false"
+
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -47,8 +58,19 @@ def _check_backend_provider() -> str:
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "airlock-memory-service"}
+def health(project_id: str = DEFAULT_PROJECT_ID):
+    # ADR-007 point 2: extended in place rather than adding a new endpoint —
+    # ai-memory-status already does a single GET /health round-trip, so
+    # freshness rides along in the same response instead of a second call.
+    try:
+        freshness = _store.freshness(project_id)
+    except Exception:
+        freshness = None
+    return {
+        "status": "ok",
+        "service": "airlock-memory-service",
+        "memoryFreshness": freshness,
+    }
 
 
 class RememberRequest(BaseModel):
@@ -75,13 +97,20 @@ def remember(req: RememberRequest):
 class RecallRequest(BaseModel):
     project_id: str
     query: str
-    k: int = 3
+    # None (not a hardcoded 3) so MemoryStore.recall() falls through to
+    # topK from config/memory-service.json (ADR-007 point 1) when the
+    # caller doesn't explicitly override it.
+    k: Optional[int] = None
 
 
 class RecallHit(BaseModel):
     text: str
     metadata: dict
     distance: float
+    path: Optional[str] = None
+    line_range: Optional[str] = None
+    indexed_commit_sha: Optional[str] = None
+    indexed_at: Optional[str] = None
 
 
 class RecallResponse(BaseModel):
@@ -110,7 +139,12 @@ async def chat_completions(request: Request):
     if _check_backend_provider() == "vllm":
         # Degraded mode: pure passthrough, no retrieve/persist — chat still
         # works, memory silently no-ops instead of erroring on every turn.
-        return call_backend_chat(messages_in, extra)
+        # ADR-007 R-17: this is the literal "memory-service degraded
+        # mid-session" case — mark unaugmented so it's not indistinguishable
+        # from a real augmented response on the client side.
+        degraded = call_backend_chat(messages_in, extra)
+        degraded["airlockMemory"] = {"augmented": False}
+        return degraded
 
     holder: dict = {}
 
@@ -122,8 +156,13 @@ async def chat_completions(request: Request):
 
     graph = build_graph(_store, forward_fn).compile(checkpointer=_checkpointer)
     config = {"configurable": {"thread_id": session_id}}
-    graph.invoke({"project_id": project_id, "messages": messages_in}, config)
+    final_state = graph.invoke({"project_id": project_id, "messages": messages_in}, config)
 
     if "raw" not in holder:
         raise HTTPException(status_code=502, detail="No response from backend")
-    return holder["raw"]
+    # ADR-007 R-16/R-17: fail-closed — a zero-chunk (or all-below-threshold)
+    # retrieval must be visible to the client as unaugmented, not silently
+    # indistinguishable from a successful augmented response.
+    raw = holder["raw"]
+    raw["airlockMemory"] = {"augmented": bool(final_state.get("augmented", False))}
+    return raw

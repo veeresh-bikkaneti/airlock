@@ -19,6 +19,7 @@ class ChatState(TypedDict):
     project_id: str
     messages: Annotated[list, add_messages]
     retrieved: list[str]
+    augmented: bool
 
 
 def to_openai_messages(messages: list) -> list[dict]:
@@ -31,9 +32,14 @@ def build_graph(memory_store: MemoryStore, forward_fn: Callable[[list[dict]], di
     def retrieve(state: ChatState) -> dict:
         last_human = next((m for m in reversed(state["messages"]) if m.type == "human"), None)
         if last_human is None:
-            return {"retrieved": []}
-        hits = memory_store.recall(state["project_id"], last_human.content, k=3)
-        return {"retrieved": [h["text"] for h in hits]}
+            return {"retrieved": [], "augmented": False}
+        # No k= override here: MemoryStore reads topK from config/memory-service.json
+        # (ADR-007) — the graph no longer hardcodes a retrieval count.
+        hits = memory_store.recall(state["project_id"], last_human.content)
+        # ADR-007 R-16/R-17: recall() already filters to hits above the
+        # configured similarity threshold, so zero hits here means the query
+        # had no attributable context — fail closed, don't proceed silently.
+        return {"retrieved": [h["text"] for h in hits], "augmented": len(hits) > 0}
 
     def inject_and_forward(state: ChatState) -> dict:
         messages = to_openai_messages(state["messages"])
