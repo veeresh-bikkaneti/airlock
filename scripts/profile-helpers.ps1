@@ -679,6 +679,10 @@ function global:ai-claude-on {
     $env:ANTHROPIC_API_KEY  = "ollama"
     Write-Host "Claude Code ON — this shell now points at the local platform (http://127.0.0.1:$port)." -ForegroundColor Green
     Write-Host "Session-scoped only. Run ai-claude-off (or just close this shell) before using cloud Claude Code again." -ForegroundColor Gray
+
+    # ADR-006 known gap, closed: log the switch so the handoff note isn't optional
+    # and easy to forget under the pressure that caused it (a cloud usage limit).
+    ai-handoff "Switched to local via ai-claude-on"
 }
 
 # Undo ai-claude-on: restore whatever ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had
