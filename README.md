@@ -475,13 +475,15 @@ ai-code
 
 | Command | Description |
 |---------|-------------|
-| `ai-start [-Model <name>] [-Force]` | Start Ollama on port 12345, kill any rogues |
-| `ai-stop [-CleanFirewall]` | Stop all Ollama processes, clear state |
+| `ai-start [-Model <name>] [-Backend ollama\|vllm] [-Force]` | Start the platform, kill any rogues. `-Backend` overrides/persists the saved backend choice (e.g. retry vLLM after a fallback) |
+| `ai-stop [-CleanFirewall]` | Stop the active backend, clear state and any `ai-claude-on` redirect |
 | `ai-health` | Full health check (processes, API, firewall, resources) |
-| `ai-port` | Show active port and model |
+| `ai-doctor` | Find dead `ANTHROPIC_*`/`OPENAI_*`/`COPILOT_*`/`GROK_*` redirects (any scope) pointing at a port nothing is listening on, and print the exact fix |
+| `ai-port` | Show active port, model, and any background model-pull job status |
 | `ai-provider` | Show active provider (local/cloud) |
 | `ai-switch <model>` | Switch model mid-session (e.g., `ai-switch qwen3-coder:30b`) |
-| `ai-code` | Launch aider with active provider |
+| `ai-claude-on` / `ai-claude-off` | Point Claude Code at the local platform for this shell only (liveness-checked, session-scoped) / undo it |
+| `ai-code [-Model <name>]` | Launch aider against the active (or given) model, with `-Model` validated against `ollama list` |
 | `ai-audit-last` | Show recent audit log entries |
 | `ai-config` | Show full platform configuration |
 | `ai-models` | List configured models and capabilities |
