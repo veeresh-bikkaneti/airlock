@@ -8,6 +8,7 @@ One door open at a time — exactly one local model backend running, walled off 
 [![PowerShell 7+](https://img.shields.io/badge/PowerShell-7+-green.svg)](https://github.com/PowerShell/PowerShell)
 [![Ollama](https://img.shields.io/badge/Ollama-0.30+-orange.svg)](https://ollama.ai)
 [![Version](https://img.shields.io/badge/version-0.2.0-blueviolet.svg)](CHANGELOG.md)
+[![CI](https://github.com/veeresh-bikkaneti/airlock/actions/workflows/ci.yml/badge.svg)](https://github.com/veeresh-bikkaneti/airlock/actions/workflows/ci.yml)
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
