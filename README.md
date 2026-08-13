@@ -7,6 +7,9 @@ One door open at a time — exactly one local model backend running, walled off 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PowerShell 7+](https://img.shields.io/badge/PowerShell-7+-green.svg)](https://github.com/PowerShell/PowerShell)
 [![Ollama](https://img.shields.io/badge/Ollama-0.30+-orange.svg)](https://ollama.ai)
+[![Version](https://img.shields.io/badge/version-0.2.0-blueviolet.svg)](CHANGELOG.md)
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 ---
 

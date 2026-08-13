@@ -61,7 +61,10 @@ Type `V` for vLLM (higher throughput for batch requests) or just press Enter for
 .\scripts\Start-AI.ps1 -Force                    # kill any existing instance and start clean
 .\scripts\Start-AI.ps1 -SkipVault                # skip the secret-vault check (local-only session)
 .\scripts\Start-AI.ps1 -NoAutoInstallOllama      # skip auto-install of Ollama (manage it yourself)
+.\scripts\Start-AI.ps1 -Backend vllm             # force vLLM, even if a previous run fell back to Ollama
 ```
+
+If vLLM ever fails to start (Docker not running, container crash, etc.), Airlock automatically remembers "use Ollama instead" for next time — so you're not stuck waiting through the same failed vLLM attempt on every single run. Use `-Backend vllm` above whenever you're ready to give it another try.
 
 ### Changing your backend choice after first run
 
@@ -89,15 +92,18 @@ If you add `scripts/profile-helpers.ps1` to your PowerShell profile (see Step 9 
 |---|---|
 | `ai-start` | Same as `Start-AI.ps1` |
 | `ai-stop` | Same as `Stop-AI.ps1` |
-| `ai-port` | Shows the port, model, and whether it's healthy right now |
+| `ai-port` | Shows the port, model, whether it's healthy, and progress on any model still downloading |
 | `ai-provider` | Shows which provider (local or cloud fallback) is active |
+| `ai-claude-on` / `ai-claude-off` | Point Claude Code at your local model for this window only, then undo it — the safe way to try it without a setting that can outlive the platform |
+| `ai-doctor` | One command that finds a leftover "point Claude Code / aider / Copilot at localhost" setting anywhere on your PC and tells you exactly how to remove it |
 
 ## How model selection actually works
 
 You never have to guess if a model fits your PC. The picker:
-- Sizes against your **system RAM** (not VRAM) — Ollama offloads to CPU/RAM automatically if it doesn't fit on the GPU, so RAM is the real ceiling.
-- Requires 20% headroom above the model's size before considering it a fit.
-- Prefers the largest model that still fits comfortably.
+- Sizes against your **graphics card's free memory (VRAM)** if you have one — not system RAM. A model that doesn't fit your GPU can technically still run by spilling onto the CPU, but that's minutes-per-response slow, not "slow but usable." No GPU detected? Then system RAM is the ceiling instead, same as before.
+- Requires 20% headroom above the model's size before considering it a fit (a model needs more than just its file size once it's actually thinking).
+- Prefers a model you already have downloaded over a same-size one you don't, so it never makes you wait for an extra download when something on disk already works.
+- Among what's left, picks the largest model that still fits comfortably.
 - Only reaches out to Hugging Face if nothing in the curated list (`config/models.json`) fits — see [`06-Model-Acquisition-Backlog.md`](06-Model-Acquisition-Backlog.md) for the full backlog behind this.
 
 ## Reading the logs
@@ -110,6 +116,7 @@ Every run writes a JSON-lines audit log to `%USERPROFILE%\.ai-platform\logs\<dat
 - **Script won't parse / weird syntax errors** — you're probably running it under Windows PowerShell 5.1 instead of PowerShell 7. Use `pwsh .\scripts\Start-AI.ps1`, not `powershell .\scripts\Start-AI.ps1`.
 - **Port already in use** — run with `-Force` to kill the existing instance, or `-Port` to pick a different one.
 - **Model pull/download stuck or failed** — check the audit log for the exact step it failed at; background pulls are session-scoped, so closing the terminal mid-download will kill the job (known limitation).
+- **Claude Code (or aider, or Copilot) suddenly can't connect to anything — even the real cloud API, even for unrelated projects** — this is almost always a leftover "point this tool at localhost" setting from a previous local-model experiment, still active after the platform stopped. It shows up as a scary-sounding but wrong error like "a firewall or proxy may be blocking it." Run `ai-doctor` — it checks every place this kind of setting can hide and tells you the exact command to remove it. Then restart whichever terminal/app was affected.
 
 ## Where to go next
 
