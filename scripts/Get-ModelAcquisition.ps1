@@ -480,6 +480,28 @@ function Select-BestModel {
     return ""
 }
 
+function ConvertFrom-OllamaPullLine {
+    # Pure: no I/O. `ollama pull` never falls back to plain newline output even when
+    # redirected - it always emits cursor-control codes - but PowerShell's pipeline still
+    # splits it into discrete strings this can regex, one screen-update per line.
+    # Returns $null for lines that aren't a progress update (manifest/digest/etc lines).
+    param([Parameter(Mandatory)][string]$Line)
+    # ETA capture is deliberately \d+[a-zA-Z]+ (e.g. "42s", "3m") rather than \S+ - ollama's
+    # line has no space before the trailing [K clear-to-end-of-line code in this position,
+    # so a greedy \S+ would swallow "0s[K" instead of stopping at "0s".
+    $pattern = 'pulling\s+\S+:\s*(\d+)%.*?([\d.]+\s*\w+)\s*/\s*([\d.]+\s*\w+)(?:\s+([\d.]+\s*\w+/s))?\s*(\d+[a-zA-Z]+)?'
+    if ($Line -match $pattern) {
+        return [pscustomobject]@{
+            Percent    = [int]$Matches[1]
+            Downloaded = $Matches[2]
+            Total      = $Matches[3]
+            Speed      = $Matches[4]
+            Eta        = $Matches[5]
+        }
+    }
+    return $null
+}
+
 function Start-ModelAcquisitionPull {
     param(
         [Parameter(Mandatory)][string]$Model,
@@ -510,12 +532,18 @@ function Start-ModelAcquisitionPull {
                 $modelPullPending = $true
             } else {
                 Write-Host "  Model '$Model' not found locally. Pulling it in the background..." -ForegroundColor Yellow
+                Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
 
                 # ponytail: Start-Job only survives this PowerShell session — closing the terminal
                 # kills an in-progress pull. Upgrade path if that ever matters: a detached process
                 # (Start-Process) instead of a session-bound job.
-                $job = Start-Job -Name "ModelPull-$Model" -ArgumentList $Model, $LivePort, $LogFile -ScriptBlock {
-                param($Model, $Port, $LogFile)
+                $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
+                # Start-Job runs in its own runspace and inherits none of this script's
+                # functions - InitializationScript re-injects ConvertFrom-OllamaPullLine's
+                # exact definition instead of duplicating the regex here to drift out of sync.
+                $initScript = [scriptblock]::Create("function ConvertFrom-OllamaPullLine { $((Get-Item Function:\ConvertFrom-OllamaPullLine).Definition) }")
+                $job = Start-Job -Name "ModelPull-$Model" -InitializationScript $initScript -ArgumentList $Model, $LivePort, $LogFile, $progressFile -ScriptBlock {
+                param($Model, $Port, $LogFile, $ProgressFile)
 
                 function Write-JobAuditLog {
                     param(
@@ -539,7 +567,25 @@ function Start-ModelAcquisitionPull {
                     ($entry | ConvertTo-Json -Compress) | Add-Content -Path $LogFile -Encoding utf8
                 }
 
-                & ollama pull $Model
+                # Piping through ForEach-Object (instead of capturing to a variable) processes
+                # each line as it arrives, so the progress file updates live instead of only
+                # once at the end.
+                & ollama pull $Model 2>&1 | ForEach-Object {
+                    $parsed = ConvertFrom-OllamaPullLine -Line $_.ToString()
+                    if ($parsed) {
+                        $progress = [ordered]@{
+                            model      = $Model
+                            percent    = $parsed.Percent
+                            downloaded = $parsed.Downloaded
+                            total      = $parsed.Total
+                            speed      = $parsed.Speed
+                            eta        = $parsed.Eta
+                            updatedUtc = [DateTime]::UtcNow.ToString("o")
+                        }
+                        try { ($progress | ConvertTo-Json -Compress) | Set-Content -Path $ProgressFile -Encoding utf8NoBOM } catch {}
+                    }
+                }
+                Remove-Item $ProgressFile -ErrorAction SilentlyContinue
                 if ($LASTEXITCODE -eq 0) {
                     Write-JobAuditLog -Action "ModelPull" -Result "SUCCESS" -Message "Model pulled in background"
                     try {

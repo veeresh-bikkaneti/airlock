@@ -55,9 +55,17 @@ function global:ai-port {
     if ($pullJobs) {
         Write-Host ""
         Write-Host "Background pulls:" -ForegroundColor Cyan
+        $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
+        $progress = if (Test-Path $progressFile) { Get-Content $progressFile -Raw | ConvertFrom-Json } else { $null }
         foreach ($j in $pullJobs) {
             $color = switch ($j.State) { 'Running' { 'Yellow' }; 'Completed' { 'Green' }; 'Failed' { 'Red' }; default { 'Gray' } }
-            Write-Host "  $($j.Name): $($j.State)" -ForegroundColor $color
+            if ($j.State -eq 'Running' -and $progress -and $j.Name -eq "ModelPull-$($progress.model)") {
+                $speedPart = if ($progress.speed) { " at $($progress.speed)" } else { "" }
+                $etaPart = if ($progress.eta) { ", ~$($progress.eta) left" } else { "" }
+                Write-Host "  $($j.Name): $($progress.percent)% ($($progress.downloaded)/$($progress.total))$speedPart$etaPart" -ForegroundColor $color
+            } else {
+                Write-Host "  $($j.Name): $($j.State)" -ForegroundColor $color
+            }
         }
     }
 }
