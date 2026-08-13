@@ -4,6 +4,10 @@
 
 $Script:PlatformDir = "$env:USERPROFILE\.ai-platform"
 
+# ADR-006 task router - pure cascade lives in its own file so it stays unit-testable
+# (Test-TaskRoute.ps1) without dragging in this file's env/file I/O.
+. (Join-Path $PSScriptRoot "Get-TaskRoute.ps1")
+
 # Wrapper for the real 'ollama' binary. Prevents direct use of 'ollama serve' which would bypass the platform's safety checks.
 function global:ollama {
     if ($args.Count -gt 0 -and $args[0] -eq "serve") {
@@ -296,6 +300,112 @@ function global:ai-models {
     }
     Write-Host ""
     Write-Host "Fallback order: $($data.fallbackOrder -join ' -> ')" -ForegroundColor White
+}
+
+# Shared I/O glue behind ai-route and ai-handoff: reads the active model's
+# supportsFunctionCalling flag, the ADR-006 keyword config, and any given files' line
+# counts, then hands them to the pure Get-TaskRoute cascade. Kept as one function so
+# ai-route's "should I go local right now" and ai-handoff's handoff note can never
+# silently disagree - that's the whole point of sharing one rule set (ADR-006 consequences).
+function Resolve-CurrentTaskRoute {
+    param(
+        [Parameter(Mandatory)][string]$Description,
+        [string[]]$Files = @()
+    )
+
+    $providerFile = "$Script:PlatformDir\state\active-provider.json"
+    $modelsFile   = "$Script:PlatformDir\config\models.json"
+    if (-not (Test-Path $providerFile)) {
+        return [pscustomobject]@{ Error = "No active session. Run ai-start first."; Route = $null; ActiveModel = $null }
+    }
+    if (-not (Test-Path $modelsFile)) {
+        return [pscustomobject]@{ Error = "No model registry found at $modelsFile."; Route = $null; ActiveModel = $null }
+    }
+
+    $activeModel = (Get-Content $providerFile -Raw | ConvertFrom-Json).model
+    $modelsConfig = Get-Content $modelsFile -Raw | ConvertFrom-Json
+    $modelInfo = $modelsConfig.localModels.$activeModel
+    if (-not $modelInfo) {
+        return [pscustomobject]@{ Error = "Active model '$activeModel' has no entry in models.json - cannot read supportsFunctionCalling."; Route = $null; ActiveModel = $activeModel }
+    }
+
+    # ponytail: task-router-keywords.json isn't in setup.ps1's deploy copy list yet (only
+    # models.json/policies/*.json/*.template are) - resolve next to this script instead of
+    # under $Script:PlatformDir\config, so it works from a repo checkout today. Upgrade path:
+    # add it to setup.ps1's config copy step once that file is touched for another reason.
+    $keywordsFile = Join-Path $PSScriptRoot "..\config\task-router-keywords.json"
+    $keywords = if (Test-Path $keywordsFile) { @((Get-Content $keywordsFile -Raw | ConvertFrom-Json).planningKeywords) } else { @() }
+
+    $fileCount = $Files.Count
+    $maxLineCount = 0
+    foreach ($f in $Files) {
+        if (Test-Path $f) {
+            $lineCount = (Get-Content $f -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
+            if ($lineCount -gt $maxLineCount) { $maxLineCount = $lineCount }
+        }
+    }
+
+    $route = Get-TaskRoute -SupportsFunctionCalling ([bool]$modelInfo.supportsFunctionCalling) -Description $Description -Keywords $keywords -FileCount $fileCount -MaxLineCount $maxLineCount
+    return [pscustomobject]@{ Error = $null; Route = $route; ActiveModel = $activeModel }
+}
+
+# ADR-006 advisory task router. Prints the decision and reason and stops - never launches
+# ai-claude-on, aider, or anything else. Auto-routing (deciding AND switching) is a
+# deliberate non-goal for this pass (see ADR-006's Alternatives considered); the user still
+# acts on this manually.
+function global:ai-route {
+    param(
+        [Parameter(Position = 0, Mandatory)][string]$Description,
+        # The router can't infer touched files from free-text alone - pass them explicitly
+        # when known, so rule 3 (file count / line count) has real signal instead of always
+        # defaulting to "0 files, 0 lines".
+        [string[]]$Files = @()
+    )
+
+    $result = Resolve-CurrentTaskRoute -Description $Description -Files $Files
+    if ($result.Error) {
+        Write-Host $result.Error -ForegroundColor Red
+        return
+    }
+
+    $color = if ($result.Route.Decision -eq 'local') { 'Green' } else { 'Yellow' }
+    Write-Host "Route : $($result.Route.Decision.ToUpper())" -ForegroundColor $color
+    Write-Host "Reason: $($result.Route.Reason)" -ForegroundColor Gray
+    Write-Host "(advisory only - does not launch ai-claude-on, aider, or anything else)" -ForegroundColor DarkGray
+}
+
+# AIR-16 handoff policy. Appends the current task's ADR-006 route decision below the
+# ADR-004 canonical block in .ai-context\SESSION_STATE.md - never rewrites or reorders the
+# canonical fields, which stay owned by the external ai-context-sync.py hook.
+function global:ai-handoff {
+    param(
+        [Parameter(Position = 0, Mandatory)][string]$Description,
+        [string[]]$Files = @()
+    )
+
+    $stateFile = Join-Path (Get-Location).Path ".ai-context\SESSION_STATE.md"
+    if (-not (Test-Path $stateFile)) {
+        Write-Host "No .ai-context\SESSION_STATE.md in $(Get-Location) - nothing to append to." -ForegroundColor Red
+        Write-Host "That file is written by Claude Code's ai-context-sync.py hook (ADR-004, Stop/SessionEnd/PreCompact) - trigger one Claude Code turn in this repo first." -ForegroundColor Gray
+        return
+    }
+
+    $result = Resolve-CurrentTaskRoute -Description $Description -Files $Files
+    if ($result.Error) {
+        Write-Host $result.Error -ForegroundColor Red
+        return
+    }
+
+    $appendLines = @(
+        ""
+        "## Task route (ADR-006, appended by ai-handoff)"
+        "- decided_at: $([DateTime]::UtcNow.ToString('o'))"
+        "- description: $Description"
+        "- route: $($result.Route.Decision)"
+        "- reason: $($result.Route.Reason)"
+    )
+    Add-Content -Path $stateFile -Value $appendLines -Encoding utf8
+    Write-Host "Appended route decision ($($result.Route.Decision)) to $stateFile" -ForegroundColor Green
 }
 
 function global:ai-auth {
@@ -721,6 +831,8 @@ function global:ai-health {
 # Write-Host "  ai-audit-last    Show recent audit log entries" -ForegroundColor Gray
 # Write-Host "  ai-policy        Show provider policy" -ForegroundColor Gray
 # Write-Host "  ai-models        List configured models" -ForegroundColor Gray
+# Write-Host "  ai-route         Advisory: is this task local-safe or cloud-only? (ai-route <description> [-Files <path[]>])" -ForegroundColor Gray
+# Write-Host "  ai-handoff       Append the current ai-route decision to .ai-context\SESSION_STATE.md" -ForegroundColor Gray
 # Write-Host "  ai-auth          Show auth status" -ForegroundColor Gray
 # Write-Host "  ai-auth-set      Store API key for cloud provider" -ForegroundColor Gray
 # Write-Host "  ai-cache         Show/clear prompt cache" -ForegroundColor Gray
