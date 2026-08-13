@@ -468,6 +468,42 @@ function global:ai-memory-off {
     Write-Host "Memory OFF — clients back to direct endpoint $($providerState.endpoint)" -ForegroundColor Green
 }
 
+# Pure decision helpers for the ai-claude-on/off stash-and-restore state machine - no file
+# I/O, no network, no env var access - so they're directly testable (see Test-ClaudeToggle.ps1),
+# same reason Get-ModelSizingCeilingGB was extracted out of Start-AI.ps1.
+function Resolve-ClaudeOnStash {
+    param(
+        [string]$CurrentBaseUrl,
+        [string]$CurrentApiKey,
+        [bool]$AlreadyActive
+    )
+    if ($AlreadyActive) {
+        # A second ai-claude-on in the same shell must not re-stash the redirect it just
+        # set as if it were the user's original value - that would lose the real one.
+        return [pscustomobject]@{ ShouldStash = $false; PrevBaseUrl = $null; PrevApiKey = $null }
+    }
+    return [pscustomobject]@{ ShouldStash = $true; PrevBaseUrl = $CurrentBaseUrl; PrevApiKey = $CurrentApiKey }
+}
+
+function Resolve-ClaudeOffRestore {
+    param(
+        [bool]$WasActive,
+        [string]$PrevBaseUrl,
+        [string]$PrevApiKey
+    )
+    if (-not $WasActive) {
+        # ai-claude-off called without a matching ai-claude-on this shell (e.g. leftover
+        # habit, or a fresh shell) - nothing was stashed, so just clear.
+        return [pscustomobject]@{ Mode = 'PlainClear'; BaseUrl = $null; ApiKey = $null }
+    }
+    if ($PrevApiKey) {
+        return [pscustomobject]@{ Mode = 'Restored'; BaseUrl = $PrevBaseUrl; ApiKey = $PrevApiKey }
+    }
+    # Active, but nothing was set before ai-claude-on ran - correct to clear, but the
+    # "restored" claim would be false since there was nothing to restore.
+    return [pscustomobject]@{ Mode = 'ClearedNoPriorKey'; BaseUrl = $null; ApiKey = $null }
+}
+
 # Point Claude Code at the local platform for THIS shell session only — never persisted to
 # settings.json or User/Machine env scope. Fixes the failure mode where a permanent
 # ANTHROPIC_BASE_URL redirect outlives the platform and breaks Claude Code entirely (see ai-doctor).
@@ -498,9 +534,10 @@ function global:ai-claude-on {
 
     # Stash whatever was there before ai-claude-on's first call this shell, so ai-claude-off
     # can restore it instead of just deleting it (a real ANTHROPIC_API_KEY may already be set).
-    if (-not $env:AI_CLAUDE_ON_ACTIVE) {
-        $env:AI_CLAUDE_PREV_BASE_URL = $env:ANTHROPIC_BASE_URL
-        $env:AI_CLAUDE_PREV_API_KEY  = $env:ANTHROPIC_API_KEY
+    $stash = Resolve-ClaudeOnStash -CurrentBaseUrl $env:ANTHROPIC_BASE_URL -CurrentApiKey $env:ANTHROPIC_API_KEY -AlreadyActive ([bool]$env:AI_CLAUDE_ON_ACTIVE)
+    if ($stash.ShouldStash) {
+        $env:AI_CLAUDE_PREV_BASE_URL = $stash.PrevBaseUrl
+        $env:AI_CLAUDE_PREV_API_KEY  = $stash.PrevApiKey
         $env:AI_CLAUDE_ON_ACTIVE     = "1"
     }
 
@@ -513,18 +550,16 @@ function global:ai-claude-on {
 # Undo ai-claude-on: restore whatever ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had
 # before (a real cloud key, or nothing) instead of unconditionally deleting them.
 function global:ai-claude-off {
-    if ($env:AI_CLAUDE_ON_ACTIVE) {
-        if ($env:AI_CLAUDE_PREV_BASE_URL) { $env:ANTHROPIC_BASE_URL = $env:AI_CLAUDE_PREV_BASE_URL } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
-        if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_API_KEY = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
-        Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
-        if ($env:ANTHROPIC_API_KEY) {
-            Write-Host "Claude Code OFF — restored this shell's previous Anthropic settings." -ForegroundColor Green
-        } else {
-            Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again (no key was set before ai-claude-on, so Claude Code may prompt you to log in)." -ForegroundColor Green
-        }
-    } else {
-        Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-        Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again." -ForegroundColor Green
+    $restore = Resolve-ClaudeOffRestore -WasActive ([bool]$env:AI_CLAUDE_ON_ACTIVE) -PrevBaseUrl $env:AI_CLAUDE_PREV_BASE_URL -PrevApiKey $env:AI_CLAUDE_PREV_API_KEY
+
+    if ($restore.BaseUrl) { $env:ANTHROPIC_BASE_URL = $restore.BaseUrl } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
+    if ($restore.ApiKey) { $env:ANTHROPIC_API_KEY = $restore.ApiKey } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
+    Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
+
+    switch ($restore.Mode) {
+        'Restored'           { Write-Host "Claude Code OFF — restored this shell's previous Anthropic settings." -ForegroundColor Green }
+        'ClearedNoPriorKey'  { Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again (no key was set before ai-claude-on, so Claude Code may prompt you to log in)." -ForegroundColor Green }
+        default              { Write-Host "Claude Code OFF — this shell talks to the real Anthropic API again." -ForegroundColor Green }
     }
 }
 
