@@ -6,7 +6,6 @@ All notable changes to Airlock are recorded here, newest first. This file exists
 
 Still pending, in order:
 
-- **Small fix, next up — `ai-claude-on` should call `ai-handoff` automatically.** Found while explaining the cloud-limit-switch flow to a user: switching to local today doesn't log *why*, even though `ai-handoff` (0.3.0) exists to do exactly that — it's just never called automatically. See [`ADR-006`](docs/adr/ADR-006-task-router-and-handoff-policy.md#known-gap-ai-claude-on-doesnt-call-ai-handoff) for the full writeup. Small, one-file change; not started.
 - **0.5.0 — Harness parity.** Download-progress for the HuggingFace import path (currently only `ollama pull` shows real progress — see `0.2.0` below). Re-verify opencode/Pi.dev/jcode/Copilot CLI/Gemini CLI now that the platform-level bugs they were blamed for are fixed, and file real PBIs only for confirmed defects. Not started.
 - **0.6.0 — 3D visualizer, passes 2 and 3.** "Visual grandeur" and "interactivity/UX," per the visualizer's own sequenced roadmap (`docs/superpowers/plans/2026-08-07-3d-visualizer-data-depth-plan.md`) — pass 1 (data depth) shipped in `0.2.0`. No spec written yet for passes 2/3, so not started.
 
@@ -16,6 +15,7 @@ Housekeeping, no version bump: resolve the `headroom.EXE` install-state discrepa
 
 - **Task router & cloud-limit handoff policy.** `ai-route`: a one-line, explainable answer to "should this task go local or cloud" before you find out the hard way — advisory only, never auto-switches anything. `ai-handoff` extends the existing session-resume snapshot (ADR-004) with the route decision, without touching its canonical fields. See [`ADR-006`](docs/adr/ADR-006-task-router-and-handoff-policy.md).
 - **Memory retrieval governance.** Closes the "stale context treated as fact" gap in `memory-service`: config-driven `MemoryStore` (no more hardcoded defaults), freshness tracking on every `remember()` (real commit SHA + timestamp), retrieval that fails closed instead of silently degrading when nothing relevant is found, and `langchain-core`/`langsmith` pinned with tracing forced off at startup. See [`ADR-007`](docs/adr/ADR-007-memory-service-retrieval-governance.md).
+- **Fixed same day:** `ai-claude-on` now calls `ai-handoff` automatically after a successful redirect — found while explaining the cloud-limit-switch flow to a user; the two commands shipped independent of each other, so switching to local never logged why. See ADR-006's "Known gap" section for the full writeup.
 
 Both independently reviewed (fresh venv/test runs, not just a code read) before merging — see the ADRs for what was actually verified.
 

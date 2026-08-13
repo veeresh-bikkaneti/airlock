@@ -1,7 +1,7 @@
 # ADR-006: Task router and cloud-limit handoff policy
 
 ## Status
-Accepted — implemented and merged (shipped in `0.3.0`). One known gap found after merge: see "Known gap: `ai-claude-on` doesn't call `ai-handoff`" below.
+Accepted — implemented and merged (shipped in `0.3.0`). One gap found after merge and since fixed: see "Known gap: `ai-claude-on` doesn't call `ai-handoff`" below.
 
 ## Context
 
@@ -64,7 +64,7 @@ Found 2026-08-13, after merge, while explaining the cloud-limit-switch flow to a
 
 **Why this matters:** the whole point of the handoff policy (AIR-16) was to make the return-to-cloud path informative instead of a replay. A silent `ai-claude-on` with no `ai-handoff` degrades back to exactly that — informative in theory, replay in practice, because the note-taking step is optional and easy to forget under the pressure that caused the switch in the first place.
 
-**Proposed fix, not yet built:** `ai-claude-on` calls `ai-handoff` automatically after a successful redirect (liveness check already passed by that point, so the route decision is known). `ai-claude-off` does not need a symmetric call — there's nothing new to hand off when returning to cloud normally. Small, contained change (`scripts/profile-helpers.ps1` only); does not need its own ADR.
+**Fixed** (`05835f0`): `ai-claude-on` calls `ai-handoff` automatically after a successful redirect. `ai-claude-off` has no symmetric call — nothing new to hand off when returning to cloud normally. Verified live both with and without an existing `.ai-context/SESSION_STATE.md`; full self-test suite clean.
 
 ## Links
 - Supersedes nothing; extends ADR-004 (cross-harness session resume) with a policy layer on top of its mechanism.
