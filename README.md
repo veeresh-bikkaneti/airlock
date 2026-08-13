@@ -7,6 +7,10 @@ One door open at a time — exactly one local model backend running, walled off 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PowerShell 7+](https://img.shields.io/badge/PowerShell-7+-green.svg)](https://github.com/PowerShell/PowerShell)
 [![Ollama](https://img.shields.io/badge/Ollama-0.30+-orange.svg)](https://ollama.ai)
+[![Version](https://img.shields.io/badge/version-0.2.0-blueviolet.svg)](CHANGELOG.md)
+[![CI](https://github.com/veeresh-bikkaneti/airlock/actions/workflows/ci.yml/badge.svg)](https://github.com/veeresh-bikkaneti/airlock/actions/workflows/ci.yml)
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 ---
 
@@ -130,7 +134,16 @@ A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/ope
 
 **aider** — no config file needed; `ai-code` (in `profile-helpers.ps1`) already launches it with `--openai-api-base` pointed at the platform.
 
-**Claude Code** — works too, confirmed with a live `claude -p` call that got a real completion back from the platform, not a connection error. Point it at `/v1/messages` via `settings.json`'s `env` block:
+**Claude Code** — works too, confirmed with a live `claude -p` call that got a real completion back from the platform, not a connection error. Point it at `/v1/messages`:
+
+  **Recommended — session-scoped, checked against a live endpoint, never persisted:**
+  ```powershell
+  ai-claude-on    # this shell only
+  # ... use claude normally ...
+  ai-claude-off   # or just close the shell — either way it doesn't outlive the session
+  ```
+
+  **Alternative — permanent, via `settings.json`'s `env` block:**
   ```json
   {
     "env": {
@@ -139,7 +152,9 @@ A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/ope
     }
   }
   ```
-  Ollama doesn't check the API key — any non-empty string works. Anthropic's own docs say they don't *support* routing Claude Code to non-Claude models through a gateway; that's a support-policy statement, not a technical block, and this repo's earlier "Claude Code cannot be pointed at this platform" claim was wrong — it was written against Ollama's documented API surface, which stops at Chat Completions, before testing found the undocumented `/v1/messages` route above. The repo previously also shipped a `claude-settings.json.template` inventing a fake settings schema (`api.ollama.baseUrl`/etc.); that's what caused the original base-url/token error and it's been deleted — use the `env` block above instead. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) is unrelated — that talks to Anthropic's real API for genuine Claude models, unaffected either way.
+  ⚠️ **This has no off switch of its own.** It applies to *every* Claude Code session on the machine — including ones with nothing to do with this platform — and stays in effect after `ai-stop`, a reboot, or a port change, until manually removed. With the platform down, Claude Code fails with `Connection refused — a firewall or proxy may be blocking it`, which points at the wrong subsystem entirely. Hit that error? Run `ai-doctor` — it detects exactly this and prints the fix — or use `ai-claude-on`/`ai-claude-off` instead so it can't happen.
+
+  Ollama doesn't check the API key — any non-empty string works. Anthropic's own docs say they don't *support* routing Claude Code to non-Claude models through a gateway; that's a support-policy statement, not a technical block, and this repo's earlier "Claude Code cannot be pointed at this platform" claim was wrong — it was written against Ollama's documented API surface, which stops at Chat Completions, before testing found the undocumented `/v1/messages` route above. The repo previously also shipped a `claude-settings.json.template` inventing a fake settings schema (`api.ollama.baseUrl`/etc.); that's what caused the original base-url/token error and it's been deleted. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) is unrelated — that talks to Anthropic's real API for genuine Claude models, unaffected either way.
 
   **Model choice matters more here than for the other tools above.** Claude Code's system prompt is large and its agentic loop assumes a competent instruction-following model. A quick test with a tiny model (`qwen2.5:0.5b`) connected fine but ignored the prompt and rambled — use something in the `qwen2.5-coder:7b`+ range (the same tier this platform already auto-selects for you), not a toy model.
 
@@ -464,13 +479,15 @@ ai-code
 
 | Command | Description |
 |---------|-------------|
-| `ai-start [-Model <name>] [-Force]` | Start Ollama on port 12345, kill any rogues |
-| `ai-stop [-CleanFirewall]` | Stop all Ollama processes, clear state |
+| `ai-start [-Model <name>] [-Backend ollama\|vllm] [-Force]` | Start the platform, kill any rogues. `-Backend` overrides/persists the saved backend choice (e.g. retry vLLM after a fallback) |
+| `ai-stop [-CleanFirewall]` | Stop the active backend, clear state and any `ai-claude-on` redirect |
 | `ai-health` | Full health check (processes, API, firewall, resources) |
-| `ai-port` | Show active port and model |
+| `ai-doctor` | Find dead `ANTHROPIC_*`/`OPENAI_*`/`COPILOT_*`/`GROK_*` redirects (any scope) pointing at a port nothing is listening on, and print the exact fix |
+| `ai-port` | Show active port, model, and any background model-pull job status |
 | `ai-provider` | Show active provider (local/cloud) |
 | `ai-switch <model>` | Switch model mid-session (e.g., `ai-switch qwen3-coder:30b`) |
-| `ai-code` | Launch aider with active provider |
+| `ai-claude-on` / `ai-claude-off` | Point Claude Code at the local platform for this shell only (liveness-checked, session-scoped) / undo it |
+| `ai-code [-Model <name>]` | Launch aider against the active (or given) model, with `-Model` validated against `ollama list` |
 | `ai-audit-last` | Show recent audit log entries |
 | `ai-config` | Show full platform configuration |
 | `ai-models` | List configured models and capabilities |

@@ -1,7 +1,7 @@
 # ADR-001: Model acquisition is a pre-flight step inside Start-AI.ps1, not a Provider Router stage
 
 ## Status
-Accepted (documents shipped behavior — commits `9fdb64f`..`324bdb9`)
+Accepted (documents shipped behavior — commits `9fdb64f`..`324bdb9`). Decision point 3 (sizing ceiling) is **superseded by [ADR-005](ADR-005-model-sizing-against-vram.md)** — sizing now uses free VRAM when a GPU is present, not free system RAM. The rest of this ADR stands.
 
 ## Context
 [`01-Local-AI-Platform-Blueprint.md`](../01-Local-AI-Platform-Blueprint.md) defines the platform as:

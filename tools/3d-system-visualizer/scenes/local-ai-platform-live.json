@@ -1,262 +1,217 @@
 {
   "flows": [
     {
-      "loop": true,
-      "name": "Run 1: 01:41:38 UTC",
-      "speed": 2.0,
-      "path": [
-        "cli",
-        "start"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 2: 01:41:38 UTC",
-      "speed": 2.0,
-      "path": [
-        "backend",
-        "vllm"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 3: 01:41:38 UTC",
-      "speed": 2.0,
-      "path": [
-        "backend",
-        "vllm"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 4: 01:41:38 UTC",
-      "speed": 0.5,
-      "path": [
-        "backend",
-        "ollama"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 5: 01:44:26 UTC",
-      "speed": 2.0,
-      "path": [
-        "cli",
-        "start"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 6: 01:44:26 UTC",
-      "speed": 2.0,
-      "path": [
-        "backend",
-        "vllm"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 7: 01:44:26 UTC",
-      "speed": 2.0,
-      "path": [
-        "backend",
-        "vllm"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 8: 01:44:26 UTC",
-      "speed": 0.5,
-      "path": [
-        "backend",
-        "ollama"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 9: 01:44:33 UTC",
+      "provider": "ollama",
+      "name": "Run 1: 17:42:22 UTC",
       "speed": 1.0,
-      "path": [
-        "backend",
-        "ollama",
-        "firewall"
-      ]
-    },
-    {
       "loop": true,
-      "name": "Run 10: 01:44:43 UTC",
-      "speed": 1.0,
-      "path": [
-        "ollama",
-        "models"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 11: 01:44:46 UTC",
-      "speed": 2.0,
-      "path": [
-        "start",
-        "audit"
-      ]
-    },
-    {
-      "loop": true,
-      "name": "Run 12: 01:50:11 UTC",
-      "speed": 1.0,
       "path": [
         "start",
         "stop"
-      ]
+      ],
+      "outcome": "ok"
     },
     {
-      "loop": true,
-      "name": "Run 13: 01:50:14 UTC",
+      "provider": "ollama",
+      "name": "Run 2: 17:42:26 UTC",
       "speed": 2.0,
+      "loop": true,
       "path": [
         "ollama",
         "stop",
         "audit"
-      ]
+      ],
+      "outcome": "ok"
+    },
+    {
+      "provider": "ollama",
+      "name": "Run 3: 06:04:37 UTC",
+      "speed": 2.0,
+      "loop": true,
+      "path": [
+        "cli",
+        "start"
+      ],
+      "outcome": "ok"
+    },
+    {
+      "provider": "vllm",
+      "name": "Run 4: 06:04:37 UTC",
+      "speed": 3.0,
+      "loop": true,
+      "path": [
+        "backend",
+        "vllm"
+      ],
+      "outcome": "ok"
+    },
+    {
+      "provider": "vllm",
+      "name": "Run 5: 06:04:38 UTC",
+      "speed": 2.0,
+      "loop": true,
+      "path": [
+        "backend",
+        "vllm"
+      ],
+      "outcome": "failed"
+    },
+    {
+      "provider": "ollama",
+      "name": "Run 6: 06:04:38 UTC",
+      "speed": 1.0,
+      "loop": true,
+      "path": [
+        "backend",
+        "ollama",
+        "firewall"
+      ],
+      "outcome": "warning"
+    },
+    {
+      "provider": "ollama",
+      "name": "Run 7: 06:04:48 UTC",
+      "speed": 2.0,
+      "loop": true,
+      "path": [
+        "start",
+        "audit"
+      ],
+      "outcome": "ok"
     }
   ],
   "nodes": [
     {
-      "type": "external",
       "id": "cli",
       "label": "ai-start / VS Code",
       "pos": [
         -8,
         2,
         0
-      ]
+      ],
+      "type": "external"
     },
     {
-      "type": "service",
       "id": "start",
       "label": "Start-AI.ps1",
       "pos": [
         -4,
         2,
         0
-      ]
+      ],
+      "type": "service"
     },
     {
-      "type": "service",
       "id": "backend",
       "label": "Backend Selection",
       "pos": [
         0,
         2,
         0
-      ]
+      ],
+      "type": "service"
     },
     {
-      "type": "service",
       "id": "ollama",
       "label": "Ollama Engine",
       "pos": [
         4,
         3,
         -2
-      ]
+      ],
+      "type": "service"
     },
     {
-      "type": "service",
       "id": "vllm",
       "label": "vLLM Container",
       "pos": [
         4,
         1,
         2
-      ]
+      ],
+      "type": "service"
     },
     {
-      "type": "datastore",
       "id": "models",
       "label": "Model Store",
       "pos": [
         8,
         3,
         -2
-      ]
+      ],
+      "type": "datastore"
     },
     {
-      "type": "infra",
       "id": "firewall",
       "label": "Firewall Guard",
       "pos": [
         4,
         -1,
         0
-      ]
+      ],
+      "type": "infra"
     },
     {
-      "type": "service",
       "id": "stop",
       "label": "Stop-AI.ps1",
       "pos": [
         0,
         -2,
         0
-      ]
+      ],
+      "type": "service"
     },
     {
-      "type": "datastore",
       "id": "audit",
       "label": "Audit Log",
       "pos": [
         -4,
         -2,
         0
-      ]
+      ],
+      "type": "datastore"
     }
   ],
   "edges": [
     {
-      "from": "cli",
-      "to": "start",
-      "label": "PlatformStart"
-    },
-    {
-      "from": "backend",
-      "to": "vllm",
-      "label": "VLLMStart"
-    },
-    {
-      "from": "backend",
-      "to": "ollama",
-      "label": "BackendFallback"
-    },
-    {
-      "from": "ollama",
-      "to": "firewall",
-      "label": "FirewallGuard"
-    },
-    {
-      "from": "ollama",
-      "to": "models",
-      "label": "ModelPull"
-    },
-    {
       "from": "start",
-      "to": "audit",
-      "label": "PlatformStart"
-    },
-    {
-      "from": "start",
-      "to": "stop",
-      "label": "PlatformShutdown"
+      "label": "PlatformShutdown",
+      "to": "stop"
     },
     {
       "from": "ollama",
-      "to": "stop",
-      "label": "OllamaStop"
+      "label": "OllamaStop",
+      "to": "stop"
     },
     {
       "from": "stop",
-      "to": "audit",
-      "label": "PlatformShutdown"
+      "label": "PlatformShutdown",
+      "to": "audit"
+    },
+    {
+      "from": "cli",
+      "label": "PlatformStart",
+      "to": "start"
+    },
+    {
+      "from": "backend",
+      "label": "VLLMStart",
+      "to": "vllm"
+    },
+    {
+      "from": "backend",
+      "label": "BackendFallback",
+      "to": "ollama"
+    },
+    {
+      "from": "ollama",
+      "label": "FirewallGuard",
+      "to": "firewall"
+    },
+    {
+      "from": "start",
+      "label": "PlatformStart",
+      "to": "audit"
     }
   ]
 }

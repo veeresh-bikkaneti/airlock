@@ -23,6 +23,7 @@ Every tool below needs three things from you:
 1. **Airlock running.** Double-click `Start-AI.bat`, or run `.\scripts\Start-AI.ps1` — see [`07-Quickstart-Playbook.md`](07-Quickstart-Playbook.md) if you haven't done this yet. Leave that window open (or let it run in the background); if it's not running, every step below fails with a connection error, not a config error.
 2. **The port it's listening on.** Default is `12345`. The startup script prints it (`Endpoint: http://127.0.0.1:12345/v1`) — if you changed it with `-Port`, use your number everywhere `12345` appears below.
 3. **A model that's actually downloaded.** Run `ai-models` (or `ollama list`) to see what you have. `ai-start` auto-pulls a model sized to your hardware on first run, so you likely already have one — just make sure the name in your config matches something in that list. A config pointing at a model you haven't pulled yet will fail with a "model not found" error, which is easy to mistake for a setup mistake when it's really just a missing download.
+4. **An honest sense of what a local model is for.** This platform gets you a real, working connection — that part is solved and tested per tool below. It does not turn a 7-30B local model into a frontier model. Every tested tool section below already notes where a small model connects fine but ignores instructions or hallucinates; that's a model-tier ceiling, not a wiring bug, and `config/models.json`'s `supportsFunctionCalling` flag tells you upfront which models can reliably drive tool calls at all (`false` on `deepseek-r1:14b` and the embedding model — don't point an agentic harness at those). Treat the local backend as strong for single-file edits, focused refactors, test generation, and explanation; treat "switch to local when the cloud limit hits" as a way to keep doing *that* kind of work, not as a drop-in continuation of large multi-step agentic work across an entire repo — [`09-Cross-Harness-Session-Resume.md`](09-Cross-Harness-Session-Resume.md) covers what actually carries over when you switch.
 
 **One command to sanity-check the platform itself, before blaming any tool's config:**
 
@@ -185,7 +186,15 @@ Tested live against the platform's actual `12345` endpoint: ran this twice back 
 
 **Setup:**
 
-Add this to your Claude Code `settings.json` (`~/.claude/settings.json` for your whole user, or `.claude/settings.json` in a specific project):
+**Recommended — session-scoped, verified against a live endpoint before it's set, cleared automatically on `ai-stop`:**
+
+```powershell
+ai-claude-on    # checks the platform is actually listening first, then redirects this shell only
+claude -p "Reply with exactly: OK"
+ai-claude-off   # or just close the shell — the redirect never outlives it either way
+```
+
+**Alternative — permanent, via `settings.json`'s `env` block.** Add this to your Claude Code `settings.json` (`~/.claude/settings.json` for your whole user, or `.claude/settings.json` in a specific project):
 
 ```json
 {
@@ -197,6 +206,8 @@ Add this to your Claude Code `settings.json` (`~/.claude/settings.json` for your
 ```
 
 `ANTHROPIC_API_KEY` can be any non-empty string — Ollama doesn't check it, it just needs to see *something* there. This repo used to ship a `claude-settings.json.template` that invented a different, fake settings schema; it's been deleted. The `env` block above is the real one.
+
+⚠️ **Know the tradeoff before you use this route.** Unlike `ai-claude-on`, this block has no liveness check and no off switch — it applies to *every* Claude Code session on the machine, including ones with nothing to do with this platform, and it stays in effect after `ai-stop`, a reboot, or a port change, until you remove it by hand. See the troubleshooting entry below for what that looks like when it goes wrong.
 
 **Verify it worked:**
 
@@ -210,7 +221,33 @@ claude -p "Reply with exactly: OK"
 Tested live against the platform's actual `12345` endpoint, with an honest caveat: this setup connects and gets real answers back — confirmed (twice, in two separate test sessions, same result both times). What we tested with, though, was a tiny 0.5B-parameter model, and both times it **ignored the instruction** — once rambling, once inventing a fake tool call instead of just replying `OK`. That's not a connection failure (no error, no timeout, a real response came back each time) — it's a model-quality problem: Claude Code's system prompt is long and its agentic loop expects a genuinely capable instruction-following model. **Use a real coding model here** — `qwen2.5-coder:7b` or bigger, the same tier Airlock already auto-selects for you — not whatever's smallest and fastest to test with.
 
 **Troubleshooting:**
-- Getting the base-url/auth-token error this section exists to prevent? Double check you're editing `settings.json`'s `env` block, not setting a `ANTHROPIC_BASE_URL` shell variable that only lasts for one terminal session and gets lost the next time you open Claude Code from your editor or a shortcut.
+
+#### "Connection refused — a firewall or proxy may be blocking it"
+
+This is not a firewall or proxy issue, whatever the message implies. It means `ANTHROPIC_BASE_URL` is pointing at a local port with nothing listening — almost always the `env` block above, left set after the platform stopped. It disables Claude Code for *every* project, including ones that never touch this platform, and it survives `settings.json` edits, terminal restarts, and Claude Code reinstalls if it was set at Windows User scope.
+
+Diagnose and fix in one step:
+```powershell
+ai-doctor
+```
+
+Or manually:
+```powershell
+Get-ChildItem Env: | Where-Object { $_.Name -match 'ANTHROPIC' }
+[Environment]::GetEnvironmentVariable('ANTHROPIC_BASE_URL','User')
+Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+[Environment]::SetEnvironmentVariable('ANTHROPIC_BASE_URL', $null, 'User')
+[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY',  $null, 'User')
+```
+
+Also check the project-local file — it's easy to miss and holds its own separate copy:
+```powershell
+Get-Content .\.claude\settings.local.json
+```
+
+Then **restart every open shell and every running Claude Code process** — both hold a stale copy of the environment and keep failing until relaunched, even after the fix above.
+
+- Getting the base-url/auth-token error this section exists to prevent, but not the "firewall or proxy" one above? Double check you're editing `settings.json`'s `env` block correctly, not a shell-only `$env:ANTHROPIC_BASE_URL` that gets lost the next time you open Claude Code from your editor or a shortcut — `ai-claude-on` avoids this class of mistake entirely.
 - This platform's own cloud fallback (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) is a separate thing — that's Airlock optionally calling out to Anthropic's real API for genuine Claude models, unrelated to pointing Claude Code itself at your local models.
 
 ---

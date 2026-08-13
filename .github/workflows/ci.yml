@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  powershell-tests:
+    name: PowerShell self-tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check every script (no execution)
+        shell: pwsh
+        run: |
+          $failures = 0
+          Get-ChildItem -Path scripts,tools -Recurse -Filter *.ps1 -ErrorAction SilentlyContinue | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              Write-Host "FAIL: $($_.FullName)" -ForegroundColor Red
+              $errors | ForEach-Object { Write-Host "  $_" }
+              $script:failures++
+            }
+          }
+          if ($failures -gt 0) { exit 1 }
+
+      - name: Run self-tests
+        shell: pwsh
+        run: |
+          $failures = 0
+          Get-ChildItem -Path scripts -Filter "Test-*.ps1" | ForEach-Object {
+            Write-Host "=== $($_.Name) ===" -ForegroundColor Cyan
+            & $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failures++ }
+          }
+          if ($failures -gt 0) { exit 1 }
+
+  memory-service-tests:
+    name: memory-service tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: memory-service
+        run: pip install -r requirements.txt pytest
+
+      - name: Run tests
+        working-directory: memory-service
+        run: pytest tests/ -v

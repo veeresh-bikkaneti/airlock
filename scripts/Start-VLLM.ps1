@@ -4,7 +4,8 @@
 # run standalone by users — use ai-start, which handles the backend choice.
 param(
     [int]$Port = 0,
-    [switch]$Force
+    [switch]$Force,
+    [int]$TimeoutSec = 0   # 0 = auto: longer on first run (image pull + model download), shorter once warm
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,10 +131,25 @@ if ($existing -eq $ContainerName) {
     }
 }
 
+$ImageName = "vllm/vllm-openai:latest"
+$imageAlreadyPresent = [bool](docker images -q $ImageName 2>$null)
+if (-not $imageAlreadyPresent) {
+    Write-Host "vLLM image not found locally — pulling $ImageName (first run, several GB, can take minutes)..." -ForegroundColor Yellow
+    Write-AuditLog -Action "VLLMImagePull" -Result "STARTED" -Message "Pulling $ImageName"
+    docker pull $ImageName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: docker pull failed for $ImageName." -ForegroundColor Red
+        Write-AuditLog -Action "VLLMImagePull" -Result "FAILED" -Message "docker pull failed" -Detail "Exit code: $LASTEXITCODE"
+        exit 1
+    }
+    Write-AuditLog -Action "VLLMImagePull" -Result "SUCCESS" -Message "Image pulled"
+}
+$EffectiveTimeoutSec = if ($TimeoutSec -gt 0) { $TimeoutSec } elseif (-not $imageAlreadyPresent) { 600 } else { 120 }
+
 Write-Host "Launching vLLM container (model: $DefaultModel)..." -ForegroundColor Yellow
 docker run -d --name $ContainerName --gpus all `
     -p "127.0.0.1:${TargetPort}:8000" `
-    vllm/vllm-openai:latest `
+    $ImageName `
     --model $DefaultModel --quantization awq --max-model-len 32768 --host 0.0.0.0 --port 8000 `
     2>$null | Out-Null
 
@@ -143,18 +159,34 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "Waiting up to 120s for vLLM to load the model and become healthy..." -ForegroundColor Yellow
+Write-Host "Waiting up to ${EffectiveTimeoutSec}s for vLLM to load the model and become healthy (model download in progress on first run)..." -ForegroundColor Yellow
 $elapsed = 0
 $healthy = $false
-while ($elapsed -lt 120) {
+while ($elapsed -lt $EffectiveTimeoutSec) {
     if (Test-VLLMPort $TargetPort) { $healthy = $true; break }
     Start-Sleep 5; $elapsed += 5
 }
 
 if (-not $healthy) {
-    Write-Host "ERROR: vLLM did not become healthy within 120s." -ForegroundColor Red
-    Write-AuditLog -Action "VLLMStart" -Result "FAILED" -Message "Health check timed out after 120s" -Detail "Port: $TargetPort"
-    docker logs $ContainerName --tail 30 2>$null | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    $exitCode = (docker inspect $ContainerName --format="{{.State.ExitCode}}" 2>$null) -as [string]
+    if ($exitCode) { $exitCode = $exitCode.Trim() }
+    $logs = @(docker logs $ContainerName --tail 30 2>$null)
+    $logsText = $logs -join "`n"
+
+    $failureClass = if ($logsText -match 'CUDA out of memory|out of memory') {
+        "Insufficient VRAM for $DefaultModel"
+    } elseif ($logsText -match 'No such (image|file)|manifest unknown|404') {
+        "Model or image not found"
+    } elseif ($exitCode -and $exitCode -ne '0') {
+        "Container exited (code $exitCode)"
+    } else {
+        "Unknown — see log lines below"
+    }
+
+    Write-Host "ERROR: vLLM did not become healthy within ${EffectiveTimeoutSec}s. Failure class: $failureClass" -ForegroundColor Red
+    Write-AuditLog -Action "VLLMStart" -Result "FAILED" -Message "Health check timed out after ${EffectiveTimeoutSec}s - $failureClass" -Detail "Port: $TargetPort; ExitCode: $exitCode"
+    Write-Host "  Last container log lines:" -ForegroundColor Yellow
+    $logs | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     docker rm -f $ContainerName 2>$null | Out-Null
     exit 1
 }

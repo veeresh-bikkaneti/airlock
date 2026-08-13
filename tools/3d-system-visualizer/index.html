@@ -18,6 +18,26 @@
   #ui label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aab1bd; cursor: pointer; }
   #ui select { display: block; width: 100%; margin-bottom: 6px; padding: 7px 10px; background: #1c2128; border: 1px solid #333a44; color: #e6e9ee; border-radius: 6px; font-size: 13px; }
 
+  /* Flow cards: one run per card instead of a bare "Run N: HH:mm:ss" button wall.
+     A status dot + provider tag say what happened without opening anything, and
+     the list caps at a scrollable height instead of growing forever as more
+     runs accumulate. */
+  #flow-buttons { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px; }
+  /* #ui .flow-card (id + class) beats the #ui button (id + type) rule above on every
+     shared property - without the #ui prefix here, "display: block" from that generic
+     button rule would win by specificity and silently flatten this card's flex layout. */
+  #ui .flow-card { display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 0; padding: 7px 10px; background: #1c2128; border: 1px solid #333a44; color: #e6e9ee; border-radius: 6px; cursor: pointer; font-size: 12.5px; text-align: left; }
+  #ui .flow-card:hover { background: #262c35; }
+  #ui .flow-card.playing { border-color: #4fd18b; }
+  #ui .flow-card:disabled { opacity: .45; cursor: not-allowed; }
+  #ui .flow-card .dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+  #ui .flow-card .dot.ok { background: #4fd18b; }
+  #ui .flow-card .dot.warning { background: #e0b34c; }
+  #ui .flow-card .dot.failed { background: #e2695c; }
+  #ui .flow-card .tag { flex: 0 0 auto; font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; border: 1px solid #3a4049; color: #9aa2ad; }
+  #ui .flow-card .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #ui .flow-card .play-icon { flex: 0 0 auto; opacity: .8; }
+
   #errors { position: fixed; top: 14px; right: 14px; z-index: 10; max-width: 380px; }
   #errors .panel { background: rgba(58,20,20,0.92); border: 1px solid #7a2f2f; border-radius: 8px; padding: 10px 12px; color: #ffd7d7; font-size: 12.5px; }
   #errors .panel h3 { margin: 0 0 6px; font-size: 12px; color: #ff9b9b; }
@@ -701,26 +721,54 @@ async function loadAndRenderScene(data) {
     }
   }
 
+  // Optional per-flow metadata (provider, outcome) - added by Generate-LiveScene.ps1
+  // for real runs so each card says what actually happened, not just when. Scenes
+  // without it (e.g. the e-commerce demo) fall back to a plain "ok" dot, no tag.
   for (const flow of data.flows) {
-    const btn = document.createElement("button");
     const broken = flowErrors.has(flow.name);
-    btn.textContent = broken ? `⚠ ${flow.name}` : `▶ ${flow.name}`;
-    btn.disabled = broken;
-    flowButtonsHost.appendChild(btn);
+    const outcome = flow.outcome || "ok";
+
+    const card = document.createElement("button");
+    card.className = "flow-card";
+    card.disabled = broken;
+    card.title = broken ? `${flow.name} - has a validation error, see panel above` : flow.name;
+
+    const dot = document.createElement("span");
+    dot.className = `dot ${broken ? "failed" : outcome}`;
+    card.appendChild(dot);
+
+    if (flow.provider) {
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = flow.provider;
+      card.appendChild(tag);
+    }
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = flow.name;
+    card.appendChild(name);
+
+    const playIcon = document.createElement("span");
+    playIcon.className = "play-icon";
+    playIcon.textContent = broken ? "⚠" : "▶";
+    card.appendChild(playIcon);
+
+    flowButtonsHost.appendChild(card);
 
     if (!broken) {
       const animator = new FlowAnimator(flow, registry.edges);
       animators.set(flow.name, animator);
-      btn.addEventListener("click", () => {
+      card.addEventListener("click", () => {
         if (animator.playing) {
           animator.stop();
-          btn.classList.remove("playing");
-          btn.textContent = `▶ ${flow.name}`;
+          card.classList.remove("playing");
+          playIcon.textContent = "▶";
           flyToDefault();
         } else {
           animator.start();
-          btn.classList.add("playing");
-          btn.textContent = `⏸ ${flow.name}`;
+          card.classList.add("playing");
+          playIcon.textContent = "⏸";
           flyToFlow(flow);
           scheduleIdleAutoRotate();
         }

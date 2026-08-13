@@ -122,6 +122,15 @@ if ($ActiveBackend -eq "vllm") {
 $env:OLLAMA_HOST     = ""
 $env:OPENAI_API_KEY  = ""
 $env:OPENAI_BASE_URL = ""
+# Undo ai-claude-on's session-scoped redirect too, if it was used — restore whatever
+# ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had before rather than deleting a real key.
+if ($env:AI_CLAUDE_ON_ACTIVE) {
+    if ($env:AI_CLAUDE_PREV_BASE_URL) { $env:ANTHROPIC_BASE_URL = $env:AI_CLAUDE_PREV_BASE_URL } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
+    if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_API_KEY = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
+    Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
+} else {
+    Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+}
 
 # ------------------------------------------------------------
 # 3️⃣ Delete session state files (active‑port.json, active‑provider.json)

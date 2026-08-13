@@ -18,8 +18,11 @@ active-provider.json
 
 # Cross-harness session snapshot (personal/ephemeral, may include conversation
 # content - DO NOT COMMIT). RESUME_NOTE.md is static guidance and stays tracked.
-.ai-context/SESSION_STATE.md
-.ai-context/.SESSION_STATE.md.tmp
+# Matched with ** since the hook that writes this snapshots relative to whatever
+# directory was current when it fired, not always the repo root (e.g. a stray
+# copy showed up under memory-service/.ai-context/ mid-session).
+**/.ai-context/SESSION_STATE.md
+**/.ai-context/.SESSION_STATE.md.tmp
 
 # Logs
 logs/

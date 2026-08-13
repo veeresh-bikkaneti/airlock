@@ -150,15 +150,35 @@ function Test-ResourceAvailability {
 }
 
 function Get-ModelSizingCeilingGB {
-    # Fixed sizing logic: model ceiling is always system RAM (FreeMemGB), regardless of GPU presence.
-    # GPU info is computed and logged as informational/speed context only.
-    # Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM,
-    # so GPU only affects inference speed, not whether a model can run at all.
-    # See: ADR-001-model-acquisition-placement.md decision point 3; backlog story 2.
+    # Sizing ceiling is free VRAM when a GPU is present, else free system RAM.
+    # Rationale: a model that spills to CPU still "runs" but is unusably slow for an
+    # interactive agentic loop - GPU fit, not RAM fit, determines whether the result
+    # is actually usable. See ADR-005-model-sizing-against-vram.md (supersedes
+    # ADR-001 decision point 3 - this used to be RAM-only on purpose; see that ADR
+    # for why it changed).
     param(
         [Parameter(Mandatory)][object]$Resources
     )
+    if ($Resources.GpuTotalGB -ne "N/A") {
+        return $Resources.GpuFreeGB
+    }
     return $Resources.FreeMemGB
+}
+
+function Get-InstalledModelNames {
+    # Best-effort list of models already pulled into the running Ollama instance.
+    # Never blocks selection on failure - an empty list just means no installed-model
+    # preference kicks in, falling back to plain size-based selection.
+    param([Parameter(Mandatory)][int]$LivePort)
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(10)
+        $resp = $c.GetAsync("http://127.0.0.1:$LivePort/api/tags").Result
+        $json = $resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        return @($json.models | ForEach-Object { $_.name })
+    } catch {
+        return @()
+    }
 }
 
 function Get-HuggingFaceGGUFCandidate {
@@ -363,18 +383,40 @@ function Select-BestCuratedModel {
     # it's directly testable, same reason Get-ModelSizingCeilingGB was extracted.
     param(
         [Parameter(Mandatory)][double]$AvailableGB,
-        [Parameter(Mandatory)][object]$ModelsConfig
+        [Parameter(Mandatory)][object]$ModelsConfig,
+        [string[]]$InstalledModels = @()
     )
     $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
         $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
-        [pscustomobject]@{ Name = $candidate; SizeGB = $sizeGB; Fits = ($AvailableGB -ge ($sizeGB * 1.2)) }
+        [pscustomobject]@{
+            Name      = $candidate
+            SizeGB    = $sizeGB
+            Fits      = ($AvailableGB -ge ($sizeGB * 1.2))
+            Installed = $InstalledModels -contains $candidate
+        }
     }
-    $candidateSummary = ($candidates | ForEach-Object { "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))" }) -join ", "
-    # Prefer the largest model that still fits comfortably (with 20% headroom).
-    $winner = $candidates | Where-Object { $_.Fits } | Sort-Object SizeGB -Descending | Select-Object -First 1
+    $candidateSummary = ($candidates | ForEach-Object {
+        "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))$(if ($_.Installed) {'[installed]'} else {''})"
+    }) -join ", "
+    # Among models that fit, prefer one already pulled over one requiring a download,
+    # then prefer the largest. Pulling an 18GB model when a working 4.7GB model is
+    # already on disk is never the right default (PBI-airlock-local-fallback-architecture,
+    # child item 1) - "installed" outranks "bigger" for this tiebreak specifically.
+    $fitting = $candidates | Where-Object { $_.Fits }
+    $winner = $fitting |
+        Sort-Object -Property @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
+        Select-Object -First 1
+    # Say which rule actually fired - "largest that fits" is false whenever a bigger,
+    # not-yet-installed candidate also fit and lost only because it wasn't installed.
+    $reason = if ($winner -and $winner.Installed -and ($fitting | Where-Object { $_.SizeGB -gt $winner.SizeGB })) {
+        "already installed - preferred over a larger download that also fit"
+    } else {
+        "largest model that fits with headroom"
+    }
     [pscustomobject]@{
         Model   = if ($winner) { $winner.Name } else { $null }
         Summary = $candidateSummary
+        Reason  = $reason
     }
 }
 
@@ -398,12 +440,13 @@ function Select-BestModel {
     if (Test-Path $modelsConfigPath) {
         try {
             $modelsConfig = Get-Content $modelsConfigPath -Raw | ConvertFrom-Json
-            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig
+            $installedModels = Get-InstalledModelNames -LivePort $LivePort
+            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig -InstalledModels $installedModels
             $candidateSummary = $selection.Summary
 
             if ($selection.Model) {
                 $Model = $selection.Model
-                $reason = "largest model that fits in $([math]::Round($AvailableGB,1)) GB with headroom"
+                $reason = "$($selection.Reason) (ceiling: $([math]::Round($AvailableGB,1)) GB)"
                 Write-Host "  Auto-selected model: $Model (fits $([math]::Round($AvailableGB,1)) GB available)" -ForegroundColor Cyan
                 Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
                     -Message "$($Resources.TotalMemGB) GB RAM, $GpuDesc - selected $Model as the $reason" `
@@ -437,6 +480,28 @@ function Select-BestModel {
     return ""
 }
 
+function ConvertFrom-OllamaPullLine {
+    # Pure: no I/O. `ollama pull` never falls back to plain newline output even when
+    # redirected - it always emits cursor-control codes - but PowerShell's pipeline still
+    # splits it into discrete strings this can regex, one screen-update per line.
+    # Returns $null for lines that aren't a progress update (manifest/digest/etc lines).
+    param([Parameter(Mandatory)][string]$Line)
+    # ETA capture is deliberately \d+[a-zA-Z]+ (e.g. "42s", "3m") rather than \S+ - ollama's
+    # line has no space before the trailing [K clear-to-end-of-line code in this position,
+    # so a greedy \S+ would swallow "0s[K" instead of stopping at "0s".
+    $pattern = 'pulling\s+\S+:\s*(\d+)%.*?([\d.]+\s*\w+)\s*/\s*([\d.]+\s*\w+)(?:\s+([\d.]+\s*\w+/s))?\s*(\d+[a-zA-Z]+)?'
+    if ($Line -match $pattern) {
+        return [pscustomobject]@{
+            Percent    = [int]$Matches[1]
+            Downloaded = $Matches[2]
+            Total      = $Matches[3]
+            Speed      = $Matches[4]
+            Eta        = $Matches[5]
+        }
+    }
+    return $null
+}
+
 function Start-ModelAcquisitionPull {
     param(
         [Parameter(Mandatory)][string]$Model,
@@ -467,12 +532,18 @@ function Start-ModelAcquisitionPull {
                 $modelPullPending = $true
             } else {
                 Write-Host "  Model '$Model' not found locally. Pulling it in the background..." -ForegroundColor Yellow
+                Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
 
                 # ponytail: Start-Job only survives this PowerShell session — closing the terminal
                 # kills an in-progress pull. Upgrade path if that ever matters: a detached process
                 # (Start-Process) instead of a session-bound job.
-                $job = Start-Job -Name "ModelPull-$Model" -ArgumentList $Model, $LivePort, $LogFile -ScriptBlock {
-                param($Model, $Port, $LogFile)
+                $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
+                # Start-Job runs in its own runspace and inherits none of this script's
+                # functions - InitializationScript re-injects ConvertFrom-OllamaPullLine's
+                # exact definition instead of duplicating the regex here to drift out of sync.
+                $initScript = [scriptblock]::Create("function ConvertFrom-OllamaPullLine { $((Get-Item Function:\ConvertFrom-OllamaPullLine).Definition) }")
+                $job = Start-Job -Name "ModelPull-$Model" -InitializationScript $initScript -ArgumentList $Model, $LivePort, $LogFile, $progressFile -ScriptBlock {
+                param($Model, $Port, $LogFile, $ProgressFile)
 
                 function Write-JobAuditLog {
                     param(
@@ -496,7 +567,25 @@ function Start-ModelAcquisitionPull {
                     ($entry | ConvertTo-Json -Compress) | Add-Content -Path $LogFile -Encoding utf8
                 }
 
-                & ollama pull $Model
+                # Piping through ForEach-Object (instead of capturing to a variable) processes
+                # each line as it arrives, so the progress file updates live instead of only
+                # once at the end.
+                & ollama pull $Model 2>&1 | ForEach-Object {
+                    $parsed = ConvertFrom-OllamaPullLine -Line $_.ToString()
+                    if ($parsed) {
+                        $progress = [ordered]@{
+                            model      = $Model
+                            percent    = $parsed.Percent
+                            downloaded = $parsed.Downloaded
+                            total      = $parsed.Total
+                            speed      = $parsed.Speed
+                            eta        = $parsed.Eta
+                            updatedUtc = [DateTime]::UtcNow.ToString("o")
+                        }
+                        try { ($progress | ConvertTo-Json -Compress) | Set-Content -Path $ProgressFile -Encoding utf8NoBOM } catch {}
+                    }
+                }
+                Remove-Item $ProgressFile -ErrorAction SilentlyContinue
                 if ($LASTEXITCODE -eq 0) {
                     Write-JobAuditLog -Action "ModelPull" -Result "SUCCESS" -Message "Model pulled in background"
                     try {

@@ -6,7 +6,8 @@ param(
     [switch]$SkipVault,
     [switch]$Force,
     [switch]$StrictPort,
-    [switch]$NoAutoInstallOllama
+    [switch]$NoAutoInstallOllama,
+    [ValidateSet('ollama', 'vllm')][string]$Backend
 )
 
 $ErrorActionPreference = "Stop"
@@ -200,21 +201,27 @@ function Set-PreferredBackend {
     $policy | ConvertTo-Json -Depth 10 | Set-Content $PolicyPath -Encoding utf8NoBOM
 }
 
-$Backend = Get-PreferredBackend -PolicyPath $ProviderPolicyPath
-if ($IsFreshInstall -or $Backend -notin @('ollama', 'vllm')) {
-    $capability = Get-BackendCapability
-    if ($capability.VLLMViable) {
-        Write-Host ""
-        Write-Host "NVIDIA GPU + Docker detected. Choose your local backend:" -ForegroundColor Cyan
-        Write-Host "  [O] Ollama - works everywhere, broad model support (default)" -ForegroundColor Gray
-        Write-Host "  [V] vLLM   - NVIDIA GPU required, faster for concurrent requests" -ForegroundColor Gray
-        $choice = Read-Host "Choice [O/v]"
-        $Backend = if ($choice -in @('V', 'v')) { "vllm" } else { "ollama" }
-    } else {
-        $Backend = "ollama"
-    }
+if ($PSBoundParameters.ContainsKey('Backend')) {
+    # Explicit override (e.g. retrying vLLM after a fallback) always wins and re-persists.
     Set-PreferredBackend -PolicyPath $ProviderPolicyPath -Backend $Backend
-    Write-AuditLog -Action "BackendSelected" -Result "SUCCESS" -Provider $Backend -Message "Backend choice persisted to provider-policy.json"
+    Write-AuditLog -Action "BackendSelected" -Result "SUCCESS" -Provider $Backend -Message "Backend explicitly overridden via -Backend, persisted to provider-policy.json"
+} else {
+    $Backend = Get-PreferredBackend -PolicyPath $ProviderPolicyPath
+    if ($IsFreshInstall -or $Backend -notin @('ollama', 'vllm')) {
+        $capability = Get-BackendCapability
+        if ($capability.VLLMViable) {
+            Write-Host ""
+            Write-Host "NVIDIA GPU + Docker detected. Choose your local backend:" -ForegroundColor Cyan
+            Write-Host "  [O] Ollama - works everywhere, broad model support (default)" -ForegroundColor Gray
+            Write-Host "  [V] vLLM   - NVIDIA GPU required, faster for concurrent requests" -ForegroundColor Gray
+            $choice = Read-Host "Choice [O/v]"
+            $Backend = if ($choice -in @('V', 'v')) { "vllm" } else { "ollama" }
+        } else {
+            $Backend = "ollama"
+        }
+        Set-PreferredBackend -PolicyPath $ProviderPolicyPath -Backend $Backend
+        Write-AuditLog -Action "BackendSelected" -Result "SUCCESS" -Provider $Backend -Message "Backend choice persisted to provider-policy.json"
+    }
 }
 
 if ($Backend -eq "vllm") {
@@ -224,7 +231,10 @@ if ($Backend -eq "vllm") {
         exit 0
     }
     Write-Host "vLLM failed to start — falling back to Ollama." -ForegroundColor Yellow
-    Write-AuditLog -Action "BackendFallback" -Result "WARNING" -Provider "vllm" -Message "vLLM start failed, falling back to Ollama"
+    Write-Host "  Persisting 'ollama' as the preferred backend so the next ai-start skips straight past the vLLM wait." -ForegroundColor Yellow
+    Write-Host "  To retry vLLM explicitly: ai-start -Backend vllm" -ForegroundColor Gray
+    Set-PreferredBackend -PolicyPath $ProviderPolicyPath -Backend "ollama"
+    Write-AuditLog -Action "BackendFallback" -Result "WARNING" -Provider "vllm" -Message "vLLM start failed, falling back to Ollama" -Detail "preferredLocalProvider persisted as ollama; retry with ai-start -Backend vllm"
 }
 # --- End backend selection. Everything below this point is the existing Ollama flow, unchanged. ---
 

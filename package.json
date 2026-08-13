@@ -2,7 +2,7 @@
   "name": "airlock-vscode",
   "displayName": "Airlock",
   "description": "Start/stop/monitor your local Ollama/vLLM AI platform and switch models, from VS Code.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "airlock",
   "engines": {
     "vscode": "^1.85.0"
