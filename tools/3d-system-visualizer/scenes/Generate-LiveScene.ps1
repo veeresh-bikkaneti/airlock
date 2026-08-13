@@ -118,18 +118,30 @@ foreach ($session in $sessions) {
     # near-identical audit lines for one real event) are collapsed too.
     $path = @()
     $pathStart = $null
-    $segStartTime = $null
+    $segEntries = @()
 
-    function Emit-PathAsFlow($p, $startTime, $endTime) {
+    # A flow's card in the UI needs to say what actually happened, not just when -
+    # "provider" (which backend) and "outcome" (worst result seen) are derived from
+    # the same log entries that built the path, not guessed separately.
+    function Emit-PathAsFlow($p, $startTime, $endTime, $entries) {
         if ($p.Count -lt 2) { return }
         $span = ($endTime - $startTime).TotalSeconds
         $speed = if ($span -gt 0) { [Math]::Max(0.5, [Math]::Min(6, ($p.Count - 1) * 3 / $span)) } else { 2 }
+
+        $provider = ($entries | Where-Object { $_.provider } | Select-Object -Last 1 -ExpandProperty provider)
+        if (-not $provider) { $provider = "ollama" }
+        $outcome = if ($entries | Where-Object { $_.result -eq "FAILED" }) { "failed" }
+                   elseif ($entries | Where-Object { $_.result -eq "WARNING" }) { "warning" }
+                   else { "ok" }
+
         $script:flowIndex++
         $script:flows += @{
-            name  = "Run $($script:flowIndex): $($startTime.ToString('HH:mm:ss')) UTC"
-            path  = $p
-            loop  = $true
-            speed = [Math]::Round($speed, 2)
+            name     = "Run $($script:flowIndex): $($startTime.ToString('HH:mm:ss')) UTC"
+            path     = $p
+            loop     = $true
+            speed    = [Math]::Round($speed, 2)
+            provider = $provider
+            outcome  = $outcome
         }
     }
 
@@ -141,17 +153,20 @@ foreach ($session in $sessions) {
         if ($path.Count -eq 0) {
             $path = @($pair[0], $pair[1])
             $pathStart = $session[$i].time
+            $segEntries = @($e)
         } elseif ($path[-1] -eq $pair[0] -and $path[-1] -ne $pair[1]) {
             $path += $pair[1]
+            $segEntries += $e
         } elseif ($path[-1] -eq $pair[0] -and $path[-1] -eq $pair[1]) {
             continue # exact immediate repeat, nothing new to show
         } else {
-            Emit-PathAsFlow $path $pathStart $session[$i].time
+            Emit-PathAsFlow $path $pathStart $session[$i].time $segEntries
             $path = @($pair[0], $pair[1])
             $pathStart = $session[$i].time
+            $segEntries = @($e)
         }
     }
-    Emit-PathAsFlow $path $pathStart $session[-1].time
+    Emit-PathAsFlow $path $pathStart $session[-1].time $segEntries
 }
 
 if ($flows.Count -eq 0) {
