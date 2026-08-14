@@ -123,14 +123,18 @@ $env:OLLAMA_HOST     = ""
 $env:OPENAI_API_KEY  = ""
 $env:OPENAI_BASE_URL = ""
 # Undo ai-claude-on's session-scoped redirect too, if it was used — restore whatever
-# ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had before rather than deleting a real key.
+# ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN this shell had before rather than deleting a real token.
 if ($env:AI_CLAUDE_ON_ACTIVE) {
     if ($env:AI_CLAUDE_PREV_BASE_URL) { $env:ANTHROPIC_BASE_URL = $env:AI_CLAUDE_PREV_BASE_URL } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
-    if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_API_KEY = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
+    if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_AUTH_TOKEN = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue }
     Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
 } else {
-    Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue
 }
+# AIR-H2: a shell that ran ai-claude-on before this rename may still carry the old
+# ANTHROPIC_API_KEY = "ollama" sentinel it used to set. Clear only that exact leftover
+# placeholder - never a real user-set ANTHROPIC_API_KEY, which this mechanism never stashed.
+if ($env:ANTHROPIC_API_KEY -eq 'ollama') { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
 
 # ------------------------------------------------------------
 # 3️⃣ Delete session state files (active‑port.json, active‑provider.json)

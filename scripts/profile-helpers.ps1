@@ -667,16 +667,22 @@ function global:ai-claude-on {
     }
 
     # Stash whatever was there before ai-claude-on's first call this shell, so ai-claude-off
-    # can restore it instead of just deleting it (a real ANTHROPIC_API_KEY may already be set).
-    $stash = Resolve-ClaudeOnStash -CurrentBaseUrl $env:ANTHROPIC_BASE_URL -CurrentApiKey $env:ANTHROPIC_API_KEY -AlreadyActive ([bool]$env:AI_CLAUDE_ON_ACTIVE)
+    # can restore it instead of just deleting it (a real ANTHROPIC_AUTH_TOKEN may already be set).
+    #
+    # AIR-H2: this used to set ANTHROPIC_API_KEY. Per Anthropic's LLM gateway docs
+    # (code.claude.com/docs/en/llm-gateway-connect, "Conflicts with an existing login"):
+    # "With ANTHROPIC_AUTH_TOKEN, the variable takes precedence immediately. With
+    # ANTHROPIC_API_KEY, you are prompted once in interactive mode to approve the key before
+    # it takes over." ai-claude-on needs to work without an interactive approval step.
+    $stash = Resolve-ClaudeOnStash -CurrentBaseUrl $env:ANTHROPIC_BASE_URL -CurrentApiKey $env:ANTHROPIC_AUTH_TOKEN -AlreadyActive ([bool]$env:AI_CLAUDE_ON_ACTIVE)
     if ($stash.ShouldStash) {
         $env:AI_CLAUDE_PREV_BASE_URL = $stash.PrevBaseUrl
         $env:AI_CLAUDE_PREV_API_KEY  = $stash.PrevApiKey
         $env:AI_CLAUDE_ON_ACTIVE     = "1"
     }
 
-    $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:$port"
-    $env:ANTHROPIC_API_KEY  = "ollama"
+    $env:ANTHROPIC_BASE_URL   = "http://127.0.0.1:$port"
+    $env:ANTHROPIC_AUTH_TOKEN = "ollama"
     Write-Host "Claude Code ON — this shell now points at the local platform (http://127.0.0.1:$port)." -ForegroundColor Green
     Write-Host "Session-scoped only. Run ai-claude-off (or just close this shell) before using cloud Claude Code again." -ForegroundColor Gray
 
@@ -685,13 +691,18 @@ function global:ai-claude-on {
     ai-handoff "Switched to local via ai-claude-on"
 }
 
-# Undo ai-claude-on: restore whatever ANTHROPIC_BASE_URL/ANTHROPIC_API_KEY this shell had
-# before (a real cloud key, or nothing) instead of unconditionally deleting them.
+# Undo ai-claude-on: restore whatever ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN this shell had
+# before (a real cloud token, or nothing) instead of unconditionally deleting them.
 function global:ai-claude-off {
     $restore = Resolve-ClaudeOffRestore -WasActive ([bool]$env:AI_CLAUDE_ON_ACTIVE) -PrevBaseUrl $env:AI_CLAUDE_PREV_BASE_URL -PrevApiKey $env:AI_CLAUDE_PREV_API_KEY
 
     if ($restore.BaseUrl) { $env:ANTHROPIC_BASE_URL = $restore.BaseUrl } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
-    if ($restore.ApiKey) { $env:ANTHROPIC_API_KEY = $restore.ApiKey } else { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
+    if ($restore.ApiKey) { $env:ANTHROPIC_AUTH_TOKEN = $restore.ApiKey } else { Remove-Item Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue }
+    # AIR-H2: a shell that ran ai-claude-on before this rename may still carry the old
+    # ANTHROPIC_API_KEY = "ollama" sentinel this function used to set. Clear only that exact
+    # leftover placeholder - never a real user-set ANTHROPIC_API_KEY, which this mechanism
+    # has never stashed and has no business touching.
+    if ($env:ANTHROPIC_API_KEY -eq 'ollama') { Remove-Item Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue }
     Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
 
     switch ($restore.Mode) {
