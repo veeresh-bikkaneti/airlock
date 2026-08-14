@@ -16,9 +16,9 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 ## 🎥 Demo
 
-[![Airlock demo video](brag-output/brag.jpg)](https://github.com/veeresh-bikkaneti/airlock/raw/main/brag-output/brag.mp4)
+![Airlock demo](brag-output/brag-demo.webp)
 
-Click the image to play/download the demo (GitHub doesn't play video inline in README files — this opens it in your browser's video player).
+15s clip from the full demo. GitHub doesn't play video inline in README files, so the full `brag.mp4` isn't tracked in git — see `brag-output/composition/` to re-render it.
 
 ---
 
