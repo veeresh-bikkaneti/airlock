@@ -701,48 +701,139 @@ function global:ai-claude-off {
     }
 }
 
+# Fast TCP liveness probe. Replaces Test-NetConnection here: that cmdlet runs extra
+# diagnostics (ping, route lookup) that make a multi-variable sweep take seconds, and it
+# has no short timeout knob. ADR-008 caps a probe at 250 ms.
+function script:Test-PortAlive {
+    param([string]$TargetHost, [int]$Port, [int]$TimeoutMs = 250)
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $async = $client.BeginConnect($TargetHost, $Port, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMs, $false)) { return $false }
+        $client.EndConnect($async)
+        return $true
+    } catch { return $false } finally { $client.Dispose() }
+}
+
+# Walk the process tree from a starting PID up to the session root. Returns an ordered list
+# of [pscustomobject]@{ Id; Name }. This is what turns "your environment is wrong" into
+# "THIS process is handing it to you", which is the difference between a fix that holds and
+# a fix that evaporates when you open the next terminal (ADR-008 D1).
+function script:Get-ProcessAncestry {
+    param([int]$StartPid = $PID, [int]$MaxDepth = 12)
+    $chain = @()
+    $id = $StartPid
+    for ($i = 0; $i -lt $MaxDepth -and $id; $i++) {
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
+        if (-not $p) { break }
+        $chain += [pscustomobject]@{ Id = $p.ProcessId; Name = $p.Name }
+        if ($p.ParentProcessId -eq $p.ProcessId) { break }
+        $id = $p.ParentProcessId
+    }
+    return $chain
+}
+
+# Processes that own the login session's environment block. Windows hands each new process a
+# COPY of its parent's block at creation — nothing re-reads the registry — so when one of
+# these is the carrier, no amount of registry cleaning reaches it. Only ending the session does.
+$script:AirlockSessionRoots = @('explorer.exe', 'userinit.exe', 'winlogon.exe', 'sihost.exe')
+
 # Diagnose stale AI-tool endpoint variables — at any scope — that point at a local port with
 # nothing listening. Covers the ANTHROPIC_BASE_URL incident: a redirect that outlived the
 # platform it pointed at, surfacing as a misleading "firewall or proxy" error in the actual tool.
+#
+# Three classes of finding, in increasing order of how much they mislead you:
+#   1. PERSISTED    — a dead value in User/Machine scope or a settings.json env block. Clear it.
+#   2. ORPHANED     — dead at Process scope but CLEAN at User and Machine. The registry is
+#                     already fixed; a running ancestor is handing you a frozen copy. Clearing
+#                     it in this shell works, and the next shell is broken again.
+#   3. SELFHEAL     — a SessionStart hook that re-applies a redirect after you fix it, so every
+#                     correct fix appears to regress.
 function global:ai-doctor {
     Write-Host "AI Platform Doctor" -ForegroundColor Cyan
     Write-Host "===================" -ForegroundColor DarkCyan
 
     $checks = @(
-        @{ Name = 'ANTHROPIC_BASE_URL';             KeyVar = 'ANTHROPIC_API_KEY' }
+        @{ Name = 'ANTHROPIC_BASE_URL';             KeyVar = 'ANTHROPIC_AUTH_TOKEN' }
+        @{ Name = 'ANTHROPIC_API_URL';              KeyVar = $null }
         @{ Name = 'OPENAI_BASE_URL';                KeyVar = 'OPENAI_API_KEY' }
         @{ Name = 'OPENAI_API_BASE';                KeyVar = 'OPENAI_API_KEY' }
-        @{ Name = 'COPILOT_PROVIDER_BASE_URL';       KeyVar = $null }
-        @{ Name = 'GROK_MODEL_GROK_BUILD_BASE_URL';  KeyVar = $null }
-        @{ Name = 'GROK_CLI_CHAT_PROXY_BASE_URL';    KeyVar = $null }
+        @{ Name = 'COPILOT_PROVIDER_BASE_URL';      KeyVar = $null }
+        @{ Name = 'GROK_MODEL_GROK_BUILD_BASE_URL'; KeyVar = $null }
+        @{ Name = 'GROK_CLI_CHAT_PROXY_BASE_URL';   KeyVar = $null }
     )
-    $scopes = @('Process', 'User', 'Machine')
     $issues = 0
+    $orphans = 0
+
+    # Provenance (ADR-008 D2): ai-claude-on stamps AIRLOCK_INJECTED so a redirect airlock set
+    # can be told apart from one some other tool set. The 4-day incident this function exists
+    # for was caused by a third-party proxy — naming it as foreign on day one is the whole point.
+    $airlockOwned = ($env:AIRLOCK_INJECTED -eq '1')
 
     foreach ($check in $checks) {
-        foreach ($scope in $scopes) {
-            $value = [Environment]::GetEnvironmentVariable($check.Name, $scope)
+        $values = @{}
+        foreach ($scope in @('Process', 'User', 'Machine')) {
+            $values[$scope] = [Environment]::GetEnvironmentVariable($check.Name, $scope)
+        }
+        if (-not ($values.Values | Where-Object { $_ })) { continue }
+
+        foreach ($scope in @('Process', 'User', 'Machine')) {
+            $value = $values[$scope]
             if (-not $value) { continue }
             try { $uri = [uri]$value } catch { continue }
-            if ($uri.Host -notin @('127.0.0.1', 'localhost')) { continue }
+            if ($uri.Host -notin @('127.0.0.1', 'localhost', '::1')) { continue }
+            # [uri]::Port defaults to 80/443 when the value has no explicit port (verified:
+            # [uri]"http://127.0.0.1" -> Port 80). These redirects are always host:port; a
+            # bare-host value would silently probe the wrong port and can't be judged reliably.
+            if ($value -notmatch '^[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+:\d+') { continue }
+            if (Test-PortAlive -TargetHost $uri.Host -Port $uri.Port) { continue }
 
-            $alive = (Test-NetConnection -ComputerName $uri.Host -Port $uri.Port -WarningAction SilentlyContinue).TcpTestSucceeded
-            if (-not $alive) {
-                $issues++
-                Write-Host ""
+            $issues++
+            $isOrphan = ($scope -eq 'Process') -and (-not $values['User']) -and (-not $values['Machine'])
+            $ownedByUs = $airlockOwned -and ($env:AIRLOCK_ENDPOINT -eq $value)
+
+            Write-Host ""
+            if ($isOrphan) {
+                $orphans++
+                Write-Host "  ORPHANED POINTER: $($check.Name) = $value" -ForegroundColor Red
+                Write-Host "    Set in this process, but CLEAN at User and Machine scope, and nothing is listening on $($uri.Host):$($uri.Port)." -ForegroundColor Yellow
+                Write-Host "    The saved configuration is already correct. A running ancestor process is handing this shell a frozen copy." -ForegroundColor Yellow
+            } else {
                 Write-Host "  DEAD REDIRECT: $($check.Name) [$scope scope] = $value" -ForegroundColor Red
                 Write-Host "    Nothing listening on $($uri.Host):$($uri.Port)." -ForegroundColor Yellow
-                if ($scope -eq 'Process') {
-                    $clearCmd = "Remove-Item Env:\$($check.Name)" + $(if ($check.KeyVar) { ", Env:\$($check.KeyVar)" } else { "" }) + " -ErrorAction SilentlyContinue"
-                    Write-Host "    Fix (this shell): $clearCmd" -ForegroundColor Gray
-                } else {
-                    Write-Host "    Fix ($scope scope, persists across shells): [Environment]::SetEnvironmentVariable('$($check.Name)', `$null, '$scope')" -ForegroundColor Gray
+            }
+
+            Write-Host "    Set by: $(if ($ownedByUs) { 'airlock (ai-claude-on)' } else { 'NOT airlock — some other tool set this' })" -ForegroundColor $(if ($ownedByUs) { 'Gray' } else { 'Magenta' })
+
+            if ($isOrphan) {
+                $chain = Get-ProcessAncestry
+                Write-Host "    Carrier chain: $(($chain | ForEach-Object { "$($_.Name)($($_.Id))" }) -join ' <- ')" -ForegroundColor Gray
+                $root = $chain | Select-Object -Last 1
+                if ($root -and ($root.Name -in $script:AirlockSessionRoots)) {
+                    Write-Host "    FIX: SIGN OUT of Windows and sign back in (or reboot)." -ForegroundColor Cyan
+                    Write-Host "         The chain tops out at $($root.Name), which owns your login session's environment." -ForegroundColor Gray
+                    Write-Host "         Windows gives each process a COPY of the environment at creation and never re-reads the registry," -ForegroundColor Gray
+                    Write-Host "         so clearing the registry cannot reach it. Only ending the session rebuilds the block." -ForegroundColor Gray
+                    Write-Host "    Temporary (this shell only, gone in the next terminal): Remove-Item Env:\$($check.Name) -ErrorAction SilentlyContinue" -ForegroundColor DarkGray
+                } elseif ($root) {
+                    Write-Host "    FIX: restart $($root.Name) (PID $($root.Id)) and everything it launched." -ForegroundColor Cyan
+                    Write-Host "         That process holds the stale copy; its children inherit it." -ForegroundColor Gray
                 }
+            } elseif ($scope -eq 'Process') {
+                $clearCmd = "Remove-Item Env:\$($check.Name)" + $(if ($check.KeyVar) { ", Env:\$($check.KeyVar)" } else { "" }) + " -ErrorAction SilentlyContinue"
+                Write-Host "    FIX (this shell): $clearCmd" -ForegroundColor Cyan
+            } else {
+                Write-Host "    FIX ($scope scope, persists across shells): [Environment]::SetEnvironmentVariable('$($check.Name)', `$null, '$scope')" -ForegroundColor Cyan
+                Write-Host "         Then close every open shell and editor — already-running ones keep the old copy." -ForegroundColor Gray
             }
         }
     }
 
-    $settingsPaths = @("$env:USERPROFILE\.claude\settings.json", "$env:USERPROFILE\.claude\settings.local.json")
+    # --- settings.json: dead env-block redirects, and hooks that re-apply them ---
+    $settingsPaths = @(
+        "$env:USERPROFILE\.claude\settings.json",
+        "$env:USERPROFILE\.claude\settings.local.json"
+    )
     # These two are relative to the current directory - only found if run from inside a
     # project checkout. Said explicitly below so "no dead redirects" can't be misread as
     # "checked every project", when a project-local file just wasn't reachable from here.
@@ -751,33 +842,70 @@ function global:ai-doctor {
     foreach ($rel in $projectRel) {
         if (Test-Path $rel) { $settingsPaths += (Resolve-Path $rel).Path; $projectFound++ }
     }
+
     foreach ($path in ($settingsPaths | Select-Object -Unique)) {
         if (-not (Test-Path $path)) { continue }
         try {
             $json = Get-Content $path -Raw | ConvertFrom-Json
-            $baseUrl = $json.env.ANTHROPIC_BASE_URL
-            if ($baseUrl) {
+        } catch {
+            Write-Host ""
+            Write-Host "  UNPARSEABLE: $path is not valid JSON — Claude Code ignores it silently." -ForegroundColor Red
+            $issues++
+            continue
+        }
+
+        $baseUrl = $json.env.ANTHROPIC_BASE_URL
+        if ($baseUrl) {
+            try {
                 $uri = [uri]$baseUrl
-                $alive = (Test-NetConnection -ComputerName $uri.Host -Port $uri.Port -WarningAction SilentlyContinue).TcpTestSucceeded
-                if (-not $alive) {
+                if (-not (Test-PortAlive -TargetHost $uri.Host -Port $uri.Port)) {
                     $issues++
                     Write-Host ""
                     Write-Host "  DEAD REDIRECT: $path -> env.ANTHROPIC_BASE_URL = $baseUrl" -ForegroundColor Red
-                    Write-Host "    Nothing listening on $($uri.Host):$($uri.Port). This disables cloud Claude Code entirely while it's set." -ForegroundColor Yellow
-                    Write-Host "    Fix: remove the 'env' block from $path, or switch to ai-claude-on / ai-claude-off (session-scoped, not permanent)." -ForegroundColor Gray
+                    Write-Host "    Nothing listening on $($uri.Host):$($uri.Port). This disables cloud Claude Code entirely while it's set," -ForegroundColor Yellow
+                    Write-Host "    and a settings-file env block OVERRIDES a shell export — so ai-claude-off cannot undo it." -ForegroundColor Yellow
+                    Write-Host "    FIX: remove the 'env' block from $path, then use ai-claude-on / ai-claude-off (session-scoped, not permanent)." -ForegroundColor Cyan
+                }
+            } catch {}
+        }
+
+        # SessionStart hooks that re-apply a redirect are why a correct fix can appear to
+        # regress: the hook runs on every startup/resume and puts the value back. Report only;
+        # third-party hooks are legitimate and this function does not edit anyone's config.
+        $hookGroups = $json.hooks.SessionStart
+        foreach ($group in $hookGroups) {
+            foreach ($hook in $group.hooks) {
+                $cmd = $hook.command
+                if (-not $cmd) { continue }
+                if ($cmd -match 'wrap|selfheal|ANTHROPIC_|OPENAI_|setx|SetEnvironmentVariable|BASE_URL') {
+                    $issues++
+                    Write-Host ""
+                    Write-Host "  SESSION HOOK MUTATES ENVIRONMENT: $path" -ForegroundColor Red
+                    Write-Host "    matcher: $($group.matcher)" -ForegroundColor Yellow
+                    Write-Host "    command: $cmd" -ForegroundColor Yellow
+                    Write-Host "    A hook like this runs on every session start/resume. If it re-applies an endpoint variable," -ForegroundColor Yellow
+                    Write-Host "    every fix you make will appear to work and then come back. Review it before chasing anything else." -ForegroundColor Yellow
+                    Write-Host "    FIX: if you don't recognise this, remove the hook (back the file up first), then re-run ai-doctor." -ForegroundColor Cyan
                 }
             }
-        } catch {}
+        }
     }
 
     Write-Host ""
     if ($issues -eq 0) {
-        Write-Host "  No dead redirects found in User/Machine/process env vars or $env:USERPROFILE\.claude\settings*.json." -ForegroundColor Green
+        Write-Host "  No dead redirects, orphaned pointers, or environment-mutating session hooks found" -ForegroundColor Green
+        Write-Host "  in User/Machine/process env vars or $env:USERPROFILE\.claude\settings*.json." -ForegroundColor Green
         if ($projectFound -eq 0) {
             Write-Host "  Not checked: this directory's own .claude\settings*.json - $(Get-Location) doesn't have one, or you're not in a project root. cd there and re-run if you expect one." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "  $issues dead redirect(s) found. After clearing, restart every open shell and every running agent CLI — they hold stale copies of the environment." -ForegroundColor Yellow
+        Write-Host "  $issues issue(s) found." -ForegroundColor Yellow
+        if ($orphans -gt 0) {
+            Write-Host "  $orphans of them are ORPHANED POINTERS — your saved config is already correct and clearing it again will not help." -ForegroundColor Yellow
+            Write-Host "  Sign out and back in (or reboot). That is the only thing that rebuilds a running session's environment." -ForegroundColor Yellow
+        } else {
+            Write-Host "  After clearing, restart every open shell and every running agent CLI — they hold stale copies of the environment." -ForegroundColor Yellow
+        }
     }
 }
 
