@@ -2,6 +2,14 @@
 
 All notable changes to Airlock are recorded here, newest first. This file exists so anyone updating the platform can see what changed and why, in plain language — not just a commit list.
 
+## opencode setup guide: real config-path and tool-calling findings — 2026-08-15
+
+A user reported opencode + Ollama "hallucinating and drifting," responding in raw XML/JSON tags, and being unable to use slash commands — forcing a fallback to cloud models. Investigated end-to-end against a real project (not this repo), not just re-read the docs.
+
+- **`docs/08-Agent-CLI-Setup-Guide.md`'s opencode section was itself stale and wrong.** Re-verified live against the installed opencode 1.18.16 with `--print-logs --log-level DEBUG`: it never reads a bare `opencode.json` at repo root (what the doc said to create) — real paths are `<project>/.opencode/opencode.json` and `~/.opencode/opencode.json` (a different directory than `~/.config/opencode/`, which is also checked but loads first and gets silently overridden by the later files, not replaced). Doc rewritten with the real, tested paths and precedence order.
+- **Real, live, currently-active misconfiguration found and fixed** (not in this repo — a separate project's environment): the user's actual global opencode config pointed at port 12345, but `Start-AI.ps1` had adopted an already-running Ollama on port 11434 (its own default — common when Ollama auto-starts as a background service). Every request failed with a connection error and retried on a backoff that looks like a hang from the terminal. Also found and fixed: the config's model allowlist named 3 models that were never actually pulled, and omitted the one 30B model that was.
+- **Separately, reproduced a real tool-calling reliability gap in Ollama's OpenAI-compatible layer under opencode's agentic loop** — confirmed on both `qwen2.5-coder:7b` (emitted a raw tool-call as visible chat text with a hallucinated placeholder path) and `qwen3-coder:30b` (a malformed tool-call schema, followed by the model hallucinating a nonexistent tool and then fetching unrelated public web pages instead of the local file it was asked to read). This is not a config bug and no template fix solves it — documented plainly, matching the same Ollama compat-layer limitation already disclosed for the memory-service RAG path.
+
 ## Unreleased — planned, feature-based
 
 Still pending, in order:
