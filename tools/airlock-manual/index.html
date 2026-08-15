@@ -98,6 +98,19 @@
   .cmd-card .cmd-name{ color:var(--amber); font-weight:700; font-size:.95rem; }
   .cmd-card p{ font-size:.88rem; color:var(--ink-soft); margin:8px 0 0; }
 
+  /* ---- capabilities showcase ---- */
+  .showcase-group{ margin-bottom:30px; }
+  .showcase-group h3{ font-size:.76rem; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-soft); margin-bottom:14px; font-weight:700; }
+  .showcase-row{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:11px 0; border-bottom:1px solid var(--line); }
+  .showcase-row:last-child{ border-bottom:none; }
+  .showcase-row .cap-name{ font-weight:700; font-size:.94rem; }
+  .showcase-row .cap-desc{ color:var(--ink-soft); font-size:.86rem; flex:1 1 32ch; }
+  .pill{ display:inline-block; font-size:.65rem; letter-spacing:.07em; text-transform:uppercase; padding:2px 10px; border-radius:99px; font-weight:700; flex:none; background:transparent; }
+  .pill.live{ color:var(--teal-soft); border:1px solid var(--teal-soft); }
+  .pill.partial{ color:var(--amber-soft); border:1px solid var(--amber-soft); }
+  .pill.proposed{ color:var(--amber-soft); border:1px dashed var(--amber-soft); }
+  .pill.notwired{ color:var(--danger); border:1px solid var(--danger); }
+
   /* ---- glossary flip cards (3D) ---- */
   .glossary-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:16px; }
   .flip-card{ perspective:1000px; height:150px; }
@@ -191,6 +204,7 @@
     <a href="#glossary">glossary</a>
     <a href="#architecture">architecture</a>
     <a href="#scaling">cloud keys</a>
+    <a href="#showcase">showcase</a>
     <a href="#commands">commands</a>
     <a href="#visualizer">3D visualizer</a>
     <a href="#rag">memory service</a>
@@ -203,7 +217,7 @@
   <div class="wrap">
     <p class="eyebrow">A user manual, written for beginners</p>
     <h1>Everything Airlock does, and how to use it.</h1>
-    <p class="lede">Airlock is a set of commands that run an AI coding assistant on your own computer — no cloud account required for day-to-day use. This page explains what that means, defines every term along the way, and shows exactly what to type for each command, with a real example of when you'd reach for it.</p>
+    <p class="lede">Airlock runs a real AI coding assistant on your own machine — no cloud account, no monthly bill, no code leaving your laptop for the average day. This page is the long way round: plain-English definitions, pictures of how the pieces actually connect, and exactly what to type for each command, with a real reason you'd type it.</p>
     <div class="snapshot-note">
       <b>This page lives in the repo, at <code>tools/airlock-manual/index.html</code>.</b> It's a companion to <code>README.md</code>, not a replacement for it — README stays the terse reference; this page is the long-form, illustrated version for a reader who wants definitions and pictures alongside the commands. If the two ever disagree, that's a bug worth filing, not an accepted gap.
     </div>
@@ -214,11 +228,12 @@
       <a class="toc-item" href="#glossary"><span class="toc-num">02</span><span class="toc-name">Glossary</span><span class="toc-desc">Flip-card definitions: CLI, port, model, embedding, RAG, and everything else used below.</span></a>
       <a class="toc-item" href="#architecture"><span class="toc-num">03</span><span class="toc-name">Architecture</span><span class="toc-desc">The 5-layer stack, as an animated 3D diagram — terminal down to the gated cloud layer.</span></a>
       <a class="toc-item" href="#scaling"><span class="toc-num">04</span><span class="toc-name">Cloud keys</span><span class="toc-desc">Adding an OpenRouter/OpenAI/Anthropic/Google key with <code>ai-auth-set</code> — and an honest map of what actually consumes it today.</span></a>
-      <a class="toc-item" href="#commands"><span class="toc-num">05</span><span class="toc-name">Commands</span><span class="toc-desc">Every <code>ai-*</code> command — snippet, real use case, and an animated diagram for the three deepest ones.</span></a>
-      <a class="toc-item" href="#visualizer"><span class="toc-num">06</span><span class="toc-name">3D visualizer</span><span class="toc-desc">Launching <code>tools/3d-system-visualizer</code> — the exact commands, and how to see this platform's own real activity in it.</span></a>
-      <a class="toc-item" href="#rag"><span class="toc-num">07</span><span class="toc-name">Memory service</span><span class="toc-desc">RAG, the vector database, and what's really LangChain vs. hand-rolled — a full request-path walkthrough.</span></a>
-      <a class="toc-item" href="#swimlane"><span class="toc-num">08</span><span class="toc-name">Request lifecycle</span><span class="toc-desc">The same request as a swimlane — who does each of the 15 steps, across every component.</span></a>
-      <a class="toc-item" href="#er"><span class="toc-num">09</span><span class="toc-name">Storage</span><span class="toc-desc">The two separate stores behind memory — different keys, different lifetimes, never joined.</span></a>
+      <a class="toc-item" href="#showcase"><span class="toc-num">05</span><span class="toc-name">Capabilities showcase</span><span class="toc-desc">Everything the platform does, one scannable list, each row tagged live/partial/proposed/not wired.</span></a>
+      <a class="toc-item" href="#commands"><span class="toc-num">06</span><span class="toc-name">Commands</span><span class="toc-desc">Every <code>ai-*</code> command — snippet, real use case, and an animated diagram for the three deepest ones.</span></a>
+      <a class="toc-item" href="#visualizer"><span class="toc-num">07</span><span class="toc-name">3D visualizer</span><span class="toc-desc">Launching <code>tools/3d-system-visualizer</code> — the exact commands, and how to see this platform's own real activity in it.</span></a>
+      <a class="toc-item" href="#rag"><span class="toc-num">08</span><span class="toc-name">Memory service</span><span class="toc-desc">RAG, the vector database, and what's really LangChain vs. hand-rolled — a full request-path walkthrough.</span></a>
+      <a class="toc-item" href="#swimlane"><span class="toc-num">09</span><span class="toc-name">Request lifecycle</span><span class="toc-desc">The same request as a swimlane — who does each of the 15 steps, across every component.</span></a>
+      <a class="toc-item" href="#er"><span class="toc-num">10</span><span class="toc-name">Storage</span><span class="toc-desc">The two separate stores behind memory — different keys, different lifetimes, never joined.</span></a>
     </nav>
   </div>
 </header>
@@ -226,7 +241,7 @@
 <section id="basics">
   <div class="wrap">
     <div class="section-head"><span class="section-num">01</span><h2>What Airlock actually is</h2></div>
-    <p class="section-sub">If you've never used a tool like this before, start here — the rest of the page assumes you know what's in this section.</p>
+    <p class="section-sub">Never touched a tool like this before? Good — start exactly here. Everything after this section assumes you already know what's below.</p>
 
     <p>An AI coding assistant (like Claude Code) normally works by sending your questions to a company's servers over the internet, and a powerful model there sends back an answer. That's simple, but it means two things: your code and questions travel over the internet, and you're paying for (or limited by) however much that company lets you use.</p>
 
@@ -247,7 +262,7 @@
 <section id="glossary" class="deep">
   <div class="wrap">
     <div class="section-head"><span class="section-num">02</span><h2>Words you'll see on this page</h2></div>
-    <p class="section-sub">Click or tap any card to flip it over. These are the plain-English versions of terms used everywhere else on this page and in the repo's own docs.</p>
+    <p class="section-sub">Every jargon word on this page has a card here. Click or tap to flip it — plain English on the back, no dictionary required.</p>
 
     <div class="glossary-grid">
       <div class="flip-card"><div class="flip-card-inner">
@@ -328,7 +343,7 @@
 <section id="architecture">
   <div class="wrap">
     <div class="section-head"><span class="section-num">03</span><h2>How the pieces fit together</h2></div>
-    <p class="section-sub">Airlock is a stack of layers, each one only talking to the layer directly next to it. Hover the diagram to hold it still and read at your own pace.</p>
+    <p class="section-sub">Five layers, stacked like the airlock it's named for — each one only ever talks to its neighbor. Hover the diagram to pause the drift and read at your own pace.</p>
 
     <div class="stack-scene-wrap" tabindex="0" aria-label="Exploded 3D diagram of Airlock's architecture, five stacked layers from top to bottom: your terminal, the Airlock CLI layer, your local model backend, the optional memory service, and cloud providers reachable only through an explicit policy gate.">
       <div class="stack-scene">
@@ -420,10 +435,54 @@
   </div>
 </section>
 
-<section id="commands">
+<section id="showcase">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">05</span><h2>The commands</h2></div>
-    <p class="section-sub">Every command below starts with <code>ai-</code>. Type it in your terminal and press Enter — that's the whole interface. Here's what each one does, exactly what to type, and a real situation where you'd reach for it.</p>
+    <div class="section-head"><span class="section-num">05</span><h2>Everything Airlock can do, at a glance</h2></div>
+    <p class="section-sub">The whole platform in one scannable list, grouped by what it's actually for. Every row is tagged honestly — <span class="pill live">live</span> means shipped and working today, <span class="pill partial">partial</span> means it does something real but not the whole job yet, <span class="pill proposed">proposed</span> means designed but not built, and <span class="pill notwired">not wired</span> means the plumbing for it doesn't connect yet. Nothing here is rounded up.</p>
+
+    <div class="showcase-group">
+      <h3>Local backend &amp; safety</h3>
+      <div class="showcase-row"><span class="cap-name">Single-instance local model serving</span><span class="cap-desc"><code>ai-start</code>/<code>ai-stop</code> — kills rogue processes, one clean instance, firewalled port.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">vLLM as an alternate backend</span><span class="cap-desc">Higher-throughput option for NVIDIA GPU + Docker Desktop owners.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Dead-redirect / orphaned-pointer diagnosis</span><span class="cap-desc"><code>ai-doctor</code> — tells the two failure modes apart and prints the exact fix. See the animated walkthrough below.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Install-drift detection</span><span class="cap-desc"><code>ai-doctor</code> also flags when your installed copy has fallen behind the source it was built from.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Pre-commit secret scanning</span><span class="cap-desc">Blocks or flags commits matching a configurable policy (API keys, passwords, PII patterns) before they land.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Clean, previewable uninstall</span><span class="cap-desc"><code>ai-uninstall -WhatIf</code> shows exactly what would go, with nothing touched, before you commit to it.</span><span class="pill live">live</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Session control</h3>
+      <div class="showcase-row"><span class="cap-name">Session-scoped Claude Code redirect</span><span class="cap-desc"><code>ai-claude-on</code>/<code>-off</code> — this terminal only, checked alive first, gone automatically.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Task routing &amp; cloud-limit handoff</span><span class="cap-desc"><code>ai-route</code> gives an advisory local-vs-cloud recommendation; <code>ai-handoff</code> logs the switch so nothing is silently lost.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Cross-harness session resume</span><span class="cap-desc">Carrying context between Claude Code, Grok CLI, Pi CLI, and OpenCode without re-explaining yourself.</span><span class="pill partial">partial</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Memory &amp; retrieval</h3>
+      <div class="showcase-row"><span class="cap-name">Retrieval-augmented chat</span><span class="cap-desc"><code>ai-memory-start</code>/<code>-on</code> — recalls relevant context from earlier in the same project. Full deep dive further down.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Fail-closed retrieval</span><span class="cap-desc">A weak match is dropped, never guessed — a response is honestly marked unaugmented rather than faking recall.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Per-project memory, per-session checkpoints</span><span class="cap-desc">Two genuinely separate stores under the hood — see the storage section for exactly how.</span><span class="pill live">live</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Cloud scaling</h3>
+      <div class="showcase-row"><span class="cap-name">Cloud key storage</span><span class="cap-desc"><code>ai-auth-set</code> — safely stored, gitignored, outside the repo.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">A stored key actually routing a request</span><span class="cap-desc">Depends which command — see the full breakdown two sections up.</span><span class="pill notwired">not wired</span></div>
+      <div class="showcase-row"><span class="cap-name">Claude Code multi-provider profile switch</span><span class="cap-desc"><code>ai-claude-on -Profile openrouter</code> — designed in ADR-009, not built yet.</span><span class="pill proposed">proposed</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Other tools in the repo</h3>
+      <div class="showcase-row"><span class="cap-name">3D system visualizer</span><span class="cap-desc">Explorable node-graph view of any system, with animated call-path playback. Launch guide below.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Containerized Hermes agent</span><span class="cap-desc"><code>ai-hermes-start</code>/<code>-stop</code> — sandboxed agent for job-search tasks, isolated from your other files.</span><span class="pill live">live</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="commands" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">06</span><h2>The commands</h2></div>
+    <p class="section-sub">Every command starts with <code>ai-</code>. Type it, hit Enter — that's the whole learning curve. Below: what each one actually does, the exact snippet, and a real moment you'd reach for it.</p>
 
     <div class="cmd-grid">
       <div class="cmd-card"><span class="cmd-name">ai-start</span><p>Starts your local model backend and gets it ready to use.</p></div>
@@ -671,9 +730,9 @@
   </div>
 </section>
 
-<section id="visualizer" class="deep">
+<section id="visualizer">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">06</span><h2>Launching the 3D system visualizer</h2></div>
+    <div class="section-head"><span class="section-num">07</span><h2>Launching the 3D system visualizer</h2></div>
     <p class="section-sub">A second standalone tool in this repo, separate from the <code>ai-*</code> commands above: a 3D scene at <code>tools/3d-system-visualizer/index.html</code> that draws a system — services, data stores, and the edges between them — as an explorable node graph, with animated workflow playback: a glowing packet travels the actual call path, step by step.</p>
 
     <div class="analogy">
@@ -711,9 +770,9 @@
   </div>
 </section>
 
-<section id="rag">
+<section id="rag" class="deep">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">07</span><h2>The memory service, in depth: RAG, the vector database, LangChain, and LangGraph</h2></div>
+    <div class="section-head"><span class="section-num">08</span><h2>The memory service, in depth: RAG, the vector database, LangChain, and LangGraph</h2></div>
     <p class="section-sub">Airlock ships an optional component called <code>memory-service</code> — a small program that sits between your chat client and your local model. This is the one place in Airlock that does retrieval-augmented generation, using the pieces defined in the glossary above. Here's exactly how it works.</p>
 
     <div class="usecase">
@@ -807,9 +866,9 @@
   </div>
 </section>
 
-<section id="swimlane" class="deep">
+<section id="swimlane">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">08</span><h2>The same request, as a swimlane</h2></div>
+    <div class="section-head"><span class="section-num">09</span><h2>The same request, as a swimlane</h2></div>
     <p class="section-sub">The flow above shows <i>what</i> happens. This shows <i>who</i> does each step — which piece of the system — for one real turn through the Ollama path.</p>
 
     <figure>
@@ -871,9 +930,9 @@
   </div>
 </section>
 
-<section id="er">
+<section id="er" class="deep">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">09</span><h2>Two stores, two keys, no shared row</h2></div>
+    <div class="section-head"><span class="section-num">10</span><h2>Two stores, two keys, no shared row</h2></div>
     <p class="section-sub">"Memory" sounds like one thing, but it's two separate stores here, each with its own key, and they are never joined in storage — only for a moment, at request time, by whatever you send in.</p>
 
     <figure>
