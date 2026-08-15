@@ -148,7 +148,7 @@ A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/ope
   {
     "env": {
       "ANTHROPIC_BASE_URL": "http://127.0.0.1:12345",
-      "ANTHROPIC_API_KEY": "ollama"
+      "ANTHROPIC_AUTH_TOKEN": "ollama"
     }
   }
   ```

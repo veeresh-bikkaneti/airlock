@@ -902,6 +902,41 @@ function global:ai-doctor {
         }
     }
 
+    # --- source/install skew (AIR-H13): setup.ps1 already overwrites scripts\ from source
+    # on every run, so skew here means install.ps1 just hasn't been re-run since a patch
+    # landed - not a broken sync mechanism. Only checkable when the standard installer's
+    # clone exists; a dev working from an arbitrary repo checkout has no fixed comparison
+    # point, so this is skipped rather than guessed - same honesty pattern as $projectFound above.
+    $srcScripts = "$env:USERPROFILE\.airlock-src\scripts"
+    if (Test-Path $srcScripts) {
+        # Compare content with line endings normalized: a fresh `git clone` applies the
+        # checkout's core.autocrlf conversion, so byte-identical source can still hash
+        # differently than an existing working tree purely from CRLF vs LF - a false skew,
+        # not a real one. Normalize before hashing so only actual content differences count.
+        function Get-NormalizedContentHash($path) {
+            $content = (Get-Content $path -Raw -ErrorAction SilentlyContinue) -replace "`r`n", "`n"
+            $sha256 = [System.Security.Cryptography.SHA256]::Create()
+            try { [BitConverter]::ToString($sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($content))) }
+            finally { $sha256.Dispose() }
+        }
+        $skewed = @()
+        foreach ($f in Get-ChildItem "$srcScripts\*.ps1") {
+            $installedPath = "$env:USERPROFILE\.ai-platform\scripts\$($f.Name)"
+            if (-not (Test-Path $installedPath)) { $skewed += $f.Name; continue }
+            if ((Get-NormalizedContentHash $f.FullName) -ne (Get-NormalizedContentHash $installedPath)) {
+                $skewed += $f.Name
+            }
+        }
+        if ($skewed.Count -gt 0) {
+            $issues++
+            Write-Host ""
+            Write-Host "  INSTALL DRIFT: $($skewed.Count) script(s) differ between ~\.airlock-src (source) and ~\.ai-platform (installed)." -ForegroundColor Red
+            Write-Host "    $($skewed -join ', ')" -ForegroundColor Yellow
+            Write-Host "    setup.ps1 always overwrites scripts\ from source on every run - this just means it hasn't been re-run since a patch landed there." -ForegroundColor Yellow
+            Write-Host "    FIX: cd ~\.airlock-src; git pull --ff-only; .\install.ps1   (or re-run the irm|iex one-liner)" -ForegroundColor Cyan
+        }
+    }
+
     Write-Host ""
     if ($issues -eq 0) {
         Write-Host "  No dead redirects, orphaned pointers, or environment-mutating session hooks found" -ForegroundColor Green

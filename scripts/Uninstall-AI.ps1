@@ -1,5 +1,7 @@
 # Reverses setup.ps1 / the irm|iex installer (AIR-H3). Removes:
 #   - $env:USERPROFILE\.ai-platform (everything setup.ps1 deployed there)
+#   - $env:USERPROFILE\.airlock-src (install.ps1's git clone target - confirmed at that exact
+#     path in install.ps1 itself, not assumed; see AIR-H16)
 #   - the profile-helpers.ps1 sourcing line setup.ps1 added to $PROFILE
 #   - firewall rules this platform created (same "AI-Platform-*-Block-*" pattern Stop-AI.ps1
 #     already uses to clean these up on ai-stop -CleanFirewall)
@@ -13,6 +15,7 @@
 param()
 
 $PlatformDir   = "$env:USERPROFILE\.ai-platform"
+$SrcDir        = "$env:USERPROFILE\.airlock-src"
 $DotSourceLine = '. "$env:USERPROFILE\.ai-platform\scripts\profile-helpers.ps1"'
 
 Write-Host "Airlock Uninstaller" -ForegroundColor Cyan
@@ -22,7 +25,32 @@ Write-Host "This removes the platform's own install directory, profile hook, and
 Write-Host "rules only. Ollama itself and every pulled model are left alone." -ForegroundColor Gray
 Write-Host ""
 
-# --- 1. Platform install directory ---
+# --- 1. Provenance check (same reasoning as AIR-H1's ai-doctor) ---
+# Runs FIRST, before anything is deleted: this script may itself be running from inside
+# $PlatformDir or $SrcDir (e.g. invoked as ~/.ai-platform/scripts/Uninstall-AI.ps1, the
+# deployed copy - or, less commonly, directly from ~/.airlock-src/scripts/). Reusing
+# ai-doctor needs profile-helpers.ps1 next to this script via $PSScriptRoot; running the
+# check after either directory is removed would try to dot-source a file that's already gone.
+# Removing files on disk does not reach a process that already has a copy of
+# ANTHROPIC_*/OPENAI_* in its own environment block - Windows hands each process a COPY at
+# creation and never re-reads it. This shell (and this shell alone - there is no supported,
+# non-admin way to read another running process's environment block) can be checked directly
+# by reusing ai-doctor, which already classifies exactly this failure mode.
+Write-Host "Checking this shell for a leftover platform redirect..." -ForegroundColor Cyan
+$doctorSource = Join-Path $PSScriptRoot "profile-helpers.ps1"
+if (Test-Path $doctorSource) {
+    . $doctorSource *> $null
+    ai-doctor
+} else {
+    Write-Host "  Could not find profile-helpers.ps1 next to this script to run ai-doctor's check." -ForegroundColor Yellow
+}
+Write-Host ""
+Write-Host "This uninstaller cannot see other already-open shells, editors, or agent CLIs." -ForegroundColor Yellow
+Write-Host "Any of them that had ai-claude-on active still carry a frozen copy of these variables" -ForegroundColor Yellow
+Write-Host "in their own environment block. Close every one of them, or sign out/reboot, to be sure." -ForegroundColor Yellow
+Write-Host ""
+
+# --- 2. Platform install directory ---
 if (Test-Path $PlatformDir) {
     if ($PSCmdlet.ShouldProcess($PlatformDir, "Remove directory (recursive)")) {
         Remove-Item -Path $PlatformDir -Recurse -Force
@@ -32,7 +60,17 @@ if (Test-Path $PlatformDir) {
     Write-Host "  $PlatformDir does not exist - nothing to remove" -ForegroundColor Gray
 }
 
-# --- 2. $PROFILE sourcing line ---
+# --- 3. Installer's source clone ---
+if (Test-Path $SrcDir) {
+    if ($PSCmdlet.ShouldProcess($SrcDir, "Remove directory (recursive)")) {
+        Remove-Item -Path $SrcDir -Recurse -Force
+        Write-Host "  Removed $SrcDir" -ForegroundColor Green
+    }
+} else {
+    Write-Host "  $SrcDir does not exist - nothing to remove" -ForegroundColor Gray
+}
+
+# --- 4. $PROFILE sourcing line ---
 if (Test-Path $PROFILE) {
     $content = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
     if ($content -and $content.Contains($DotSourceLine)) {
@@ -48,7 +86,7 @@ if (Test-Path $PROFILE) {
     Write-Host "  $PROFILE does not exist - nothing to remove" -ForegroundColor Gray
 }
 
-# --- 3. Firewall rules ---
+# --- 5. Firewall rules ---
 # Same DisplayName pattern Stop-AI.ps1's -CleanFirewall path already matches
 # ("AI-Platform-Ollama-Block-<port>", "AI-Platform-Memory-Block-<port>", etc).
 $rules = Get-NetFirewallRule -DisplayName "AI-Platform-*-Block-*" -ErrorAction SilentlyContinue
@@ -70,23 +108,3 @@ if ($rules) {
 Write-Host ""
 Write-Host "Ollama and all pulled models were left untouched." -ForegroundColor Cyan
 Write-Host "Use Ollama's own uninstaller, and 'ollama rm <model>' per model, if you want those gone too." -ForegroundColor Gray
-
-# --- 4. Provenance check (same reasoning as AIR-H1's ai-doctor) ---
-# Removing files on disk does not reach a process that already has a copy of
-# ANTHROPIC_*/OPENAI_* in its own environment block - Windows hands each process a COPY at
-# creation and never re-reads it. This shell (and this shell alone - there is no supported,
-# non-admin way to read another running process's environment block) can be checked directly
-# by reusing ai-doctor, which already classifies exactly this failure mode.
-Write-Host ""
-Write-Host "Checking this shell for a leftover platform redirect..." -ForegroundColor Cyan
-$doctorSource = Join-Path $PSScriptRoot "profile-helpers.ps1"
-if (Test-Path $doctorSource) {
-    . $doctorSource *> $null
-    ai-doctor
-} else {
-    Write-Host "  Could not find profile-helpers.ps1 next to this script to run ai-doctor's check." -ForegroundColor Yellow
-}
-Write-Host ""
-Write-Host "This uninstaller cannot see other already-open shells, editors, or agent CLIs." -ForegroundColor Yellow
-Write-Host "Any of them that had ai-claude-on active still carry a frozen copy of these variables" -ForegroundColor Yellow
-Write-Host "in their own environment block. Close every one of them, or sign out/reboot, to be sure." -ForegroundColor Yellow

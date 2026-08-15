@@ -61,14 +61,17 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
 **Verify it worked:**
 
 ```powershell
-pi --provider ollama-local --model qwen2.5-coder:7b -p "Reply with exactly: OK"
+pi --provider ollama --model qwen2.5-coder:7b -p "Reply with exactly: OK"
 ```
 
-Tested live: this returned `OK`. (We tested with a tiny placeholder model that wasn't in the config's model list — pi printed a harmless warning, "Model not found for provider, using custom model id," and answered correctly anyway. If you see that same warning with your real model name, it means a typo — check the `models` array.)
+Re-verified 2026-08-13 against the corrected template — `--provider ollama-local` in earlier versions of this doc was wrong; the config's actual top-level key is `ollama`, and pi will fail with `Unknown provider "ollama-local"` if you use the old name.
+
+⚠️ **Run this from a repo with no `.ai-context/SESSION_STATE.md` present, or move that file aside first.** Pi reads repo files broadly as part of its own agentic context-gathering, and if that file exists (it will, after any prior Claude Code session in this repo — see ADR-004's "Known gap" section), its "conversation summary" field gets treated as ambient task content. Confirmed reproducible: with the file present, `qwen2.5-coder:7b` fabricated an unrelated file-edit tool call instead of replying `OK`; with the file moved aside, it replied correctly every time. This isn't a broken connection or a bad model — it's context bleed from an unrelated feature.
 
 **Troubleshooting:**
 - Connection refused → Airlock isn't running, or the port doesn't match.
 - Model not found (from Ollama, not pi) → the model name in `models.json` isn't in `ai-models`. Pull it or pick one that's already local.
+- Ignores your instruction entirely, talks about "session state" or "conversation summary" instead → see the `.ai-context/SESSION_STATE.md` warning above, not a model problem.
 
 ---
 
@@ -200,12 +203,12 @@ ai-claude-off   # or just close the shell — the redirect never outlives it eit
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:12345",
-    "ANTHROPIC_API_KEY": "ollama"
+    "ANTHROPIC_AUTH_TOKEN": "ollama"
   }
 }
 ```
 
-`ANTHROPIC_API_KEY` can be any non-empty string — Ollama doesn't check it, it just needs to see *something* there. This repo used to ship a `claude-settings.json.template` that invented a different, fake settings schema; it's been deleted. The `env` block above is the real one.
+`ANTHROPIC_AUTH_TOKEN` can be any non-empty string — Ollama doesn't check it, it just needs to see *something* there. Use `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`: per [Anthropic's authentication docs](https://code.claude.com/docs/en/authentication), `AUTH_TOKEN` is the documented variable for gateway/proxy routing and takes precedence immediately, while `API_KEY` is for direct Anthropic API access and — in interactive sessions — needs a one-time approval that a previously-declined key silently skips. This repo used to ship a `claude-settings.json.template` that invented a different, fake settings schema; it's been deleted. The `env` block above is the real one.
 
 ⚠️ **Know the tradeoff before you use this route.** Unlike `ai-claude-on`, this block has no liveness check and no off switch — it applies to *every* Claude Code session on the machine, including ones with nothing to do with this platform, and it stays in effect after `ai-stop`, a reboot, or a port change, until you remove it by hand. See the troubleshooting entry below for what that looks like when it goes wrong.
 
@@ -213,7 +216,7 @@ ai-claude-off   # or just close the shell — the redirect never outlives it eit
 
 ```powershell
 $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:12345"
-$env:ANTHROPIC_API_KEY = "ollama"
+$env:ANTHROPIC_AUTH_TOKEN = "ollama"
 $env:ANTHROPIC_MODEL = "qwen2.5-coder:7b"
 claude -p "Reply with exactly: OK"
 ```
@@ -235,9 +238,10 @@ Or manually:
 ```powershell
 Get-ChildItem Env: | Where-Object { $_.Name -match 'ANTHROPIC' }
 [Environment]::GetEnvironmentVariable('ANTHROPIC_BASE_URL','User')
-Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-[Environment]::SetEnvironmentVariable('ANTHROPIC_BASE_URL', $null, 'User')
-[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY',  $null, 'User')
+Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_AUTH_TOKEN, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+[Environment]::SetEnvironmentVariable('ANTHROPIC_BASE_URL',   $null, 'User')
+[Environment]::SetEnvironmentVariable('ANTHROPIC_AUTH_TOKEN', $null, 'User')
+[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY',    $null, 'User')
 ```
 
 Also check the project-local file — it's easy to miss and holds its own separate copy:
