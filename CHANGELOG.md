@@ -11,6 +11,17 @@ Still pending, in order:
 
 Housekeeping, no version bump: resolve the `headroom.EXE` install-state discrepancy (said uninstalled, binary still on disk — unresolved), review the remaining `docs/bugs/` files for redundancy against the ADRs/CHANGELOG that now supersede parts of them.
 
+## Airlock hardening pass — 2026-08-14
+
+A backlog review found four merged PRs (#4-#6, plus this pass) that had never made it into this file. Backfilled here rather than left silently undocumented.
+
+- **`ai-claude-on` no longer risks a silent auth failure.** It sets `ANTHROPIC_AUTH_TOKEN` instead of `ANTHROPIC_API_KEY` — the variable Anthropic's own docs name for gateway/proxy routing, which takes precedence immediately and can't be shadowed by a previously-declined key sitting in an interactive Claude Code session. Swept the two docs (`README.md`, `docs/08-Agent-CLI-Setup-Guide.md`) that showed the old variable in the same gateway context; left the platform's own direct-cloud-fallback references alone, since those genuinely mean `ANTHROPIC_API_KEY`. See [`ADR-009`](docs/bugs-2/ADR-009-multi-provider-claude-code-profiles_updated.md).
+- **Working tree no longer ships `brag.mp4`/the demo mp3** (12 MB → 3.7 MB) — replaced with a WebP preview in the README. `.git` itself is unchanged (history wasn't rewritten; that's a deliberate, still-open decision, not an oversight — see `docs/bugs-2/BACKLOG-airlock-hardening-and-adoption_updated.md`'s AIR-A13 for the actual numbers).
+- **Added `ai-uninstall`** (`Uninstall-AI.ps1`, `-WhatIf` supported) — the missing reverse of the `irm | iex` installer. Removes `~/.ai-platform`, `~/.airlock-src`, the `$PROFILE` hook, and this platform's firewall rules; leaves Ollama and every pulled model alone.
+- **`ai-doctor` now catches a stale local install.** Re-running `install.ps1`/`setup.ps1` always overwrote `~/.ai-platform`'s scripts from source — verified directly: 14 files differing before one resync run, 0 after — but nothing told you a resync was needed. `ai-doctor` now content-hashes `~/.airlock-src` against `~/.ai-platform` (normalized so a CRLF-vs-LF checkout artifact can't false-positive) and points at the fix. See [`ADR-011`](docs/adr/ADR-011-environment-sync-repo-to-installed.md).
+- **Fixed while extending `ai-uninstall` to `~/.airlock-src`:** its leftover-redirect check ran *after* the deletion steps, meaning it could try to dot-source a file from a directory the script had just removed. Reordered to check first.
+- **Memory service's retrieval-governance work (`ADR-007`) is now marked accepted.** It shipped in `0.3.0`/`0.4.0` below and was already described as done in that entry — the ADR's own Status line just never got flipped from "Proposed." Re-verified this pass: `pytest memory-service/tests/ -v`, 11/11 passing.
+
 ## 0.3.0 / 0.4.0 — 2026-08-13
 
 - **Task router & cloud-limit handoff policy.** `ai-route`: a one-line, explainable answer to "should this task go local or cloud" before you find out the hard way — advisory only, never auto-switches anything. `ai-handoff` extends the existing session-resume snapshot (ADR-004) with the route decision, without touching its canonical fields. See [`ADR-006`](docs/adr/ADR-006-task-router-and-handoff-policy.md).
