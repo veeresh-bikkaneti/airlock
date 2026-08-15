@@ -96,6 +96,8 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 | **`09-Cross-Harness-Session-Resume.md`** | Resume work across Claude Code, Grok CLI, Pi CLI, and OpenCode without re-explaining context — how it works per tool, plus security notes |
 | **`adr/`** | Architecture Decision Records — the "why" behind major choices (model acquisition placement, Ollama auto-install, vLLM backend option, cross-harness session resume) |
 
+**New to Airlock?** [`tools/airlock-manual/index.html`](tools/airlock-manual/index.html) is a beginner-friendly, illustrated version of this README — plain-English definitions, an animated architecture diagram, every command with a runnable snippet and a real use case, and a deep dive into the memory service's RAG pipeline. Open it directly in a browser, no build step.
+
 #### Configuring Agent CLIs
 
 New to one of these tools, or want the full walkthrough with verified commands and troubleshooting for each? See [`docs/08-Agent-CLI-Setup-Guide.md`](docs/08-Agent-CLI-Setup-Guide.md) — this section is the condensed reference version.

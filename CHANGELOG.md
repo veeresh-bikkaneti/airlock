@@ -11,6 +11,10 @@ Still pending, in order:
 
 Housekeeping, no version bump: resolve the `headroom.EXE` install-state discrepancy (said uninstalled, binary still on disk — unresolved), review the remaining `docs/bugs/` files for redundancy against the ADRs/CHANGELOG that now supersede parts of them.
 
+## Interactive user manual — 2026-08-15
+
+- **Added `tools/airlock-manual/index.html`** — a self-contained, illustrated companion to the README, in the same standalone single-file pattern as `tools/3d-system-visualizer/`. No build step, no server: open it directly in a browser. Covers plain-English definitions for readers new to CLIs entirely, an animated CSS-3D architecture diagram, every `ai-*` command with a runnable snippet and a real use case, and a deep dive into the memory service's RAG pipeline (an animated request-flow diagram with the real vLLM degraded-path branch, a swimlane across every component, and an ER diagram of the two separate, unjoined stores it actually uses). Every animated control and the glossary flip-cards were exercised in a real headless browser (`browse`, DOM-state assertions on status text and token position, not just a visual read) before this landed. Linked from `README.md` and `docs/00-Artifact-Index.md`.
+
 ## 0.3.0 / 0.4.0 — 2026-08-13
 
 - **Task router & cloud-limit handoff policy.** `ai-route`: a one-line, explainable answer to "should this task go local or cloud" before you find out the hard way — advisory only, never auto-switches anything. `ai-handoff` extends the existing session-resume snapshot (ADR-004) with the route decision, without touching its canonical fields. See [`ADR-006`](docs/adr/ADR-006-task-router-and-handoff-policy.md).
