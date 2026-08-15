@@ -60,6 +60,21 @@
   .snapshot-note{ margin-top:26px; padding:14px 16px; border:1px solid var(--line); border-left:3px solid var(--amber); background:var(--bg-raised); font-size:.86rem; color:var(--ink-soft); max-width:60ch; border-radius:var(--radius); }
   .snapshot-note b{ color:var(--ink); }
 
+  /* ---- table of contents ---- */
+  .toc{ margin-top:34px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg-raised); max-width:74ch; overflow:hidden; }
+  .toc-title{ padding:13px 20px; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--line); }
+  .toc-item{ display:flex; gap:16px; align-items:baseline; padding:13px 20px; text-decoration:none; color:var(--ink); border-bottom:1px solid var(--line); }
+  .toc-item:last-child{ border-bottom:none; }
+  .toc-item:hover{ background:var(--bg); }
+  .toc-item:hover .toc-name{ color:var(--teal); }
+  .toc-num{ color:var(--amber); font-size:.85rem; flex:none; width:1.4em; }
+  .toc-item .toc-name{ font-weight:700; font-size:.92rem; flex:none; width:15ch; }
+  .toc-item .toc-desc{ color:var(--ink-soft); font-size:.85rem; }
+  @media (max-width:640px){
+    .toc-item{ flex-wrap:wrap; }
+    .toc-item .toc-name{ width:auto; }
+  }
+
   /* ---- sections ---- */
   section{ padding:56px 0; border-bottom:1px solid var(--line); }
   section.deep{ background:var(--bg-raised); }
@@ -175,7 +190,9 @@
     <a href="#basics">start here</a>
     <a href="#glossary">glossary</a>
     <a href="#architecture">architecture</a>
+    <a href="#scaling">cloud keys</a>
     <a href="#commands">commands</a>
+    <a href="#visualizer">3D visualizer</a>
     <a href="#rag">memory service</a>
     <a href="#swimlane">request lifecycle</a>
     <a href="#er">storage</a>
@@ -190,6 +207,19 @@
     <div class="snapshot-note">
       <b>This page lives in the repo, at <code>tools/airlock-manual/index.html</code>.</b> It's a companion to <code>README.md</code>, not a replacement for it — README stays the terse reference; this page is the long-form, illustrated version for a reader who wants definitions and pictures alongside the commands. If the two ever disagree, that's a bug worth filing, not an accepted gap.
     </div>
+
+    <nav class="toc" aria-label="Table of contents">
+      <div class="toc-title">On this page</div>
+      <a class="toc-item" href="#basics"><span class="toc-num">01</span><span class="toc-name">Start here</span><span class="toc-desc">What Airlock is, in plain English — no prior tooling knowledge assumed.</span></a>
+      <a class="toc-item" href="#glossary"><span class="toc-num">02</span><span class="toc-name">Glossary</span><span class="toc-desc">Flip-card definitions: CLI, port, model, embedding, RAG, and everything else used below.</span></a>
+      <a class="toc-item" href="#architecture"><span class="toc-num">03</span><span class="toc-name">Architecture</span><span class="toc-desc">The 5-layer stack, as an animated 3D diagram — terminal down to the gated cloud layer.</span></a>
+      <a class="toc-item" href="#scaling"><span class="toc-num">04</span><span class="toc-name">Cloud keys</span><span class="toc-desc">Adding an OpenRouter/OpenAI/Anthropic/Google key with <code>ai-auth-set</code> — and an honest map of what actually consumes it today.</span></a>
+      <a class="toc-item" href="#commands"><span class="toc-num">05</span><span class="toc-name">Commands</span><span class="toc-desc">Every <code>ai-*</code> command — snippet, real use case, and an animated diagram for the three deepest ones.</span></a>
+      <a class="toc-item" href="#visualizer"><span class="toc-num">06</span><span class="toc-name">3D visualizer</span><span class="toc-desc">Launching <code>tools/3d-system-visualizer</code> — the exact commands, and how to see this platform's own real activity in it.</span></a>
+      <a class="toc-item" href="#rag"><span class="toc-num">07</span><span class="toc-name">Memory service</span><span class="toc-desc">RAG, the vector database, and what's really LangChain vs. hand-rolled — a full request-path walkthrough.</span></a>
+      <a class="toc-item" href="#swimlane"><span class="toc-num">08</span><span class="toc-name">Request lifecycle</span><span class="toc-desc">The same request as a swimlane — who does each of the 15 steps, across every component.</span></a>
+      <a class="toc-item" href="#er"><span class="toc-num">09</span><span class="toc-name">Storage</span><span class="toc-desc">The two separate stores behind memory — different keys, different lifetimes, never joined.</span></a>
+    </nav>
   </div>
 </header>
 
@@ -318,9 +348,81 @@
   </div>
 </section>
 
-<section id="commands" class="deep">
+<section id="scaling" class="deep">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">04</span><h2>The commands</h2></div>
+    <div class="section-head"><span class="section-num">04</span><h2>Scaling beyond local: cloud provider keys</h2></div>
+    <p class="section-sub">Layer 5 from the diagram above, in practice. Local is the default because it's free and private, but sometimes you want a stronger model for one hard problem, or your own hardware just isn't enough. Here's exactly how to add a key, and — just as important — exactly what currently happens with it once you do.</p>
+
+    <h3>Adding a key</h3>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-auth-set openrouter sk-or-v1-xxxxxxxxxxxx
+<span class="comment"># supported names: openrouter, openai, anthropic, google, nvidia</span>
+<span class="prompt">PS&gt;</span> ai-policy   <span class="comment"># see which providers are configured</span></code></pre>
+    </div>
+    <p class="narrow"><code>ai-auth-set</code> writes to <code>~/.ai-platform/config/auth.json</code> — a file kept outside the repo and outside git entirely (it's in <code>.gitignore</code>). That's the one supported way to add a key: never hand-edit an environment variable for this, and never put a key in any tracked file.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd want this</span><p>You're deep into a large, multi-file refactor your local model keeps stumbling on, or your machine simply can't fit a model big enough for the task at hand. A cloud key is the escape hatch for that specific moment — not a replacement for local by default.</p></div>
+    </div>
+
+    <div class="analogy">
+      <span class="glyph">📡</span>
+      <div>
+        <span class="tag">What "scales" actually means here</span>
+        <p>This isn't autoscaling infrastructure — there's no fleet of servers spinning up. "Scaling" for a single-machine tool like this means one thing: swapping which model answers a given request, from a small one that fits on your GPU to a much larger one that runs on someone else's. Storing a key is step one of that swap. Whether a swap actually happens depends on which command you're using — covered honestly below, not glossed over.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px">What actually consumes a stored key today</h3>
+    <p class="narrow">Checked directly against the shipped code, not the design docs — the two disagree in places, and the code is what actually runs.</p>
+
+    <figure>
+      <div class="screen">
+        <svg viewBox="0 0 940 260" role="img" aria-label="Diagram showing that a key stored via ai-auth-set is not currently consumed by ai-code, which always uses the local backend; is only partially relevant to provider-policy.json's cloud fields, which today only choose between local Ollama and vLLM; and would be consumed by a proposed ai-claude-on cloud profile that is designed but not yet built.">
+          <defs>
+            <marker id="arrow-sc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="240" y1="130" x2="290" y2="50" marker-end="url(#arrow-sc)"/>
+            <line class="edge" x1="240" y1="130" x2="290" y2="130" marker-end="url(#arrow-sc)"/>
+            <line class="edge" x1="240" y1="130" x2="290" y2="210" marker-end="url(#arrow-sc)"/>
+          </g>
+
+          <rect class="node-box" x="20" y="90" width="220" height="80" rx="3" style="stroke:var(--teal-soft)"/>
+          <text class="node-text" x="130" y="122" text-anchor="middle" style="fill:var(--teal-soft);font-weight:700">auth.json</text>
+          <text class="node-text" x="130" y="140" text-anchor="middle" style="font-size:10.5px">key stored here</text>
+          <text class="node-text" x="130" y="155" text-anchor="middle" style="font-size:10.5px">via ai-auth-set</text>
+
+          <rect class="node-box" x="300" y="20" width="620" height="60" rx="3" style="stroke:var(--danger)"/>
+          <text class="node-text" x="320" y="42" style="fill:var(--danger);font-weight:700">ai-code (aider)  —  NOT WIRED</text>
+          <text class="node-text" x="320" y="60" style="font-size:10.5px;opacity:.8">always launches against your local backend — never reads this file</text>
+
+          <rect class="node-box" x="300" y="100" width="620" height="60" rx="3" style="stroke:var(--amber-soft)"/>
+          <text class="node-text" x="320" y="122" style="fill:var(--amber-soft);font-weight:700">provider-policy.json cloud fields  —  PARTIAL</text>
+          <text class="node-text" x="320" y="140" style="font-size:10.5px;opacity:.8">read by ai-start, but only to choose local Ollama vs. local vLLM — not real cloud routing</text>
+
+          <rect class="node-box" x="300" y="180" width="620" height="60" rx="3" style="stroke:var(--amber-soft);stroke-dasharray:4 4"/>
+          <text class="node-text" x="320" y="202" style="fill:var(--amber-soft);font-weight:700">ai-claude-on -Profile openrouter  —  PROPOSED</text>
+          <text class="node-text" x="320" y="220" style="font-size:10.5px;opacity:.8">designed in ADR-009 (status: Proposed) — not built yet, this is the path that would use it</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--teal-soft)"></i>live and working</span>
+        <span><i style="background:var(--amber-soft)"></i>partial or proposed, not full cloud routing yet</span>
+        <span><i style="background:var(--danger)"></i>not connected at all</span>
+      </div>
+      <figcaption>Storing a key today is real and safe — it just doesn't do anything on its own yet. Nothing shipped currently spends an OpenRouter/OpenAI/Anthropic/Google key to route a request; the one path designed to (Claude Code's multi-provider profile switch) is a proposal, not shipped code. Verified 2026-08-15 by reading <code>ai-code</code>, <code>Start-AI.ps1</code>, and <code>ADR-009</code> directly.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">05</span><h2>The commands</h2></div>
     <p class="section-sub">Every command below starts with <code>ai-</code>. Type it in your terminal and press Enter — that's the whole interface. Here's what each one does, exactly what to type, and a real situation where you'd reach for it.</p>
 
     <div class="cmd-grid">
@@ -569,9 +671,49 @@
   </div>
 </section>
 
+<section id="visualizer" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">06</span><h2>Launching the 3D system visualizer</h2></div>
+    <p class="section-sub">A second standalone tool in this repo, separate from the <code>ai-*</code> commands above: a 3D scene at <code>tools/3d-system-visualizer/index.html</code> that draws a system — services, data stores, and the edges between them — as an explorable node graph, with animated workflow playback: a glowing packet travels the actual call path, step by step.</p>
+
+    <div class="analogy">
+      <span class="glyph">🧊</span>
+      <div>
+        <span class="tag">How it's different from the diagrams on this page</span>
+        <p>Everything animated earlier on this page is a fixed, hand-drawn picture of one specific flow in Airlock's own code. The 3D visualizer is a general-purpose tool — point it at a <code>{nodes, edges, flows}</code> JSON file describing <i>any</i> system, including your own projects, and it draws and animates that instead. It ships with a demo scene, and a way to generate a scene from this platform's own real activity (below).</p>
+      </div>
+    </div>
+
+    <h3>Starting it</h3>
+    <p class="narrow">One real requirement: it loads Three.js from a CDN via an import map, which needs an actual HTTP origin — opening <code>index.html</code> straight from disk (<code>file://</code>) will fail to load. Serve it over a local HTTP server instead, from the repo root:</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> python -m http.server 8347 --directory tools/3d-system-visualizer
+<span class="comment"># or, if you have Node:</span>
+<span class="prompt">PS&gt;</span> npx serve tools/3d-system-visualizer</code></pre>
+    </div>
+    <p class="narrow">Then open <code>http://localhost:8347</code> and click a workflow button in the top-left panel to watch it animate through the graph. Click any box or connector for a metadata panel — nodes carry a <code>healthy</code>/<code>degraded</code>/<code>down</code> status that glows amber or red right in the scene, so a problem reads at a glance without clicking anything.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You want to explain your own system's architecture to someone — or to yourself, six months from now — as something explorable rather than a static diagram, including which call paths actually exist and which services depend on which.</p></div>
+    </div>
+
+    <h3 style="margin-top:40px">Seeing Airlock's own real activity, not just the demo</h3>
+    <p class="narrow"><code>Generate-LiveScene.ps1</code> reads this platform's own audit log (<code>~/.ai-platform/logs/&lt;date&gt;.jsonl</code>) and turns what actually happened — backend selections, model pulls, firewall guards, starts and stops — into a scene using the same schema, registered automatically so it shows up in the picker.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> .\tools\3d-system-visualizer\scenes\Generate-LiveScene.ps1
+<span class="comment"># then pick "local-ai-platform (live)" from the Scene dropdown in the browser,</span>
+<span class="comment"># or open http://localhost:8347/?scene=scenes/local-ai-platform-live.json directly</span></code></pre>
+    </div>
+    <p class="narrow">It's a snapshot, not a live stream — re-run it after a session to refresh with whatever happened since.</p>
+  </div>
+</section>
+
 <section id="rag">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">05</span><h2>The memory service, in depth: RAG, the vector database, LangChain, and LangGraph</h2></div>
+    <div class="section-head"><span class="section-num">07</span><h2>The memory service, in depth: RAG, the vector database, LangChain, and LangGraph</h2></div>
     <p class="section-sub">Airlock ships an optional component called <code>memory-service</code> — a small program that sits between your chat client and your local model. This is the one place in Airlock that does retrieval-augmented generation, using the pieces defined in the glossary above. Here's exactly how it works.</p>
 
     <div class="usecase">
@@ -667,7 +809,7 @@
 
 <section id="swimlane" class="deep">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">06</span><h2>The same request, as a swimlane</h2></div>
+    <div class="section-head"><span class="section-num">08</span><h2>The same request, as a swimlane</h2></div>
     <p class="section-sub">The flow above shows <i>what</i> happens. This shows <i>who</i> does each step — which piece of the system — for one real turn through the Ollama path.</p>
 
     <figure>
@@ -731,7 +873,7 @@
 
 <section id="er">
   <div class="wrap">
-    <div class="section-head"><span class="section-num">07</span><h2>Two stores, two keys, no shared row</h2></div>
+    <div class="section-head"><span class="section-num">09</span><h2>Two stores, two keys, no shared row</h2></div>
     <p class="section-sub">"Memory" sounds like one thing, but it's two separate stores here, each with its own key, and they are never joined in storage — only for a moment, at request time, by whatever you send in.</p>
 
     <figure>
