@@ -39,7 +39,7 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
 
 ## Pi.dev
 
-**What it is:** a lightweight, extensible coding assistant CLI.
+**What it is:** a lightweight, extensible coding assistant CLI with built-in read/bash/edit/write tools.
 
 **Setup:**
 
@@ -47,28 +47,55 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
    ```powershell
    Copy-Item config\pi-models.json.template "$env:USERPROFILE\.pi\agent\models.json"
    ```
-   If that file already exists, open it instead and merge in the `ollama-local` block from the template — don't overwrite a config you already have other providers in.
-2. Open the copied file and check the `ollama-local.baseUrl` value matches your port:
+   If that file already exists, open it instead and merge in the `ollama` block from the template — don't overwrite a config you already have other providers in.
+2. Open the copied file and check the provider's `baseUrl` matches your port. ⚠️ **The provider key is `ollama`, not `ollama-local`** — an earlier draft of this doc got that wrong:
    ```json
-   "ollama-local": {
+   "ollama": {
      "baseUrl": "http://127.0.0.1:12345/v1",
-     "api": "openai-completions",
-     "apiKey": "noop"
+     "apiKey": "ollama",
+     "api": "openai-completions"
    }
    ```
-3. Check the `models` array lists a model you've actually pulled (see step 3 above). The template ships with a few common picks (`qwen2.5-coder:7b`, `devstral-small-2:24b`, etc.) — if none of those are in your `ai-models` output, add the one you do have.
+3. **Check the port against what's actually running, every time — not just once.** Live-caught 2026-08-15: this config had `baseUrl` pointed at 11434, correct the last time someone checked, but `ai-start` had since started fresh on 12345 because nothing was already running to adopt. `pi -p "..."` failed with a plain `Connection error.` — no useful hint about why. Run `ai-port` and use that number.
+4. Check the `models` array lists a model you've actually pulled (`ollama list`). The template ships with a few common picks — if none are in your list, add the one you do have.
 
-**Verify it worked:**
+**Verify the connection:**
 
 ```powershell
-pi --provider ollama-local --model qwen2.5-coder:7b -p "Reply with exactly: OK"
+pi --provider ollama --model qwen2.5-coder:7b -p "Reply with exactly: OK"
 ```
 
-Tested live: this returned `OK`. (We tested with a tiny placeholder model that wasn't in the config's model list — pi printed a harmless warning, "Model not found for provider, using custom model id," and answered correctly anyway. If you see that same warning with your real model name, it means a typo — check the `models` array.)
+**Verify tool use separately — this is the part that actually matters for real work, and it does not behave the way you'd expect:**
+
+```powershell
+pi --provider ollama --model qwen2.5-coder:7b -p "Read cv.md and summarize it in 2 sentences."
+```
+
+**Tested live, 2026-08-15 — reproduced the same failure opencode has, on the same model:** tools are on by default in `-p` mode (confirmed by re-running with `--no-tools` and getting a different result), but instead of actually calling `read`, `qwen2.5-coder:7b` printed this as its entire response:
+
+```json
+{
+  "name": "read",
+  "arguments": {
+    "path": "cv.md"
+  }
+}
+```
+
+That's the tool call as raw text, never executed. Identical failure shape to `qwen2.5-coder:7b`'s transcript in the opencode section below. Two independent harnesses, same Ollama model, same symptom — this isn't a Pi bug or an opencode bug, it's the underlying Ollama OpenAI-compat tool-calling layer.
+
+**What actually works reliably: attach the file yourself instead of hoping the model asks for it.**
+
+```powershell
+pi --provider ollama --model qwen2.5-coder:7b -p "@cv.md" "Tell me in 2-3 sentences what role this person is targeting."
+```
+
+Tested live: clean, correct, specific answer — no hallucination, no drift. `@file` puts the content directly in context; the model never has to decide to call a tool at all. This is the same shape of fix as `ai-code`'s `--file` flag for aider (see below) — it's a real, general pattern for getting reliable results out of small local models, not specific to one tool.
 
 **Troubleshooting:**
-- Connection refused → Airlock isn't running, or the port doesn't match.
+- Connection refused / plain "Connection error." → the port in `models.json` doesn't match what's actually running. Run `ai-port`, not the template's default.
 - Model not found (from Ollama, not pi) → the model name in `models.json` isn't in `ai-models`. Pull it or pick one that's already local.
+- Model claims it can't read files even though tools are enabled → don't ask it to decide; attach the file yourself with `@filename`.
 
 ---
 

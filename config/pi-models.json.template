@@ -5,24 +5,27 @@
       "baseUrl": "http://localhost:12345/v1",
       "apiKey": "ollama",
       "api": "openai-completions",
-      "models": {
-        "devstral-small-2:24b": {
+      "models": [
+        {
+          "id": "devstral-small-2:24b",
           "name": "Devstral Small 2 (24B)",
           "reasoning": false,
-          "input": ["text", "code"],
+          "input": ["text"],
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
           "contextWindow": 32768,
           "maxTokens": 16384
         },
-        "qwen3-coder:30b": {
+        {
+          "id": "qwen3-coder:30b",
           "name": "Qwen3 Coder (30B)",
           "reasoning": false,
-          "input": ["text", "code"],
+          "input": ["text"],
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
           "contextWindow": 32768,
           "maxTokens": 16384
         },
-        "deepseek-r1:14b": {
+        {
+          "id": "deepseek-r1:14b",
           "name": "DeepSeek R1 (14B)",
           "reasoning": true,
           "input": ["text"],
@@ -30,15 +33,17 @@
           "contextWindow": 131072,
           "maxTokens": 32768
         },
-        "qwen2.5-coder:7b": {
+        {
+          "id": "qwen2.5-coder:7b",
           "name": "Qwen2.5 Coder (7B)",
           "reasoning": false,
-          "input": ["text", "code"],
+          "input": ["text"],
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
           "contextWindow": 32768,
           "maxTokens": 8192
         },
-        "qwen3:14b": {
+        {
+          "id": "qwen3:14b",
           "name": "Qwen3 (14B)",
           "reasoning": false,
           "input": ["text"],
@@ -46,35 +51,35 @@
           "contextWindow": 32768,
           "maxTokens": 8192
         }
-      }
+      ]
     },
     "openrouter": {
       "name": "OpenRouter (cloud)",
       "baseUrl": "https://openrouter.ai/api/v1",
       "apiKey": "$OPENROUTER_API_KEY",
       "api": "openai-completions",
-      "models": {}
+      "models": []
     },
     "openai": {
       "name": "OpenAI (cloud)",
       "baseUrl": "https://api.openai.com/v1",
       "apiKey": "$OPENAI_API_KEY",
       "api": "openai-completions",
-      "models": {}
+      "models": []
     },
     "anthropic": {
       "name": "Anthropic (cloud)",
       "baseUrl": "https://api.anthropic.com",
       "apiKey": "$ANTHROPIC_API_KEY",
       "api": "anthropic-messages",
-      "models": {}
+      "models": []
     },
     "google": {
       "name": "Google (cloud)",
       "baseUrl": "https://generativelanguage.googleapis.com",
       "apiKey": "$GOOGLE_API_KEY",
       "api": "google-generative-ai",
-      "models": {}
+      "models": []
     }
   },
   "defaultProvider": "ollama",
