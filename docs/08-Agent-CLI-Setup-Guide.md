@@ -93,7 +93,7 @@ Copy-Item config\opencode.json.template "$env:USERPROFILE\.config\opencode\openc
 
 **If you already have a global opencode config for other providers, use the project-scoped copy instead** — dropping the template into your global config will silently replace whatever you had there. This guide's live test used the project-scoped route for exactly that reason.
 
-The template already points `provider.ollama.options.baseURL` at `http://127.0.0.1:12345/v1` and defaults `model` to `ollama/devstral-small-2:24b`. Edit the model line if that's not what you have pulled.
+**Start the tool-call proxy first: `ai-tool-proxy-start`.** The template points `provider.ollama.options.baseURL` at `http://127.0.0.1:12347/v1` — the proxy's port, not Ollama's own `12345` — because opencode drives Ollama's free-form tool-calling path, which reproducibly fails on `qwen2.5-coder:7b`/`qwen3-coder:30b` (the tool call comes back as plain text instead of a real `tool_calls` response). The proxy fixes this; without it running, opencode will connect but tool-using requests will misbehave. See [`README.md`'s Tool-Call Proxy section](../README.md#tool-call-proxy). The template defaults `model` to `ollama/devstral-small-2:24b`. Edit the model line if that's not what you have pulled.
 
 **Verify it worked:**
 
@@ -101,11 +101,12 @@ The template already points `provider.ollama.options.baseURL` at `http://127.0.0
 opencode run "Reply with exactly: OK" --model ollama/qwen2.5-coder:7b
 ```
 
-Tested live: returned `OK`, with `opencode` reporting the model it used (`qwen2.5:0.5b` in our test run) right above the answer — a handy way to confirm you're actually talking to the model you think you are.
+Tested live: returned `OK`, with `opencode` reporting the model it used (`qwen2.5:0.5b` in our test run) right above the answer — a handy way to confirm you're actually talking to the model you think you are. Note this only proves the connection and plain-chat path; it doesn't declare any tools, so it doesn't exercise the tool-calling fix above — that needs a request with `tools` present (e.g. asking opencode to read or list a file).
 
 **Troubleshooting:**
 - `opencode` picks up the *global* config even when you meant project-scoped if you're not `cd`'d into the repo root when you run it.
 - `opencode models` lists every provider/model opencode currently sees — run it any time you're not sure your config was picked up.
+- Tool calls leaking into the chat response as raw JSON text → the tool-proxy isn't running, or the config still points at `12345` instead of `12347`. Run `ai-tool-proxy-status` to check.
 
 ---
 

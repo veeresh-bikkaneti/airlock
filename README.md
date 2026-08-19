@@ -110,9 +110,13 @@ curl http://127.0.0.1:12345/v1/responses -d '{"model":"<any model from ai-models
 
 A `404` means your Ollama predates these routes (upgrade, or stick to Pi.dev/opencode/jcode/aider below, which only need Chat Completions). A `200` means everything below applies. Every entry below was verified against the platform's actual running instance — a real prompt in, a real completion out — not just a matching HTTP shape.
 
+#### Tool-Call Proxy
+
+Some local models (`qwen2.5-coder:7b`, `qwen3-coder:30b`) reproducibly fail to emit a structured tool call through the free-form tool-calling path every OpenAI-compatible harness uses by default — the tool call comes back as plain text instead of landing in the API's `tool_calls` field. `ai-tool-proxy-start` runs a small local translation layer (`tool-proxy/`, port `12347` by default) that grammar-constrains Ollama's own `/api/chat` output so the model can't emit malformed output, then re-shapes the result into a real OpenAI `tool_calls` response. It's opt-in and only needed by harnesses that declare tools — `config/opencode.json.template` already points at it. Requests with no `tools` declared pass straight through unchanged.
+
 **Pi.dev** — copy `config/pi-models.json.template` to `%USERPROFILE%\.pi\agent\models.json` and confirm its `ollama.baseUrl` matches the platform's port (default `12345`; edit both if you change `ai-start -Port`).
 
-**opencode.ai** — copy `config/opencode.json.template` to `~/.config/opencode/opencode.json` for a global config, or to `opencode.json` in a project root for a project-scoped one. It already points `provider.ollama.options.baseURL` at `http://127.0.0.1:12345/v1` and sets `model` to `ollama/devstral-small-2:24b`. Run `opencode` from anywhere and it picks it up.
+**opencode.ai** — copy `config/opencode.json.template` to `~/.config/opencode/opencode.json` for a global config, or to `opencode.json` in a project root for a project-scoped one. It points `provider.ollama.options.baseURL` at the [tool-call proxy](#tool-call-proxy) (`http://127.0.0.1:12347/v1`, not Ollama's own `12345` — run `ai-tool-proxy-start` first) and sets `model` to `ollama/devstral-small-2:24b`. Run `opencode` from anywhere and it picks it up.
 
 **jcode** — no template file; the `--no-api-key`/`--auth` flags this section used to document don't exist in current jcode (verified against a real install, jcode v0.65.0). The real command:
   ```powershell
@@ -502,6 +506,9 @@ ai-code
 | `ai-memory-status` | Show memory service status (process, API health, firewall, routing) |
 | `ai-memory-on` | Route clients through memory service (retrieve → inject → forward) |
 | `ai-memory-off` | Revert clients to direct backend calls (disable memory routing) |
+| `ai-tool-proxy-start` | Start the tool-call proxy (fixes unreliable Ollama tool-calling for opencode/similar harnesses) |
+| `ai-tool-proxy-stop` | Stop the tool-call proxy |
+| `ai-tool-proxy-status` | Show tool-proxy status (process, API health, firewall) |
 
 ---
 
