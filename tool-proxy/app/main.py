@@ -35,6 +35,7 @@ from typing import Any
 
 import requests
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI(title="tool-proxy")
@@ -71,7 +72,7 @@ def ollama_base_url() -> str:
     try:
         state = json.loads(ACTIVE_PORT_FILE.read_text(encoding="utf-8"))
         port = int(state["port"])
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         port = FALLBACK_OLLAMA_PORT
     return f"http://127.0.0.1:{port}"
 
@@ -140,11 +141,17 @@ def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for m in messages:
         role = m.get("role")
         if role == "assistant" and m.get("tool_calls"):
-            call = m["tool_calls"][0]["function"]
-            try:
-                arguments = json.loads(call.get("arguments", "{}"))
-            except json.JSONDecodeError:
-                arguments = {}
+            call = m["tool_calls"][0].get("function", {})
+            raw_arguments = call.get("arguments", "{}")
+            if isinstance(raw_arguments, str):
+                try:
+                    arguments = json.loads(raw_arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+            else:
+                # Spec-violating but seen in the wild: some clients send the
+                # already-decoded object instead of a JSON-encoded string.
+                arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
             content = json.dumps(
                 {"action": "call_tool", "tool_name": call.get("name", ""), "tool_arguments": arguments}
             )
@@ -197,15 +204,26 @@ def health() -> dict[str, str]:
 
 @app.get("/v1/models")
 def models() -> Any:
-    resp = requests.get(f"{ollama_base_url()}/v1/models", timeout=10)
-    return JSONResponse(status_code=resp.status_code, content=resp.json())
+    try:
+        resp = requests.get(f"{ollama_base_url()}/v1/models", timeout=10)
+    except requests.exceptions.RequestException as exc:
+        return JSONResponse(status_code=502, content={"error": "upstream unreachable", "detail": str(exc)})
+    try:
+        content = resp.json()
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=502, content={"error": "upstream returned an unparseable body", "detail": resp.text}
+        )
+    return JSONResponse(status_code=resp.status_code, content=content)
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request) -> Any:
     body = await request.json()
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"error": "request body must be a JSON object"})
     model = body.get("model", "")
-    messages = list(body.get("messages", []))
+    messages = list(body.get("messages") or [])
     tools = body.get("tools")
     stream = bool(body.get("stream", False))
     base = ollama_base_url()
@@ -213,9 +231,12 @@ async def chat_completions(request: Request) -> Any:
     if not tools:
         # No tools declared - nothing for this proxy to fix. Forward as-is
         # to Ollama's own OpenAI-compat endpoint, streaming included.
-        upstream = requests.post(
-            f"{base}/v1/chat/completions", json=body, stream=stream, timeout=120
-        )
+        try:
+            upstream = await run_in_threadpool(
+                requests.post, f"{base}/v1/chat/completions", json=body, stream=stream, timeout=120
+            )
+        except requests.exceptions.RequestException as exc:
+            return JSONResponse(status_code=502, content={"error": "upstream unreachable", "detail": str(exc)})
         if stream:
             return StreamingResponse(
                 upstream.iter_content(chunk_size=None),
@@ -231,10 +252,31 @@ async def chat_completions(request: Request) -> Any:
         # Whether vLLM actually resolves tool calls reliably is unverified
         # here (Start-VLLM.ps1 doesn't currently pass --enable-auto-tool-choice)
         # - this just stops guaranteeing a failure, it isn't a fix for that.
-        upstream = requests.post(f"{base}/v1/chat/completions", json=body, timeout=120)
-        return JSONResponse(status_code=upstream.status_code, content=upstream.json())
+        try:
+            upstream = await run_in_threadpool(
+                requests.post, f"{base}/v1/chat/completions", json=body, stream=stream, timeout=120
+            )
+        except requests.exceptions.RequestException as exc:
+            return JSONResponse(status_code=502, content={"error": "upstream unreachable", "detail": str(exc)})
+        if stream:
+            return StreamingResponse(
+                upstream.iter_content(chunk_size=None),
+                status_code=upstream.status_code,
+                media_type=upstream.headers.get("content-type", "text/event-stream"),
+            )
+        try:
+            content = upstream.json()
+        except json.JSONDecodeError:
+            return JSONResponse(
+                status_code=502,
+                content={"error": "upstream returned an unparseable body", "detail": upstream.text},
+            )
+        return JSONResponse(status_code=upstream.status_code, content=content)
 
-    valid_tools = [t for t in tools if t.get("function", {}).get("name")]
+    valid_tools = [
+        t for t in tools
+        if isinstance(t, dict) and isinstance(t.get("function"), dict) and t["function"].get("name")
+    ]
     tool_names = [t["function"]["name"] for t in valid_tools]
     briefing = build_tool_briefing(valid_tools)
 
@@ -246,15 +288,24 @@ async def chat_completions(request: Request) -> Any:
         "messages": routed_messages,
         "format": build_router_schema(tool_names),
     }
-    upstream = requests.post(f"{base}/api/chat", json=ollama_payload, timeout=120)
+    try:
+        upstream = await run_in_threadpool(requests.post, f"{base}/api/chat", json=ollama_payload, timeout=120)
+    except requests.exceptions.RequestException as exc:
+        return JSONResponse(status_code=502, content={"error": "upstream unreachable", "detail": str(exc)})
     if not upstream.ok:
         return JSONResponse(
             status_code=502,
             content={"error": "upstream Ollama rejected the request", "detail": upstream.text},
         )
-    result = upstream.json()
+    try:
+        result = upstream.json()
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=502,
+            content={"error": "upstream Ollama returned an unparseable body", "detail": upstream.text},
+        )
 
-    raw_content = result.get("message", {}).get("content", "{}")
+    raw_content = (result.get("message") or {}).get("content") or "{}"
     try:
         decision = json.loads(raw_content)
     except json.JSONDecodeError:
@@ -262,10 +313,12 @@ async def chat_completions(request: Request) -> Any:
         # somehow isn't, surface the raw text rather than crashing the caller.
         decision = {"action": "respond", "response_text": raw_content}
 
+    prompt_tokens = result.get("prompt_eval_count") or 0
+    completion_tokens = result.get("eval_count") or 0
     usage = {
-        "prompt_tokens": result.get("prompt_eval_count", 0),
-        "completion_tokens": result.get("eval_count", 0),
-        "total_tokens": result.get("prompt_eval_count", 0) + result.get("eval_count", 0),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
     }
 
     if decision.get("action") == "call_tool" and decision.get("tool_name") in tool_names:
