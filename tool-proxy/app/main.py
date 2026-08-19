@@ -40,7 +40,21 @@ from fastapi.responses import JSONResponse, StreamingResponse
 app = FastAPI(title="tool-proxy")
 
 ACTIVE_PORT_FILE = Path(os.environ.get("USERPROFILE", "")) / ".ai-platform" / ".active-port.json"
+ACTIVE_PROVIDER_FILE = Path(os.environ.get("USERPROFILE", "")) / ".ai-platform" / "state" / "active-provider.json"
 FALLBACK_OLLAMA_PORT = 12345
+
+
+def active_provider() -> str:
+    """Which backend Start-AI.ps1/Start-VLLM.ps1 last selected ("ollama" or
+    "vllm"), read fresh on every request for the same reason as
+    ollama_base_url(). Defaults to "ollama" - the grammar-constrained /api/chat
+    path only exists there; vLLM has no equivalent route.
+    """
+    try:
+        state = json.loads(ACTIVE_PROVIDER_FILE.read_text(encoding="utf-8"))
+        return str(state.get("provider", "ollama"))
+    except (OSError, ValueError, KeyError):
+        return "ollama"
 
 
 def ollama_base_url() -> str:
@@ -96,6 +110,19 @@ def build_tool_briefing(tools: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def inject_tool_briefing(messages: list[dict[str, Any]], briefing: str) -> list[dict[str, Any]]:
+    """Merge the tool briefing into an existing leading system message rather
+    than prepending a second one. Ollama tolerates multiple system messages,
+    but smaller models can ignore or garble the second one - and it doubles
+    the system-prompt token count for no reason either way.
+    """
+    if messages and messages[0].get("role") == "system":
+        merged = dict(messages[0])
+        merged["content"] = f"{merged.get('content', '')}\n\n{briefing}"
+        return [merged] + messages[1:]
+    return [{"role": "system", "content": briefing}] + messages
+
+
 def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Fold OpenAI's tool-call/tool-result message shapes into plain
     role+content turns Ollama's native /api/chat always accepts.
@@ -141,6 +168,28 @@ def openai_chat_completion(model: str, message: dict[str, Any], finish_reason: s
     }
 
 
+def sse_chunk_response(model: str, message: dict[str, Any], finish_reason: str) -> StreamingResponse:
+    """Grammar-constrained decoding produces one short JSON object, not token-
+    by-token output, so there's nothing to genuinely stream. Emit the whole
+    result as a single SSE chunk instead - correct framing for SSE-expecting
+    clients (opencode, Pi.dev) without pretending to stream tokens that were
+    never generated incrementally in the first place.
+    """
+    chunk = {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [{"index": 0, "delta": message, "finish_reason": finish_reason}],
+    }
+
+    def emit():
+        yield f"data: {json.dumps(chunk)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(emit(), media_type="text/event-stream")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "upstream": ollama_base_url()}
@@ -175,10 +224,21 @@ async def chat_completions(request: Request) -> Any:
             )
         return JSONResponse(status_code=upstream.status_code, content=upstream.json())
 
-    tool_names = [t.get("function", {}).get("name", "") for t in tools]
-    briefing = build_tool_briefing(tools)
+    if active_provider() == "vllm":
+        # vLLM has no /api/chat route and no `format` grammar parameter - the
+        # Ollama-only path below would always 502. Pass the request straight
+        # through to vLLM's own OpenAI-compatible tool-calling instead.
+        # Whether vLLM actually resolves tool calls reliably is unverified
+        # here (Start-VLLM.ps1 doesn't currently pass --enable-auto-tool-choice)
+        # - this just stops guaranteeing a failure, it isn't a fix for that.
+        upstream = requests.post(f"{base}/v1/chat/completions", json=body, timeout=120)
+        return JSONResponse(status_code=upstream.status_code, content=upstream.json())
 
-    routed_messages = [{"role": "system", "content": briefing}] + normalize_messages(messages)
+    valid_tools = [t for t in tools if t.get("function", {}).get("name")]
+    tool_names = [t["function"]["name"] for t in valid_tools]
+    briefing = build_tool_briefing(valid_tools)
+
+    routed_messages = inject_tool_briefing(normalize_messages(messages), briefing)
 
     ollama_payload = {
         "model": model,
@@ -228,4 +288,6 @@ async def chat_completions(request: Request) -> Any:
         message = {"role": "assistant", "content": decision.get("response_text", "")}
         finish_reason = "stop"
 
+    if stream:
+        return sse_chunk_response(model, message, finish_reason)
     return JSONResponse(content=openai_chat_completion(model, message, finish_reason, usage))

@@ -31,13 +31,17 @@ A sandboxed AI agent that helps you apply for jobs using the [career-ops](https:
 ## Quick Start
 
 ```powershell
-# 1. Make sure Ollama is running
-ollama serve
+# 1. Make sure Airlock's Ollama is running
+ai-start
 
 # 2. Pull at least one model (if you haven't already)
 ollama pull devstral-small-2:24b
 
-# 3. Launch Hermes
+# 3. (recommended) Start the tool-call proxy - fixes unreliable tool-calling
+#    on small models. Without it, tool calls may come back as plain text.
+ai-tool-proxy-start
+
+# 4. Launch Hermes
 cd C:\path\to\local-ai-setup\hermes-container
 .\run-hermes.ps1
 
@@ -79,7 +83,9 @@ cd C:\path\to\local-ai-setup\hermes-container
 
 **"Docker is not running"** — Start Docker Desktop from the Start menu.
 
-**"Ollama is not running"** — Run `ollama serve` in a terminal.
+**"Ollama is not running"** — Run `ai-start` in a terminal (not `ollama serve` — Airlock's own `ollama` wrapper blocks that command and tells you the same thing).
+
+**Tool calls coming back as plain text instead of working** — the tool-call proxy isn't running. Run `ai-tool-proxy-start` and restart Hermes.
 
 **"Model not found"** — Pull it first: `ollama pull <model-name>`.
 

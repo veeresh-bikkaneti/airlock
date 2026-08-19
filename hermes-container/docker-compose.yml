@@ -13,9 +13,12 @@ services:
       - ${CAREER_OPS_REPO:-./career-ops}:/workspace:ro
       - hermes-output:/workspace/output
     environment:
-      - OLLAMA_HOST=host.docker.internal:11434
+      # Airlock's own default is 12345, not Ollama's own default of 11434 -
+      # run-hermes.ps1 sets these from the live port state before invoking
+      # docker compose, falling back to Airlock's default if unset.
+      - OLLAMA_HOST=host.docker.internal:${AIRLOCK_OLLAMA_PORT:-12345}
       - OPENAI_API_KEY=ollama
-      - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+      - OPENAI_BASE_URL=http://host.docker.internal:${AIRLOCK_OPENAI_PORT:-12345}/v1
       - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY:-}
       - NODE_ENV=production
     extra_hosts:
