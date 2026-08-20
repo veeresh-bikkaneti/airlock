@@ -71,7 +71,7 @@ def test_tool_call_decision_becomes_openai_tool_calls(client, monkeypatch):
 
     def fake_post(url, json=None, timeout=None):
         assert url.endswith("/api/chat")
-        assert json["format"]["properties"]["tool_name"]["enum"] == ["list_files"]
+        assert json["format"]["properties"]["tool_calls"]["items"]["properties"]["tool_name"]["enum"] == ["list_files"]
         return FakeResponse(
             json_body={
                 "message": {"content": decision_content},
@@ -169,7 +169,10 @@ def test_normalize_messages_folds_tool_round_trip():
 
     assert normalized[0] == {"role": "user", "content": "list files"}
     assistant_turn = json.loads(normalized[1]["content"])
-    assert assistant_turn == {"action": "call_tool", "tool_name": "list_files", "tool_arguments": {"path": "."}}
+    assert assistant_turn == {
+        "action": "call_tool",
+        "tool_calls": [{"tool_name": "list_files", "tool_arguments": {"path": "."}}],
+    }
     assert normalized[2]["role"] == "user"
     assert "a.txt, b.txt" in normalized[2]["content"]
 
@@ -305,7 +308,7 @@ def test_malformed_tool_def_excluded_from_router_enum(client, monkeypatch):
         json={"model": "test", "messages": [{"role": "user", "content": "hi"}], "tools": broken_and_good_tools},
     )
 
-    assert captured["format"]["properties"]["tool_name"]["enum"] == ["good_tool"]
+    assert captured["format"]["properties"]["tool_calls"]["items"]["properties"]["tool_name"]["enum"] == ["good_tool"]
 
 
 # --- BUG-6: vLLM backend should bypass the Ollama-only grammar path ---
@@ -493,11 +496,10 @@ def test_second_turn_echoes_prior_router_json_without_double_encoding(client, mo
     assert assistant_turns[0]["content"] == prior_router_json
 
 
-def test_multiple_tool_calls_in_one_assistant_turn_only_first_is_kept(client, monkeypatch):
-    """Documents a real limitation: normalize_messages only folds
-    tool_calls[0] into history. If a harness ever sends multiple tool calls
-    in one assistant turn, every call after the first is silently dropped
-    from what the model sees on the next turn.
+def test_multiple_tool_calls_in_one_assistant_turn_are_all_preserved():
+    """PROXY-002 fix: every tool call from one assistant turn survives into
+    the next turn's echoed history (not just the first), and each tool
+    result is attributed to the right call via tool_call_id.
     """
     messages = [
         {"role": "user", "content": "list files then check disk space"},
@@ -509,12 +511,63 @@ def test_multiple_tool_calls_in_one_assistant_turn_only_first_is_kept(client, mo
                 {"id": "call_2", "type": "function", "function": {"name": "disk_space", "arguments": "{}"}},
             ],
         },
+        {"role": "tool", "tool_call_id": "call_1", "content": "a.txt, b.txt"},
+        {"role": "tool", "tool_call_id": "call_2", "content": "80% used"},
     ]
 
     normalized = normalize_messages(messages)
 
     assistant_turn = json.loads(normalized[1]["content"])
-    assert assistant_turn["tool_name"] == "list_files"
+    assert [c["tool_name"] for c in assistant_turn["tool_calls"]] == ["list_files", "disk_space"]
+
+    assert "list_files" in normalized[2]["content"] and "a.txt, b.txt" in normalized[2]["content"]
+    assert "disk_space" in normalized[3]["content"] and "80% used" in normalized[3]["content"]
+
+
+def test_multiple_tool_calls_from_ollama_become_multiple_openai_tool_calls(client, monkeypatch):
+    """End-to-end PROXY-002 check: a router decision naming several tools in
+    one turn becomes a multi-entry OpenAI tool_calls array, not just the
+    first call.
+    """
+    decision_content = json.dumps({
+        "action": "call_tool",
+        "tool_calls": [
+            {"tool_name": "list_files", "tool_arguments": {"path": "."}},
+            {"tool_name": "disk_space", "tool_arguments": {}},
+        ],
+    })
+
+    def fake_post(url, json=None, timeout=None):
+        return FakeResponse(
+            json_body={"message": {"content": decision_content}, "prompt_eval_count": 4, "eval_count": 6}
+        )
+
+    monkeypatch.setattr("app.main.requests.post", fake_post)
+
+    tools = TOOLS + [
+        {
+            "type": "function",
+            "function": {
+                "name": "disk_space",
+                "description": "Check disk space",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen2.5-coder:7b",
+            "messages": [{"role": "user", "content": "list files then check disk"}],
+            "tools": tools,
+        },
+    )
+
+    body = resp.json()
+    calls = body["choices"][0]["message"]["tool_calls"]
+    assert [c["function"]["name"] for c in calls] == ["list_files", "disk_space"]
+    assert body["choices"][0]["finish_reason"] == "tool_calls"
 
 
 # --- adversarial review findings: malformed client input crashed the proxy
