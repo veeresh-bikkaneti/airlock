@@ -78,16 +78,53 @@ def ollama_base_url() -> str:
 
 
 def build_router_schema(tool_names: list[str]) -> dict[str, Any]:
+    # PROXY-002 fix: tool_calls is an array so the model can request several
+    # tools in one turn instead of being grammar-constrained to exactly one.
     return {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["call_tool", "respond"]},
-            "tool_name": {"type": "string", "enum": tool_names},
-            "tool_arguments": {"type": "object"},
+            "tool_calls": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string", "enum": tool_names},
+                        "tool_arguments": {"type": "object"},
+                    },
+                    "required": ["tool_name", "tool_arguments"],
+                },
+            },
             "response_text": {"type": "string"},
         },
         "required": ["action"],
     }
+
+
+def _extract_tool_calls(decision: dict[str, Any], tool_names: list[str]) -> list[dict[str, Any]]:
+    """Read the array-shaped `tool_calls` field the current router schema
+    asks for. Also accepts the pre-PROXY-002-fix singular `tool_name`/
+    `tool_arguments` pair, since a second-turn request can echo router JSON
+    an earlier proxy version produced (see normalize_messages' passthrough
+    of prior assistant content) - that older shape must still parse.
+    """
+    raw_calls = decision.get("tool_calls")
+    if not isinstance(raw_calls, list) or not raw_calls:
+        legacy_name = decision.get("tool_name")
+        if legacy_name in tool_names:
+            raw_calls = [{"tool_name": legacy_name, "tool_arguments": decision.get("tool_arguments", {})}]
+        else:
+            raw_calls = []
+    calls = []
+    for rc in raw_calls:
+        if not isinstance(rc, dict):
+            continue
+        name = rc.get("tool_name")
+        if name not in tool_names:
+            continue
+        arguments = rc.get("tool_arguments")
+        calls.append({"tool_name": name, "tool_arguments": arguments if isinstance(arguments, dict) else {}})
+    return calls
 
 
 def build_tool_briefing(tools: list[dict[str, Any]]) -> str:
@@ -138,26 +175,43 @@ def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tool-message schema at all.
     """
     normalized: list[dict[str, Any]] = []
+    # PROXY-002 fix: track every call_id -> tool_name seen from an assistant
+    # turn so a later `role: "tool"` result can say *which* call it answers,
+    # not just echo an unlabeled result no one can attribute when several
+    # calls were in flight from the same turn.
+    call_names: dict[str, str] = {}
     for m in messages:
         role = m.get("role")
         if role == "assistant" and m.get("tool_calls"):
-            call = m["tool_calls"][0].get("function", {})
-            raw_arguments = call.get("arguments", "{}")
-            if isinstance(raw_arguments, str):
-                try:
-                    arguments = json.loads(raw_arguments)
-                except json.JSONDecodeError:
-                    arguments = {}
-            else:
-                # Spec-violating but seen in the wild: some clients send the
-                # already-decoded object instead of a JSON-encoded string.
-                arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
-            content = json.dumps(
-                {"action": "call_tool", "tool_name": call.get("name", ""), "tool_arguments": arguments}
-            )
+            calls = []
+            for tc in m["tool_calls"]:
+                if not isinstance(tc, dict):
+                    continue
+                fn = tc.get("function", {})
+                if not isinstance(fn, dict):
+                    fn = {}
+                raw_arguments = fn.get("arguments", "{}")
+                if isinstance(raw_arguments, str):
+                    try:
+                        arguments = json.loads(raw_arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                else:
+                    # Spec-violating but seen in the wild: some clients send the
+                    # already-decoded object instead of a JSON-encoded string.
+                    arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
+                name = fn.get("name", "")
+                call_id = tc.get("id")
+                if call_id:
+                    call_names[call_id] = name
+                calls.append({"tool_name": name, "tool_arguments": arguments})
+            content = json.dumps({"action": "call_tool", "tool_calls": calls})
             normalized.append({"role": "assistant", "content": content})
         elif role == "tool":
-            normalized.append({"role": "user", "content": f"Tool result: {m.get('content', '')}"})
+            call_id = m.get("tool_call_id")
+            name = call_names.get(call_id, "") if call_id else ""
+            label = f"{name} ({call_id})" if name else (call_id or "unknown call")
+            normalized.append({"role": "user", "content": f"Tool result for {label}: {m.get('content', '')}"})
         else:
             normalized.append({"role": role, "content": m.get("content", "")})
     return normalized
@@ -326,7 +380,8 @@ async def chat_completions(request: Request) -> Any:
         "total_tokens": prompt_tokens + completion_tokens,
     }
 
-    if decision.get("action") == "call_tool" and decision.get("tool_name") in tool_names:
+    calls = _extract_tool_calls(decision, tool_names) if decision.get("action") == "call_tool" else []
+    if calls:
         message = {
             "role": "assistant",
             "content": None,
@@ -334,11 +389,9 @@ async def chat_completions(request: Request) -> Any:
                 {
                     "id": f"call_{uuid.uuid4().hex[:12]}",
                     "type": "function",
-                    "function": {
-                        "name": decision["tool_name"],
-                        "arguments": json.dumps(decision.get("tool_arguments", {})),
-                    },
+                    "function": {"name": c["tool_name"], "arguments": json.dumps(c["tool_arguments"])},
                 }
+                for c in calls
             ],
         }
         finish_reason = "tool_calls"

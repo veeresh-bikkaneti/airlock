@@ -16,6 +16,14 @@ desktop.ini
 *.active-port.json
 active-provider.json
 
+# ADR-012 generated/user-local state (capability-registry.json, active-agent.json,
+# jobs/) - config/ stays tracked as source-controlled policy, state/ never does.
+state/
+
+# metaharness-darwin evolve output (archive/lineage/variants/runs/reports) - local
+# exploration artifacts, not product content.
+.metaharness/
+
 # Cross-harness session snapshot (personal/ephemeral, may include conversation
 # content - DO NOT COMMIT). RESUME_NOTE.md is static guidance and stays tracked.
 # Matched with ** since the hook that writes this snapshots relative to whatever
