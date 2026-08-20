@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "profileId": "ollama-gemma4-12b",
+      "displayName": "Gemma 4 12B via Ollama",
+      "runtime": "ollama",
+      "transportCandidates": ["ollama-native", "ollama-openai-direct", "ollama-openai-proxy"],
+      "modelRef": "gemma4:12b",
+      "acquisition": { "kind": "ollama-pull", "requiresConfirmation": true },
+      "initialContext": 8192,
+      "minimumFreeVramGiB": 10,
+      "toolSurface": "lean",
+      "candidateOnly": true
+    },
+    {
+      "profileId": "llamacpp-qwen38-ud-q3-k-xl",
+      "displayName": "Qwen3.8 27B UD-Q3_K_XL via llama.cpp",
+      "runtime": "llama-server",
+      "transportCandidates": ["openai-direct"],
+      "modelRef": "unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL",
+      "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
+      "initialContext": 8192,
+      "minimumFreeVramGiB": 14,
+      "runtimeArgs": ["--jinja", "--flash-attn", "--n-gpu-layers", "all"],
+      "toolSurface": "lean",
+      "candidateOnly": true
+    }
+  ]
+}

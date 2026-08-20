@@ -115,3 +115,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All Invoke-HarnessConfigTransaction checks passed" -ForegroundColor Green
+exit 0
