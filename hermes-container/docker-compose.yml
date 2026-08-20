@@ -13,12 +13,18 @@ services:
       - ${CAREER_OPS_REPO:-./career-ops}:/workspace:ro
       - hermes-output:/workspace/output
     environment:
-      # Airlock's own default is 12345, not Ollama's own default of 11434 -
-      # run-hermes.ps1 sets these from the live port state before invoking
-      # docker compose, falling back to Airlock's default if unset.
+      # ADR-012 §8.2: run-hermes.ps1 sets these from the active-agent
+      # certificate (scripts/agent-state-helpers.ps1's
+      # Resolve-AirlockCertificateValidity), not an independent port probe
+      # - the 12345 fallback only applies to a standalone `docker compose`
+      # invocation that bypasses run-hermes.ps1 entirely.
       - OLLAMA_HOST=host.docker.internal:${AIRLOCK_OLLAMA_PORT:-12345}
       - OPENAI_API_KEY=ollama
       - OPENAI_BASE_URL=http://host.docker.internal:${AIRLOCK_OPENAI_PORT:-12345}/v1
+      # Model/profile the certificate proved capable - entrypoint.sh uses
+      # these instead of the container's own hardcoded default.
+      - AIRLOCK_MODEL=${AIRLOCK_MODEL:-devstral-small-2:24b}
+      - AIRLOCK_PROFILE_ID=${AIRLOCK_PROFILE_ID:-}
       - NVIDIA_NIM_API_KEY=${NVIDIA_NIM_API_KEY:-}
       - NODE_ENV=production
     extra_hosts:

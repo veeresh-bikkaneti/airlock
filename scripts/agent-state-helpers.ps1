@@ -152,3 +152,45 @@ function Publish-AirlockActiveAgentCertificate {
     Write-AirlockAtomicJson -Path $CertificatePath -Data $Certificate
     return [pscustomobject]@{ Published = $true; Reason = "Contract passed - certificate atomically replaced." }
 }
+
+# ADR §8.2: a harness wrapper consuming a certificate (run-hermes.ps1 and
+# any future consumer) must refuse to launch against a missing, expired,
+# or harness-incompatible certificate rather than independently choosing
+# a port/endpoint/model of its own. Pure: given the parsed certificate (or
+# $null if none was on disk) and the current time, decide validity with a
+# reason - no file I/O, no process checks, so it's testable without a real
+# active-agent.json.
+function Resolve-AirlockCertificateValidity {
+    param(
+        $Certificate,
+        [Parameter(Mandatory)][DateTime]$Now,
+        [Parameter(Mandatory)][string[]]$CompatibleHarnesses
+    )
+    if ($null -eq $Certificate) {
+        return [pscustomobject]@{ Valid = $false; Reason = "missing"; Detail = "No active-agent certificate found." }
+    }
+
+    # ConvertFrom-Json can hand back expiresAt as either a string or an
+    # already-reparsed [DateTime] (see New-AirlockLock's comment on the
+    # same quirk) - handle both rather than assuming one shape.
+    $expiresAt = $null
+    if ($Certificate.expiresAt) {
+        if ($Certificate.expiresAt -is [DateTime]) {
+            $expiresAt = $Certificate.expiresAt.ToUniversalTime()
+        } else {
+            try {
+                $expiresAt = [DateTime]::Parse([string]$Certificate.expiresAt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            } catch { }
+        }
+    }
+    if (-not $expiresAt) {
+        return [pscustomobject]@{ Valid = $false; Reason = "missing"; Detail = "Certificate has no valid expiresAt timestamp." }
+    }
+    if ($expiresAt -lt $Now) {
+        return [pscustomobject]@{ Valid = $false; Reason = "expired"; Detail = "Certificate expired at $($Certificate.expiresAt) (now $($Now.ToString('o')))." }
+    }
+    if ($Certificate.harness -notin $CompatibleHarnesses) {
+        return [pscustomobject]@{ Valid = $false; Reason = "incompatible_harness"; Detail = "Certificate harness '$($Certificate.harness)' is not compatible (expected one of: $($CompatibleHarnesses -join ', '))." }
+    }
+    return [pscustomobject]@{ Valid = $true; Reason = "valid"; Detail = "Certificate is valid and compatible." }
+}
