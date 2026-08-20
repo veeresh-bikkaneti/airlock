@@ -30,6 +30,14 @@ if (Test-Path "$RepoDir\memory-service") {
     Write-Host "  Memory service deployed (opt-in — run ai-memory-start to use it)" -ForegroundColor Green
 }
 
+# Tool-call proxy (opt-in): same pattern as memory service above.
+if (Test-Path "$RepoDir\tool-proxy") {
+    New-Item -Path "$PlatformDir\tool-proxy\app" -ItemType Directory -Force | Out-Null
+    Copy-Item "$RepoDir\tool-proxy\app\*" "$PlatformDir\tool-proxy\app\" -Recurse -Force
+    Copy-Item "$RepoDir\tool-proxy\requirements.txt" "$PlatformDir\tool-proxy\requirements.txt" -Force
+    Write-Host "  Tool-call proxy deployed (opt-in — run ai-tool-proxy-start to use it)" -ForegroundColor Green
+}
+
 # Config: copy templates without clobbering anything the user has already filled in,
 # unless -Force is passed. models.json and policy files are not secrets, always refresh those.
 Copy-Item "$RepoDir\config\models.json" "$PlatformDir\config\models.json" -Force
