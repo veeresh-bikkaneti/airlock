@@ -57,3 +57,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All Invoke-OpenCodeCapabilityContract checks passed" -ForegroundColor Green
+exit 0

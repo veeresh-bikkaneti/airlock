@@ -92,3 +92,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All Invoke-WorkspaceContract checks passed" -ForegroundColor Green
+exit 0

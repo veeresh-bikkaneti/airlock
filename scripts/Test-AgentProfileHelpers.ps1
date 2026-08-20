@@ -90,3 +90,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All agent-profile-helpers checks passed" -ForegroundColor Green
+exit 0

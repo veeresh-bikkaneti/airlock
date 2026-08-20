@@ -54,3 +54,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All Start-AgentSession checks passed" -ForegroundColor Green
+exit 0

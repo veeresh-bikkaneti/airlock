@@ -61,3 +61,4 @@ if ($failures -gt 0) {
 }
 Write-Host ""
 Write-Host "All ollama adapter checks passed" -ForegroundColor Green
+exit 0
