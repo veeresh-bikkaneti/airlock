@@ -1,26 +1,26 @@
 # Hermes Agent Container
 
-A sandboxed AI agent that helps you apply for jobs using the [career-ops](https://github.com/your-org/career-ops) platform. Your personal files stay private — Hermes only sees your career-ops repo.
+A sandboxed AI agent that helps you apply for jobs using the [career-ops](https://github.com/your-org/career-ops) platform. Your personal files stay private: Hermes only sees your career-ops repo.
 
-> **Not yet live-tested.** Unlike the agent CLIs in [`docs/08-Agent-CLI-Setup-Guide.md`](../docs/08-Agent-CLI-Setup-Guide.md) (each verified with a real round trip against a running Airlock instance), this container hasn't been built and run end-to-end as part of that testing pass. Everything below is the documented/intended behavior, not confirmed behavior — treat it as such until someone actually runs `run-hermes.ps1` against a live Docker Desktop and checks the security guarantees hold. TODO: test this.
+> **Not yet live-tested.** Unlike the agent CLIs in [`docs/08-Agent-CLI-Setup-Guide.md`](../docs/08-Agent-CLI-Setup-Guide.md) (each verified with a real round trip against a running Airlock instance), this container hasn't been built and run end-to-end as part of that testing pass. Everything below is the documented/intended behavior, not confirmed behavior. Treat it as such until someone actually runs `run-hermes.ps1` against a live Docker Desktop and checks the security guarantees hold. TODO: test this.
 
 ## What this does
 
-- Runs **pi.dev Hermes agent** inside a locked-down Docker container
-- Uses your **local Ollama models** (devstral-small-2, qwen3-coder, deepseek-r1, etc.)
-- Optionally uses **NVIDIA NIM** cloud models for heavier tasks
-- **Read-only** access to your career-ops repo
-- Output generated to a Docker volume (not mixed with your source files)
+- Runs the pi.dev Hermes agent inside a locked-down Docker container
+- Uses your local Ollama models (devstral-small-2, qwen3-coder, deepseek-r1, etc.)
+- Optionally uses NVIDIA NIM cloud models for heavier tasks
+- Gets read-only access to your career-ops repo
+- Writes output to a Docker volume, not mixed with your source files
 
 ## Security guarantees
 
 | What | Access |
 |---|---|
-| Your Desktop, Documents, Photos | **None** — container can't reach them |
-| Career-ops repo | **Read-only** — can't modify your source |
-| Generated output | Write to **Docker volume only** — you choose when to extract |
-| Other containers / host processes | **Blocked** by network policy |
-| System privileges | **All capabilities dropped** |
+| Your Desktop, Documents, Photos | None (container can't reach them) |
+| Career-ops repo | Read-only, can't modify your source |
+| Generated output | Docker volume only, you choose when to extract |
+| Other containers / host processes | Blocked by network policy |
+| System privileges | All capabilities dropped |
 
 ## Prerequisites
 
@@ -81,17 +81,17 @@ cd C:\path\to\local-ai-setup\hermes-container
 
 ## Troubleshooting
 
-**"Docker is not running"** — Start Docker Desktop from the Start menu.
+**"Docker is not running"**: start Docker Desktop from the Start menu.
 
-**"Ollama is not running"** — Run `ai-start` in a terminal (not `ollama serve` — Airlock's own `ollama` wrapper blocks that command and tells you the same thing).
+**"Ollama is not running"**: run `ai-start` in a terminal, not `ollama serve` (Airlock's own `ollama` wrapper blocks that command and tells you the same thing).
 
-**Tool calls coming back as plain text instead of working** — the tool-call proxy isn't running. Run `ai-tool-proxy-start` and restart Hermes.
+**Tool calls coming back as plain text instead of working**: the tool-call proxy isn't running. Run `ai-tool-proxy-start` and restart Hermes.
 
-**"Model not found"** — Pull it first: `ollama pull <model-name>`.
+**"Model not found"**: pull it first with `ollama pull <model-name>`.
 
-**"Permission denied" errors from docker** — The container runs with dropped capabilities and read-only filesystem. This is intentional.
+**"Permission denied" errors from docker**: the container runs with dropped capabilities and a read-only filesystem. That's intentional.
 
-**Output files not appearing** — Run `.\stop-hermes.ps1` to extract output to your repo.
+**Output files not appearing**: run `.\stop-hermes.ps1` to extract output to your repo.
 
 ## Files
 
