@@ -65,6 +65,10 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
 pi --provider ollama --model qwen2.5-coder:7b -p "Reply with exactly: OK"
 ```
 
+Re-verified 2026-08-13 against the corrected template — `--provider ollama-local` in earlier versions of this doc was wrong; the config's actual top-level key is `ollama`, and pi will fail with `Unknown provider "ollama-local"` if you use the old name.
+
+⚠️ **Run this from a repo with no `.ai-context/SESSION_STATE.md` present, or move that file aside first.** Pi reads repo files broadly as part of its own agentic context-gathering, and if that file exists (it will, after any prior Claude Code session in this repo — see ADR-004's "Known gap" section), its "conversation summary" field gets treated as ambient task content. Confirmed reproducible: with the file present, `qwen2.5-coder:7b` fabricated an unrelated file-edit tool call instead of replying `OK`; with the file moved aside, it replied correctly every time. This isn't a broken connection or a bad model — it's context bleed from an unrelated feature.
+
 **Verify tool use separately — this is the part that actually matters for real work, and it does not behave the way you'd expect:**
 
 ```powershell
@@ -95,6 +99,7 @@ Tested live: clean, correct, specific answer — no hallucination, no drift. `@f
 **Troubleshooting:**
 - Connection refused / plain "Connection error." → the port in `models.json` doesn't match what's actually running. Run `ai-port`, not the template's default.
 - Model not found (from Ollama, not pi) → the model name in `models.json` isn't in `ai-models`. Pull it or pick one that's already local.
+- Ignores your instruction entirely, talks about "session state" or "conversation summary" instead → see the `.ai-context/SESSION_STATE.md` warning above, not a model problem.
 - Model claims it can't read files even though tools are enabled → don't ask it to decide; attach the file yourself with `@filename`.
 
 ---

@@ -488,7 +488,8 @@ ai-code
 | `ai-start [-Model <name>] [-Backend ollama\|vllm] [-Force]` | Start the platform, kill any rogues. `-Backend` overrides/persists the saved backend choice (e.g. retry vLLM after a fallback) |
 | `ai-stop [-CleanFirewall]` | Stop the active backend, clear state and any `ai-claude-on` redirect |
 | `ai-health` | Full health check (processes, API, firewall, resources) |
-| `ai-doctor` | Find dead `ANTHROPIC_*`/`OPENAI_*`/`COPILOT_*`/`GROK_*` redirects (any scope) pointing at a port nothing is listening on, and print the exact fix |
+| `ai-doctor` | Find dead `ANTHROPIC_*`/`OPENAI_*`/`COPILOT_*`/`GROK_*` redirects (any scope) pointing at a port nothing is listening on, and print the exact fix. Also flags skew between `~/.airlock-src` and `~/.ai-platform` when the standard installer's clone exists — a patch merged in the repo isn't live until `install.ps1` re-syncs it |
+| `ai-uninstall [-WhatIf]` | Remove `~/.ai-platform`, `~/.airlock-src`, the `$PROFILE` hook, and this platform's firewall rules. Leaves Ollama and every pulled model alone — those are yours, not the installer's. `-WhatIf` previews with no changes made |
 | `ai-port` | Show active port, model, and any background model-pull job status |
 | `ai-provider` | Show active provider (local/cloud) |
 | `ai-switch <model>` | Switch model mid-session (e.g., `ai-switch qwen3-coder:30b`) |

@@ -1,7 +1,7 @@
 # ADR-007: Retrieval governance for memory-service
 
 ## Status
-Proposed — not yet implemented. Written as the spec a build swarm executes against.
+Accepted — implemented. All four decision points are live in `memory-service/app/`: `config.py`/`memory_store.py` (point 1, `config/memory-service.json`), `memory_store.py`'s `remember()`/`freshness()` (point 2), `memory_store.py`'s `recall()` fail-closed threshold filter + `graph.py`'s `augmented` flag (point 3), and `requirements.txt`'s pinned `langchain-core`/`langsmith` + `main.py`'s explicit `LANGCHAIN_TRACING_V2`/`LANGSMITH_TRACING_V2` opt-out (point 4). Verified 2026-08-14: `pytest memory-service/tests/ -v` — 11/11 passed, `langsmith-0.10.18` confirmed loaded as a plugin (the exact undeclared-dependency concern this ADR raised, now pinned rather than floating).
 
 ## Context
 
