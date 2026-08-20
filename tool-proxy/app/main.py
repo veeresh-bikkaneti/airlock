@@ -219,11 +219,16 @@ def models() -> Any:
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request) -> Any:
-    body = await request.json()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse(status_code=400, content={"error": "request body is not valid JSON"})
     if not isinstance(body, dict):
         return JSONResponse(status_code=400, content={"error": "request body must be a JSON object"})
     model = body.get("model", "")
     messages = list(body.get("messages") or [])
+    if any(not isinstance(m, dict) for m in messages):
+        return JSONResponse(status_code=400, content={"error": "every entry in messages must be an object"})
     tools = body.get("tools")
     stream = bool(body.get("stream", False))
     base = ollama_base_url()

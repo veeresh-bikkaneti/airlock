@@ -636,3 +636,43 @@ def test_active_port_file_with_null_port_falls_back_instead_of_crashing(monkeypa
     monkeypatch.setattr("app.main.ACTIVE_PORT_FILE", port_file)
 
     assert ollama_base_url() == "http://127.0.0.1:12345"
+
+
+# --- external deep review (AIRLOCK_DEEP_REVIEW_e5121b4.md), PROXY-001:
+# malformed JSON syntax and malformed individual message entries crash the
+# proxy instead of returning a deterministic client error ---
+
+
+def test_invalid_json_syntax_body_returns_400_not_crash(client):
+    resp = client.post(
+        "/v1/chat/completions",
+        content=b"{not valid json",
+        headers={"content-type": "application/json"},
+    )
+    assert resp.status_code == 400
+
+
+def test_null_entry_in_messages_with_tools_returns_400_not_crash(client, monkeypatch):
+    monkeypatch.setattr("app.main.requests.post", lambda *a, **k: FakeResponse(
+        json_body={"message": {"content": '{"action": "respond", "response_text": "ok"}'}}
+    ))
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "m", "tools": TOOLS, "messages": [None]},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_non_dict_entry_in_messages_with_tools_returns_400_not_crash(client, monkeypatch):
+    monkeypatch.setattr("app.main.requests.post", lambda *a, **k: FakeResponse(
+        json_body={"message": {"content": '{"action": "respond", "response_text": "ok"}'}}
+    ))
+
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "m", "tools": TOOLS, "messages": ["not-an-object"]},
+    )
+
+    assert resp.status_code == 400
