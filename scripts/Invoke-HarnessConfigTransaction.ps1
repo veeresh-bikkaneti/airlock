@@ -9,8 +9,9 @@
 # Library file — dot-source it (from Start-AgentSession.ps1, ai-doctor, or a
 # test) rather than invoking directly. See Test-HarnessConfigTransaction.ps1.
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-. (Join-Path $ScriptDir "agent-state-helpers.ps1")
+# $PSScriptRoot (not a hand-assigned $ScriptDir) - immune to being clobbered
+# by a dot-sourced file elsewhere in the chain reassigning the same name.
+. (Join-Path $PSScriptRoot "agent-state-helpers.ps1")
 
 function Backup-AirlockHarnessConfig {
     param(
@@ -102,6 +103,7 @@ function Invoke-AirlockHarnessConfigTransaction {
         finishedAt        = $null
     }
     $recordPath = Join-Path $TransactionDir "$($lock.sessionId).json"
+    $runOutput = $null
 
     try {
         $backup = Backup-AirlockHarnessConfig -ConfigPath $ConfigPath -BackupDir $BackupDir
@@ -113,7 +115,10 @@ function Invoke-AirlockHarnessConfigTransaction {
         $record.processLaunchTime = [DateTime]::UtcNow.ToString('o')
         Write-AirlockAtomicJson -Path $recordPath -Data $record
 
-        & $Run
+        # Captured (not discarded) so a caller's -Run scriptblock can hand
+        # a result back out without relying on scriptblock closures over an
+        # outer variable, which PowerShell does not propagate writes through.
+        $runOutput = & $Run
 
         $record.restoreResult = 'RunSucceeded'
     } catch {
@@ -141,7 +146,7 @@ function Invoke-AirlockHarnessConfigTransaction {
         Remove-AirlockLock -LockPath $LockPath -SessionId $lock.sessionId
     }
 
-    return [pscustomobject]@{ WhatIf = $false; Record = $record }
+    return [pscustomobject]@{ WhatIf = $false; Record = $record; RunOutput = $runOutput }
 }
 
 # ai-opencode-recover / ai-doctor entry point: list transaction records whose
