@@ -129,7 +129,9 @@ skills-lock.json
 .serena/
 
 # AIR-A2: full-res demo media, too large for git history. brag-demo.webp (README preview)
-# stays tracked; regenerate the mp4 by re-rendering brag-output/composition/ and add the
-# music asset back locally if you need the mp3 - see README.md.
-brag-output/brag.mp4
-brag-output/composition/assets/music/*.mp3
+# and brag.jpg (poster) stay tracked; regenerate the mp4 by re-rendering
+# brag-output*/composition/ and add the music asset back locally if you need it - see
+# README.md. Pattern covers both the original brag-output/ and the /brag skill's
+# timestamped brag-output-YYYY-MM-DD-HHmmss/ runs; small sfx/vo/image assets stay tracked.
+brag-output*/brag.mp4
+brag-output*/composition/assets/music/*.mp3

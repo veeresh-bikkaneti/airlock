@@ -39,7 +39,7 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
 
 ## Pi.dev
 
-**What it is:** a lightweight, extensible coding assistant CLI.
+**What it is:** a lightweight, extensible coding assistant CLI with built-in read/bash/edit/write tools.
 
 **Setup:**
 
@@ -47,28 +47,55 @@ Every "Verify it worked" step below asks the tool to reply with exactly the word
    ```powershell
    Copy-Item config\pi-models.json.template "$env:USERPROFILE\.pi\agent\models.json"
    ```
-   If that file already exists, open it instead and merge in the `ollama-local` block from the template — don't overwrite a config you already have other providers in.
-2. Open the copied file and check the `ollama-local.baseUrl` value matches your port:
+   If that file already exists, open it instead and merge in the `ollama` block from the template — don't overwrite a config you already have other providers in.
+2. Open the copied file and check the provider's `baseUrl` matches your port. ⚠️ **The provider key is `ollama`, not `ollama-local`** — an earlier draft of this doc got that wrong:
    ```json
-   "ollama-local": {
+   "ollama": {
      "baseUrl": "http://127.0.0.1:12345/v1",
-     "api": "openai-completions",
-     "apiKey": "noop"
+     "apiKey": "ollama",
+     "api": "openai-completions"
    }
    ```
-3. Check the `models` array lists a model you've actually pulled (see step 3 above). The template ships with a few common picks (`qwen2.5-coder:7b`, `devstral-small-2:24b`, etc.) — if none of those are in your `ai-models` output, add the one you do have.
+3. **Check the port against what's actually running, every time — not just once.** Live-caught 2026-08-15: this config had `baseUrl` pointed at 11434, correct the last time someone checked, but `ai-start` had since started fresh on 12345 because nothing was already running to adopt. `pi -p "..."` failed with a plain `Connection error.` — no useful hint about why. Run `ai-port` and use that number.
+4. Check the `models` array lists a model you've actually pulled (`ollama list`). The template ships with a few common picks — if none are in your list, add the one you do have.
 
-**Verify it worked:**
+**Verify the connection:**
 
 ```powershell
-pi --provider ollama-local --model qwen2.5-coder:7b -p "Reply with exactly: OK"
+pi --provider ollama --model qwen2.5-coder:7b -p "Reply with exactly: OK"
 ```
 
-Tested live: this returned `OK`. (We tested with a tiny placeholder model that wasn't in the config's model list — pi printed a harmless warning, "Model not found for provider, using custom model id," and answered correctly anyway. If you see that same warning with your real model name, it means a typo — check the `models` array.)
+**Verify tool use separately — this is the part that actually matters for real work, and it does not behave the way you'd expect:**
+
+```powershell
+pi --provider ollama --model qwen2.5-coder:7b -p "Read cv.md and summarize it in 2 sentences."
+```
+
+**Tested live, 2026-08-15 — reproduced the same failure opencode has, on the same model:** tools are on by default in `-p` mode (confirmed by re-running with `--no-tools` and getting a different result), but instead of actually calling `read`, `qwen2.5-coder:7b` printed this as its entire response:
+
+```json
+{
+  "name": "read",
+  "arguments": {
+    "path": "cv.md"
+  }
+}
+```
+
+That's the tool call as raw text, never executed. Identical failure shape to `qwen2.5-coder:7b`'s transcript in the opencode section below. Two independent harnesses, same Ollama model, same symptom — this isn't a Pi bug or an opencode bug, it's the underlying Ollama OpenAI-compat tool-calling layer.
+
+**What actually works reliably: attach the file yourself instead of hoping the model asks for it.**
+
+```powershell
+pi --provider ollama --model qwen2.5-coder:7b -p "@cv.md" "Tell me in 2-3 sentences what role this person is targeting."
+```
+
+Tested live: clean, correct, specific answer — no hallucination, no drift. `@file` puts the content directly in context; the model never has to decide to call a tool at all. This is the same shape of fix as `ai-code`'s `--file` flag for aider (see below) — it's a real, general pattern for getting reliable results out of small local models, not specific to one tool.
 
 **Troubleshooting:**
-- Connection refused → Airlock isn't running, or the port doesn't match.
+- Connection refused / plain "Connection error." → the port in `models.json` doesn't match what's actually running. Run `ai-port`, not the template's default.
 - Model not found (from Ollama, not pi) → the model name in `models.json` isn't in `ai-models`. Pull it or pick one that's already local.
+- Model claims it can't read files even though tools are enabled → don't ask it to decide; attach the file yourself with `@filename`.
 
 ---
 
@@ -76,37 +103,64 @@ Tested live: this returned `OK`. (We tested with a tiny placeholder model that w
 
 **What it is:** a terminal-based coding agent with a TUI, built for working across many providers.
 
+⚠️ **The config-file locations below were re-verified live against opencode 1.18.16 on 2026-08-15 and do not match what earlier drafts of this guide said.** If you set up opencode before that date, your config may be sitting in a file opencode no longer reads at all — see the real incident this section is based on in `docs/bugs-2/` if you want the full trace.
+
 **Setup:**
 
-opencode reads config from two places — pick one:
+`opencode --print-logs --log-level DEBUG` shows every config path it actually checks, in this exact order (later files override/merge over earlier ones):
 
-- **Global** (applies everywhere): `~/.config/opencode/opencode.json`
-- **Project-scoped** (applies only when you run `opencode` from this repo): `opencode.json` in the repo root
+1. `~/.config/opencode/config.json`, `opencode.json`, `opencode.jsonc`
+2. `<project>/.opencode/opencode.json`, `.opencode/opencode.jsonc` — **not** a bare `opencode.json` in the repo root
+3. `~/.opencode/opencode.json`, `~/.opencode/opencode.jsonc` — **this is the real global config path**, a different directory than `~/.config/opencode/`
 
-Copy the template to whichever you want:
+Two real, independently-confirmed failure modes if you don't know this:
+- A stale `~/.config/opencode/opencode.json` from some other setup (a different provider, a proxy, anything) sits there forever, silently overridden as long as one of the later files also sets `provider`/`model` — but the moment that later file goes missing, the stale config becomes live again with zero warning.
+- Dropping the template at repo-root `opencode.json` (what earlier drafts of this doc said) does **nothing at all** — opencode 1.18.16 never reads that path.
+
+Copy the template to the path that's actually load-bearing:
 
 ```powershell
-Copy-Item config\opencode.json.template opencode.json    # project-scoped
-# — or —
-Copy-Item config\opencode.json.template "$env:USERPROFILE\.config\opencode\opencode.json"   # global
+Copy-Item config\opencode.json.template "$env:USERPROFILE\.opencode\opencode.json"   # global — real path
+# — or, project-scoped —
+New-Item -ItemType Directory -Force ".opencode" | Out-Null
+Copy-Item config\opencode.json.template ".opencode\opencode.json"
 ```
 
-**If you already have a global opencode config for other providers, use the project-scoped copy instead** — dropping the template into your global config will silently replace whatever you had there. This guide's live test used the project-scoped route for exactly that reason.
+**The template's `baseURL` port is a snapshot, not a guarantee — check it every time, not just once.** `Start-AI.ps1` scans for an *already-running* Ollama on port 11434 (Ollama's own default) before ever falling back to launching one fresh on 12345. If Ollama was already running (common — many installs auto-start it as a background service), `ai-start` silently adopts that port instead. Run `ai-port` and use *that* number, not whatever the template or an old config file says:
 
-**Start the tool-call proxy first: `ai-tool-proxy-start`.** The template points `provider.ollama.options.baseURL` at `http://127.0.0.1:12347/v1`, the proxy's port, not Ollama's own `12345`, because opencode drives Ollama's free-form tool-calling path, which reproducibly fails on `qwen2.5-coder:7b`/`qwen3-coder:30b` (the tool call comes back as plain text instead of a real `tool_calls` response). The proxy fixes this; without it running, opencode will connect but tool-using requests will misbehave. See [`README.md`'s Tool-Call Proxy section](../README.md#tool-call-proxy). The template defaults `model` to `ollama/devstral-small-2:24b`. Edit the model line if that's not what you have pulled.
+```powershell
+ai-port    # prints the port actually in use right now
+```
 
-**Verify it worked:**
+**Start the tool-call proxy: `ai-tool-proxy-start`.** The template points `provider.ollama.options.baseURL` at `http://127.0.0.1:12347/v1`, the proxy's port, not the port `ai-port` just showed you, because opencode drives Ollama's free-form tool-calling path, which reproducibly fails on `qwen2.5-coder:7b`/`qwen3-coder:30b` (the tool call comes back as plain text instead of a real `tool_calls` response, see the reproduced failure below). The proxy fixes this; without it running, opencode will connect but tool-using requests will misbehave. See [`README.md`'s Tool-Call Proxy section](../README.md#tool-call-proxy). The template defaults `model` to `ollama/devstral-small-2:24b`. Edit the model line if that's not what you have pulled.
+
+**Also verify every model in your config's `models` list is actually pulled** (`ollama list`) — a config with an unpulled or misspelled tag fails per-model, not at config-load time, so it can look like the whole setup is broken when it's really just one bad tag.
+
+**Verify it worked — port, model, and tool-calling separately, not just "did it reply":**
 
 ```powershell
 opencode run "Reply with exactly: OK" --model ollama/qwen2.5-coder:7b
 ```
 
-Tested live: returned `OK`, with `opencode` reporting the model it used (`qwen2.5:0.5b` in our test run) right above the answer — a handy way to confirm you're actually talking to the model you think you are. Note this only proves the connection and plain-chat path; it doesn't declare any tools, so it doesn't exercise the tool-calling fix above — that needs a request with `tools` present (e.g. asking opencode to read or list a file).
+Tested live: returned `OK`, with `opencode` reporting the model it used (`qwen2.5:0.5b` in our test run) right above the answer, a handy way to confirm you're actually talking to the model you think you are. That confirms the connection and the model. It does **not** confirm tool-calling works — text-only replies take a different path than anything requiring a file read. Test that separately with a prompt that forces a real tool call:
+
+```powershell
+opencode run "Read cv.md and summarize the target role in 2 sentences." --model ollama/qwen2.5-coder:7b
+```
+
+**Tested live, 2026-08-15, both real failures reproduced before the fixes above, then a clean pass after:**
+- Wrong port (config said 12345, live Ollama was on 11434): every request failed with `AI_APICallError: Cannot connect to API`, retried on a backoff that looks like a hang from the terminal, not an error.
+- `qwen2.5-coder:7b`, once the port was fixed but before the tool-call proxy existed: the plain "reply OK" test passed clean. The file-read test did not — the model emitted the raw tool-call JSON as visible chat text (`{"name": "read", "arguments": {"filePath": "/path/to/cv.md"}}`) instead of it being executed, using a hallucinated placeholder path instead of the real one.
+- `qwen3-coder:30b` (this platform's own "coding"-role model, same VRAM): the tool call itself was attempted, but with a malformed schema (missing the required argument), so it failed, and the agent's *recovery* from that failure is what actually broke: it hallucinated a tool that doesn't exist in opencode's toolset (`fetch`), then pivoted to a real tool (`webfetch`) but on a completely unrelated tangent, fetching public pages about AWS/EC2 documentation, nothing to do with the local CV file it was asked to read.
+
+**This was not a config problem, and no template fix solved it: it needed a translation layer.** It's a reliability gap in Ollama's OpenAI-compatible tool-calling layer under an agentic harness that expects the tool-call contract to hold, confirmed on both a 7B and a 30B local model here, not a one-off. The [tool-call proxy](../README.md#tool-call-proxy) (`ai-tool-proxy-start`) fixes it by grammar-constraining Ollama's output instead of hoping the model's free-form template fires correctly. This matches the same Ollama compat-layer limitation already disclosed in `tools/airlock-manual/index.html`'s memory-service section (no prompt caching, ignored `tool_choice`) and in ADR-009, just confirmed here for opencode specifically.
 
 **Troubleshooting:**
 - `opencode` picks up the *global* config even when you meant project-scoped if you're not `cd`'d into the repo root when you run it.
-- `opencode models` lists every provider/model opencode currently sees — run it any time you're not sure your config was picked up.
+- `opencode models` lists every provider/model opencode currently sees — run it any time you're not sure your config was picked up. Note it also lists opencode's own large built-in cloud-model catalog regardless of your config, so a model appearing in that list is **not** proof your local config loaded — check the debug log's `loading config from ...` lines for that.
+- `opencode run ... --print-logs --log-level DEBUG` is the real diagnostic tool here — it shows every config path checked, which provider/model actually got selected, and the exact connection or schema error, instead of the terse top-level error opencode shows by default.
 - Tool calls leaking into the chat response as raw JSON text: the tool-proxy isn't running, or the config still points at `12345` instead of `12347`. Run `ai-tool-proxy-status` to check.
+- A silent multi-second pause before anything prints is opencode enumerating every installed skill across every skill-marketplace directory on the machine (`message=init count=<N>` in the debug log) — harmless, but if that count is in the thousands, it's adding real, avoidable startup latency; that's a housekeeping issue with the skill directories, not with Airlock.
 
 ---
 
