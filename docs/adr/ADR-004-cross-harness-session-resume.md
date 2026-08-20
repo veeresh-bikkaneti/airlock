@@ -46,3 +46,17 @@ An initial AI-generated spec proposed a custom Python daemon, a systemd user ser
 - State is per-repo, not a single cross-project view — resuming "everything I was doing across all projects" isn't covered, only one repo at a time.
 - Auto-trigger-on-start is confirmed only for Claude Code; OpenCode/Pi/Grok CLI adapters may land as manual-invoke depending on what Phase 2 actually confirms about each tool's real capabilities.
 - Antigravity has no working auto-resume path at all under this design.
+
+## Known gap: unintended context bleed into agentic tools that read repo files broadly
+
+Found 2026-08-13, during harness-parity re-verification (running the "Verify it worked" smoke tests from `docs/08-Agent-CLI-Setup-Guide.md` against the live platform).
+
+**Symptom:** `pi --provider ollama --model qwen2.5-coder:7b -p "Reply with exactly: OK"` did not reply `OK`. Instead it emitted a fabricated, unrelated file-edit tool call (`docs/bugs.md`, content about "ai-claude-on/ai-handoff") — reproduced twice, not a fluke. The 30B model (`qwen3-coder:30b`) didn't hallucinate a tool call, but also ignored the instruction entirely, instead summarizing "the previous session state and conversation summary" and asking what to work on next.
+
+**Root cause, isolated:** moving `.ai-context/SESSION_STATE.md` aside and re-running the identical command produced a correct `OK` from the 7B model immediately. Restoring the file reproduced the failure. This is not a model-quality problem — it's this file's content leaking into a tool invocation that had nothing to do with resuming a session.
+
+**Why it happens:** Pi.dev was never given a deliberate ADR-004 adapter (unlike OpenCode's Phase 2 plugin, which reads the file explicitly and computes staleness). Pi is a general-purpose coding agent with its own file-reading tools; it appears to read repo files broadly as ambient context regardless of the task, and `.ai-context/SESSION_STATE.md`'s "conversation summary (last 10 user turns)" field — literally excerpts from whatever Claude Code session last ran in this repo — is exactly the kind of plausible-looking, topically-relevant content a small model will act on instead of the actual instruction.
+
+**Impact beyond Pi.dev:** any tool tested against this repo that reads files broadly (not just the ones with a deliberate ADR-004 adapter) is at risk of the same contamination. This makes every "Verify it worked" smoke test in `docs/08-Agent-CLI-Setup-Guide.md` unreliable *specifically in a repo that already has an `.ai-context/SESSION_STATE.md`* — which, in practice, is any repo that's had even one prior Claude Code session, i.e. normal usage, not an edge case. Someone hitting this would very plausibly conclude "the model is broken" or "the connection is broken," neither of which is true.
+
+**Not fixed yet.** Candidate directions, not decided: (a) name-mangle or gitignore-scope the file so generic file-reading tools are less likely to surface it prominently — weak, doesn't address tools that read broadly on purpose; (b) document the smoke-test caveat in the setup guide (move the file aside first, or test in a scratch repo) — cheap, but doesn't fix the real usage case; (c) some tools may support scoping their file-reads (deny-list `.ai-context/`) — worth checking per-tool rather than assuming. This needs its own decision, not a quick patch inside this ADR.

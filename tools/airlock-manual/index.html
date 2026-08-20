@@ -1,0 +1,1190 @@
+<title>Airlock Manual</title>
+<meta name="color-scheme" content="light dark">
+<style>
+  :root{
+    --bg:#e9ece7; --bg-raised:#dee2db; --ink:#1c2320; --ink-soft:#4a534d;
+    --line:#c3c9bd; --amber:#a8611b; --amber-soft:#c9884a; --teal:#146b63; --teal-soft:#3f948b;
+    --danger:#a83a2e; --shadow:0 1px 0 rgba(0,0,0,.04);
+    --console-bg:#171d1a; --console-ink:#e6e2d3; --console-line:#39433c;
+    --radius:3px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161a; --bg-raised:#1a2024; --ink:#e7e3d8; --ink-soft:#a9ada2;
+      --line:#333c37; --amber:#e8a23c; --amber-soft:#c9884a; --teal:#4fc3b8; --teal-soft:#3f948b;
+      --danger:#e0665a;
+      --console-bg:#0c100e; --console-ink:#dcd8c9; --console-line:#2b332e;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161a; --bg-raised:#1a2024; --ink:#e7e3d8; --ink-soft:#a9ada2;
+    --line:#333c37; --amber:#e8a23c; --amber-soft:#c9884a; --teal:#4fc3b8; --teal-soft:#3f948b;
+    --danger:#e0665a;
+    --console-bg:#0c100e; --console-ink:#dcd8c9; --console-line:#2b332e;
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:17px; line-height:1.65;
+  }
+  h1,h2,h3,.eyebrow,code,kbd,.status-line,.legend,nav a,.cmd-name,button,.card-term,.snippet,.snippet-tab{
+    font-family:"Cascadia Code","JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  }
+  h1,h2,h3{ text-wrap:balance; font-weight:700; letter-spacing:-0.01em; margin:0 0 .5em; }
+  h3{ font-size:1.15rem; }
+  p{ margin:0 0 1em; max-width:62ch; }
+  a{ color:var(--teal); }
+  code{ background:var(--bg-raised); border:1px solid var(--line); border-radius:var(--radius); padding:.1em .4em; font-size:.9em; }
+  figure{ margin:0; }
+  figcaption{ font-size:.9rem; color:var(--ink-soft); margin-top:.6em; max-width:70ch; }
+  .wrap{ max-width:1040px; margin:0 auto; padding:0 28px; }
+  .narrow{ max-width:66ch; }
+
+  /* ---- nav ---- */
+  .console-nav{ position:sticky; top:0; z-index:50; background:var(--console-bg); color:var(--console-ink); border-bottom:1px solid var(--console-line); }
+  .console-nav .wrap{ display:flex; align-items:center; gap:20px; padding:12px 28px; overflow-x:auto; }
+  .console-nav .brand{ font-weight:700; letter-spacing:.02em; white-space:nowrap; color:var(--amber-soft); }
+  .console-nav a{ color:var(--console-ink); text-decoration:none; font-size:.8rem; opacity:.75; white-space:nowrap; }
+  .console-nav a:hover{ opacity:1; color:var(--teal-soft); }
+  .lamp{ width:7px; height:7px; border-radius:50%; background:var(--teal-soft); display:inline-block; margin-right:8px; box-shadow:0 0 6px var(--teal-soft); flex:none; }
+
+  /* ---- hero ---- */
+  .hero{ padding:64px 0 40px; border-bottom:1px solid var(--line); }
+  .eyebrow{ font-size:.78rem; letter-spacing:.14em; text-transform:uppercase; color:var(--amber); margin-bottom:14px; display:flex; align-items:center; gap:10px; }
+  .eyebrow::before{ content:""; width:22px; height:1px; background:var(--amber); display:inline-block; }
+  h1{ font-size:clamp(2rem,4.4vw,3rem); line-height:1.05; max-width:18ch; }
+  .hero .lede{ font-size:1.12rem; color:var(--ink-soft); max-width:60ch; }
+  .snapshot-note{ margin-top:26px; padding:14px 16px; border:1px solid var(--line); border-left:3px solid var(--amber); background:var(--bg-raised); font-size:.86rem; color:var(--ink-soft); max-width:60ch; border-radius:var(--radius); }
+  .snapshot-note b{ color:var(--ink); }
+
+  /* ---- table of contents ---- */
+  .toc{ margin-top:34px; border:1px solid var(--line); border-radius:var(--radius); background:var(--bg-raised); max-width:74ch; overflow:hidden; }
+  .toc-title{ padding:13px 20px; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--line); }
+  .toc-item{ display:flex; gap:16px; align-items:baseline; padding:13px 20px; text-decoration:none; color:var(--ink); border-bottom:1px solid var(--line); }
+  .toc-item:last-child{ border-bottom:none; }
+  .toc-item:hover{ background:var(--bg); }
+  .toc-item:hover .toc-name{ color:var(--teal); }
+  .toc-num{ color:var(--amber); font-size:.85rem; flex:none; width:1.4em; }
+  .toc-item .toc-name{ font-weight:700; font-size:.92rem; flex:none; width:15ch; }
+  .toc-item .toc-desc{ color:var(--ink-soft); font-size:.85rem; }
+  @media (max-width:640px){
+    .toc-item{ flex-wrap:wrap; }
+    .toc-item .toc-name{ width:auto; }
+  }
+
+  /* ---- sections ---- */
+  section{ padding:56px 0; border-bottom:1px solid var(--line); }
+  section.deep{ background:var(--bg-raised); }
+  .section-head{ display:flex; align-items:baseline; gap:16px; margin-bottom:8px; flex-wrap:wrap; }
+  .section-num{ color:var(--ink-soft); font-size:.85rem; font-family:"Cascadia Code","JetBrains Mono",monospace; }
+  h2{ font-size:clamp(1.5rem,2.6vw,1.9rem); }
+  .section-sub{ color:var(--ink-soft); max-width:66ch; margin-bottom:34px; }
+
+  /* ---- analogy / usecase callouts ---- */
+  .analogy, .usecase{ display:flex; gap:16px; align-items:flex-start; border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px; margin:22px 0 30px; max-width:74ch; }
+  .analogy{ background:var(--bg); }
+  .usecase{ background:transparent; border-color:var(--teal-soft); border-style:dashed; }
+  .analogy .glyph, .usecase .glyph{ font-size:1.4rem; line-height:1; flex:none; margin-top:2px; }
+  .analogy p, .usecase p{ margin:0; }
+  .analogy .tag{ display:block; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--teal); margin-bottom:6px; }
+  .usecase .tag{ display:block; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--teal-soft); margin-bottom:6px; }
+
+  /* ---- command grid (overview) ---- */
+  .cmd-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+  .cmd-card{ background:var(--bg); padding:18px 18px 20px; }
+  .cmd-card .cmd-name{ color:var(--amber); font-weight:700; font-size:.95rem; }
+  .cmd-card p{ font-size:.88rem; color:var(--ink-soft); margin:8px 0 0; }
+
+  /* ---- capabilities showcase ---- */
+  .showcase-group{ margin-bottom:30px; }
+  .showcase-group h3{ font-size:.76rem; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-soft); margin-bottom:14px; font-weight:700; }
+  .showcase-row{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:11px 0; border-bottom:1px solid var(--line); }
+  .showcase-row:last-child{ border-bottom:none; }
+  .showcase-row .cap-name{ font-weight:700; font-size:.94rem; }
+  .showcase-row .cap-desc{ color:var(--ink-soft); font-size:.86rem; flex:1 1 32ch; }
+  .pill{ display:inline-block; font-size:.65rem; letter-spacing:.07em; text-transform:uppercase; padding:2px 10px; border-radius:99px; font-weight:700; flex:none; background:transparent; }
+  .pill.live{ color:var(--teal-soft); border:1px solid var(--teal-soft); }
+  .pill.partial{ color:var(--amber-soft); border:1px solid var(--amber-soft); }
+  .pill.proposed{ color:var(--amber-soft); border:1px dashed var(--amber-soft); }
+  .pill.notwired{ color:var(--danger); border:1px solid var(--danger); }
+
+  /* ---- glossary flip cards (3D) ---- */
+  .glossary-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:16px; }
+  .flip-card{ perspective:1000px; height:150px; }
+  .flip-card-inner{ position:relative; width:100%; height:100%; transition:transform .55s cubic-bezier(.3,.1,.2,1); transform-style:preserve-3d; cursor:pointer; }
+  .flip-card:hover .flip-card-inner, .flip-card:focus-within .flip-card-inner, .flip-card.flipped .flip-card-inner{ transform:rotateY(180deg); }
+  .flip-card-face{ position:absolute; inset:0; backface-visibility:hidden; border:1px solid var(--line); border-radius:var(--radius); padding:16px; display:flex; flex-direction:column; }
+  .flip-card-front{ background:var(--bg-raised); justify-content:space-between; }
+  .flip-card-front .card-term{ font-weight:700; color:var(--ink); font-size:1rem; }
+  .flip-card-front .card-hint{ font-size:.72rem; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.08em; }
+  .flip-card-back{ background:var(--console-bg); color:var(--console-ink); transform:rotateY(180deg); justify-content:center; }
+  .flip-card-back p{ font-size:.82rem; max-width:none; margin:0; line-height:1.5; }
+  .flip-card button.flip-trigger{ all:unset; position:absolute; inset:0; cursor:pointer; }
+  .flip-card button.flip-trigger:focus-visible{ outline:2px solid var(--teal); outline-offset:-2px; border-radius:var(--radius); }
+
+  /* ---- architecture: 3D exploded stack ---- */
+  .stack-scene-wrap{ perspective:1400px; margin:30px 0 8px; padding:40px 0 60px; }
+  .stack-scene{ position:relative; transform-style:preserve-3d; transform:rotateX(48deg) rotateZ(-24deg); margin:0 auto; width:min(560px,90%); animation:stack-drift 9s ease-in-out infinite alternate; }
+  .stack-layer{ position:relative; background:var(--console-bg); border:1px solid var(--console-line); border-radius:6px; padding:16px 20px; margin-bottom:22px; box-shadow:0 26px 34px -20px rgba(0,0,0,.55); }
+  .stack-layer.optional{ border-style:dashed; opacity:.88; }
+  .stack-layer .layer-title{ color:var(--teal-soft); font-weight:700; font-size:.92rem; font-family:"Cascadia Code","JetBrains Mono",monospace; }
+  .stack-layer.gate .layer-title{ color:var(--amber-soft); }
+  .stack-layer .layer-desc{ color:var(--console-ink); font-size:.82rem; margin-top:5px; opacity:.85; }
+  .stack-layer .layer-badge{ position:absolute; top:14px; right:16px; font-size:.65rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); }
+  @keyframes stack-drift{ from{ transform:rotateX(48deg) rotateZ(-24deg) translateY(0); } to{ transform:rotateX(44deg) rotateZ(-20deg) translateY(-6px); } }
+  .stack-scene-wrap:hover .stack-scene, .stack-scene-wrap:focus-within .stack-scene{ animation-play-state:paused; }
+
+  /* ---- diagram panel (the "screen") ---- */
+  .screen{ background:var(--console-bg); color:var(--console-ink); border:1px solid var(--console-line); border-radius:6px; padding:22px 22px 16px; margin:26px 0 10px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.02); }
+  .screen svg{ width:100%; height:auto; display:block; }
+  .screen .node-box{ fill:var(--console-bg); stroke:var(--console-line); stroke-width:1.5; }
+  .screen .node-box.active{ stroke:var(--teal-soft); }
+  .screen .node-box.final.active{ stroke:var(--amber-soft); }
+  .screen .node-text{ fill:var(--console-ink); font-size:12px; }
+  .screen .edge{ stroke:var(--console-line); stroke-width:1.4; fill:none; }
+  .screen .edge.dashed{ stroke-dasharray:4 4; }
+  .screen .leaf-box{ fill:none; stroke:var(--console-line); stroke-dasharray:3 3; }
+  .screen .leaf-text{ fill:var(--ink-soft, #9aa39c); font-size:10.5px; }
+  .screen .token{ fill:var(--amber-soft); filter:drop-shadow(0 0 4px var(--amber-soft)); transition:cx .5s ease,cy .5s ease; }
+  .screen .lane-line{ stroke:var(--console-line); stroke-dasharray:2 5; stroke-width:1; }
+  .screen .lane-label{ fill:var(--teal-soft); font-size:11px; letter-spacing:.04em; }
+
+  .controls{ display:flex; align-items:center; gap:10px; padding:12px 4px 4px; flex-wrap:wrap; }
+  .controls button{ background:var(--bg-raised); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius); padding:7px 13px; font-size:.78rem; cursor:pointer; letter-spacing:.03em; }
+  .controls button:hover{ border-color:var(--teal-soft); color:var(--teal); }
+  .controls button:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+  .controls .toggle{ margin-left:auto; }
+  .controls .toggle.on{ border-color:var(--amber); color:var(--amber); }
+  .status-line{ font-size:.82rem; color:var(--console-ink); background:var(--console-bg); border:1px solid var(--console-line); border-top:none; border-radius:0 0 6px 6px; padding:11px 22px; margin:-10px 0 26px; min-height:1.4em; }
+  .status-line .prefix{ color:var(--amber-soft); margin-right:8px; }
+
+  .legend{ display:flex; gap:22px; flex-wrap:wrap; font-size:.78rem; color:var(--ink-soft); margin:14px 0 0; }
+  .legend span{ display:inline-flex; align-items:center; gap:7px; }
+  .legend i{ width:11px; height:11px; border-radius:2px; display:inline-block; }
+
+  /* ---- command snippet block ---- */
+  .snippet-wrap{ margin:16px 0 20px; max-width:74ch; }
+  .snippet-tab{ display:inline-block; background:var(--console-bg); color:var(--teal-soft); font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; padding:5px 12px; border-radius:4px 4px 0 0; }
+  .snippet{ background:var(--console-bg); color:var(--console-ink); border-radius:0 6px 6px 6px; padding:16px 18px; margin:0; overflow-x:auto; font-size:.85rem; line-height:1.7; }
+  .snippet .prompt{ color:var(--teal-soft); }
+  .snippet .comment{ color:var(--ink-soft, #8a9089); opacity:.75; }
+
+  /* ---- precision callout ---- */
+  .precision{ border:1px solid var(--teal-soft); border-radius:var(--radius); padding:20px 22px; margin-top:30px; background:var(--bg); max-width:74ch; }
+  .precision .tag{ color:var(--teal); font-size:.76rem; letter-spacing:.1em; text-transform:uppercase; display:block; margin-bottom:10px; }
+  .precision ul{ margin:10px 0 0; padding-left:1.1em; }
+  .precision li{ margin-bottom:8px; font-size:.94rem; }
+
+  footer{ padding:44px 0 70px; }
+  footer .wrap{ display:flex; flex-direction:column; gap:6px; }
+  footer p{ color:var(--ink-soft); font-size:.85rem; margin:0; }
+
+  @media (max-width:640px){
+    .hero{ padding:44px 0 30px; }
+    section{ padding:40px 0; }
+    .analogy, .usecase{ flex-direction:column; }
+    .stack-scene{ transform:rotateX(38deg) rotateZ(0deg); width:100%; }
+    @keyframes stack-drift{ from{ transform:rotateX(38deg) rotateZ(0deg); } to{ transform:rotateX(34deg) rotateZ(0deg) translateY(-4px); } }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .screen .token{ transition:none; }
+    .stack-scene{ animation:none; }
+    .flip-card-inner{ transition:none; }
+    *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; }
+  }
+</style>
+
+<nav class="console-nav">
+  <div class="wrap">
+    <span class="brand"><span class="lamp"></span>AIRLOCK.MANUAL</span>
+    <a href="#basics">start here</a>
+    <a href="#glossary">glossary</a>
+    <a href="#architecture">architecture</a>
+    <a href="#scaling">cloud keys</a>
+    <a href="#showcase">showcase</a>
+    <a href="#commands">commands</a>
+    <a href="#visualizer">3D visualizer</a>
+    <a href="#rag">memory service</a>
+    <a href="#swimlane">request lifecycle</a>
+    <a href="#er">storage</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">A user manual, written for beginners</p>
+    <h1>Everything Airlock does, and how to use it.</h1>
+    <p class="lede">Airlock runs a real AI coding assistant on your own machine — no cloud account, no monthly bill, no code leaving your laptop for the average day. This page is the long way round: plain-English definitions, pictures of how the pieces actually connect, and exactly what to type for each command, with a real reason you'd type it.</p>
+    <div class="snapshot-note">
+      <b>This page lives in the repo, at <code>tools/airlock-manual/index.html</code>.</b> It's a companion to <code>README.md</code>, not a replacement for it — README stays the terse reference; this page is the long-form, illustrated version for a reader who wants definitions and pictures alongside the commands. If the two ever disagree, that's a bug worth filing, not an accepted gap.
+    </div>
+
+    <nav class="toc" aria-label="Table of contents">
+      <div class="toc-title">On this page</div>
+      <a class="toc-item" href="#basics"><span class="toc-num">01</span><span class="toc-name">Start here</span><span class="toc-desc">What Airlock is, in plain English — no prior tooling knowledge assumed.</span></a>
+      <a class="toc-item" href="#glossary"><span class="toc-num">02</span><span class="toc-name">Glossary</span><span class="toc-desc">Flip-card definitions: CLI, port, model, embedding, RAG, and everything else used below.</span></a>
+      <a class="toc-item" href="#architecture"><span class="toc-num">03</span><span class="toc-name">Architecture</span><span class="toc-desc">The 5-layer stack, as an animated 3D diagram — terminal down to the gated cloud layer.</span></a>
+      <a class="toc-item" href="#scaling"><span class="toc-num">04</span><span class="toc-name">Cloud keys</span><span class="toc-desc">Adding an OpenRouter/OpenAI/Anthropic/Google key with <code>ai-auth-set</code> — and an honest map of what actually consumes it today.</span></a>
+      <a class="toc-item" href="#showcase"><span class="toc-num">05</span><span class="toc-name">Capabilities showcase</span><span class="toc-desc">Everything the platform does, one scannable list, each row tagged live/partial/proposed/not wired.</span></a>
+      <a class="toc-item" href="#commands"><span class="toc-num">06</span><span class="toc-name">Commands</span><span class="toc-desc">Every <code>ai-*</code> command — snippet, real use case, and an animated diagram for the three deepest ones.</span></a>
+      <a class="toc-item" href="#visualizer"><span class="toc-num">07</span><span class="toc-name">3D visualizer</span><span class="toc-desc">Launching <code>tools/3d-system-visualizer</code> — the exact commands, and how to see this platform's own real activity in it.</span></a>
+      <a class="toc-item" href="#rag"><span class="toc-num">08</span><span class="toc-name">Memory service</span><span class="toc-desc">RAG, the vector database, and what's really LangChain vs. hand-rolled — a full request-path walkthrough.</span></a>
+      <a class="toc-item" href="#swimlane"><span class="toc-num">09</span><span class="toc-name">Request lifecycle</span><span class="toc-desc">The same request as a swimlane — who does each of the 15 steps, across every component.</span></a>
+      <a class="toc-item" href="#er"><span class="toc-num">10</span><span class="toc-name">Storage</span><span class="toc-desc">The two separate stores behind memory — different keys, different lifetimes, never joined.</span></a>
+    </nav>
+  </div>
+</header>
+
+<section id="basics">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">01</span><h2>What Airlock actually is</h2></div>
+    <p class="section-sub">Never touched a tool like this before? Good — start exactly here. Everything after this section assumes you already know what's below.</p>
+
+    <p>An AI coding assistant (like Claude Code) normally works by sending your questions to a company's servers over the internet, and a powerful model there sends back an answer. That's simple, but it means two things: your code and questions travel over the internet, and you're paying for (or limited by) however much that company lets you use.</p>
+
+    <p><b>Airlock lets you run a similar AI model directly on your own computer instead</b> — using a free, open-source program called <b>Ollama</b> that downloads and runs AI models locally. Nothing has to leave your machine. Airlock is the layer of commands wrapped around Ollama that makes this comfortable to use day-to-day: starting it up safely, checking it's healthy, letting other tools (like Claude Code) talk to it, and shutting it down cleanly.</p>
+
+    <div class="analogy">
+      <span class="glyph">🚪</span>
+      <div>
+        <span class="tag">Why it's called Airlock</span>
+        <p>A real airlock is a small chamber with two doors that are never both open at once — you're either sealed inside, or sealed outside, never halfway between. This tool works the same way: by default, everything stays local and sealed in. If you ever want to reach out to the cloud — a fallback provider, a subscription service — that's a deliberate, separate switch you flip on purpose, not something that happens by accident.</p>
+      </div>
+    </div>
+
+    <p>Everything in Airlock is typed into a <b>terminal</b> (see the glossary below if that word's new to you) as short commands that all start with <code>ai-</code>, like <code>ai-start</code> or <code>ai-doctor</code>. You don't need to know PowerShell, Python, or any programming language to use them — you just type the command name and press Enter.</p>
+  </div>
+</section>
+
+<section id="glossary" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">02</span><h2>Words you'll see on this page</h2></div>
+    <p class="section-sub">Every jargon word on this page has a card here. Click or tap to flip it — plain English on the back, no dictionary required.</p>
+
+    <div class="glossary-grid">
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">CLI</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>Short for "command-line interface" — a way of controlling a program by typing words instead of clicking buttons. Every Airlock command is a CLI command.</p></div>
+        <button class="flip-trigger" aria-label="Flip CLI definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Terminal / Shell</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>The window where you type commands (PowerShell, in Airlock's case). Closing it ends anything that was only set up "for this session."</p></div>
+        <button class="flip-trigger" aria-label="Flip Terminal definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Environment variable</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A small labeled note your terminal session carries around, like <code>ANTHROPIC_BASE_URL</code>. Other programs read these to know where to send requests.</p></div>
+        <button class="flip-trigger" aria-label="Flip Environment variable definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Port</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A numbered "door" a program listens on for connections. Ollama listens on one, so other tools know exactly where to knock.</p></div>
+        <button class="flip-trigger" aria-label="Flip Port definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Firewall rule</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A guard that decides what's allowed through a port. Airlock adds one that blocks anyone outside your machine from reaching your local model.</p></div>
+        <button class="flip-trigger" aria-label="Flip Firewall rule definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Backend</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>The program actually doing the AI work — Ollama or vLLM. Everything else in Airlock is a layer that starts, checks, and talks to it.</p></div>
+        <button class="flip-trigger" aria-label="Flip Backend definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Model</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>The AI itself — e.g. <code>qwen2.5-coder:7b</code>. A file of learned patterns that turns your prompt into a reply. Bigger isn't always better; it has to fit your hardware.</p></div>
+        <button class="flip-trigger" aria-label="Flip Model definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">API</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A fixed way for programs to talk to each other — like a restaurant menu you order from. Your backend exposes one; Airlock's commands are the customer.</p></div>
+        <button class="flip-trigger" aria-label="Flip API definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Session</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>Everything between opening a terminal and closing it. Many Airlock settings are deliberately session-scoped so they can never outlive it.</p></div>
+        <button class="flip-trigger" aria-label="Flip Session definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Embedding</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A list of numbers that represents the <i>meaning</i> of a piece of text, so a computer can measure how similar two pieces of text are.</p></div>
+        <button class="flip-trigger" aria-label="Flip Embedding definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">Vector database</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>A filing cabinet built specifically to store embeddings and quickly find the closest matches to a new one. Airlock uses one called Chroma.</p></div>
+        <button class="flip-trigger" aria-label="Flip Vector database definition"></button>
+      </div></div>
+
+      <div class="flip-card"><div class="flip-card-inner">
+        <div class="flip-card-face flip-card-front"><span class="card-term">RAG</span><span class="card-hint">flip →</span></div>
+        <div class="flip-card-face flip-card-back"><p>"Retrieval-Augmented Generation" — looking something up before answering, instead of answering from memory alone. The vector database is the "looking up" part.</p></div>
+        <button class="flip-trigger" aria-label="Flip RAG definition"></button>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">03</span><h2>How the pieces fit together</h2></div>
+    <p class="section-sub">Five layers, stacked like the airlock it's named for — each one only ever talks to its neighbor. Hover the diagram to pause the drift and read at your own pace.</p>
+
+    <div class="stack-scene-wrap" tabindex="0" aria-label="Exploded 3D diagram of Airlock's architecture, five stacked layers from top to bottom: your terminal, the Airlock CLI layer, your local model backend, the optional memory service, and cloud providers reachable only through an explicit policy gate.">
+      <div class="stack-scene">
+        <div class="stack-layer"><span class="layer-badge">layer 1</span><div class="layer-title">You, in a terminal</div><div class="layer-desc">Type an <code>ai-*</code> command and press Enter.</div></div>
+        <div class="stack-layer"><span class="layer-badge">layer 2</span><div class="layer-title">Airlock CLI (profile-helpers.ps1)</div><div class="layer-desc">Turns that command into the right action — start, stop, check, redirect.</div></div>
+        <div class="stack-layer"><span class="layer-badge">layer 3</span><div class="layer-title">Your local backend (Ollama or vLLM)</div><div class="layer-desc">Runs the actual model, on one fixed port, behind a firewall rule.</div></div>
+        <div class="stack-layer optional"><span class="layer-badge">layer 4 · optional</span><div class="layer-title">memory-service</div><div class="layer-desc">Turned on with <code>ai-memory-on</code>. Sits between your chat client and the backend, adding recall of things said earlier.</div></div>
+        <div class="stack-layer gate"><span class="layer-badge">layer 5 · gated</span><div class="layer-title">Cloud providers</div><div class="layer-desc">Only reached if you explicitly set up a fallback key — never by default, never silently.</div></div>
+      </div>
+    </div>
+    <p class="narrow" style="margin-top:10px">Each layer only knows about the one next to it: your terminal talks to the CLI, the CLI talks to the backend, and the backend never knows or cares whether the cloud layer exists at all. That separation is what makes "local by default, cloud only on purpose" an actual guarantee instead of a promise.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When this picture matters</span><p>You're deciding whether it's safe to turn on a cloud fallback provider, or explaining to a teammate why your code never leaves your machine by default. This diagram is the answer: there's a real, gated layer 5 the cloud has to pass through, not a background connection you have to take on trust.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="scaling" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">04</span><h2>Scaling beyond local: cloud provider keys</h2></div>
+    <p class="section-sub">Layer 5 from the diagram above, in practice. Local is the default because it's free and private, but sometimes you want a stronger model for one hard problem, or your own hardware just isn't enough. Here's exactly how to add a key, and — just as important — exactly what currently happens with it once you do.</p>
+
+    <h3>Adding a key</h3>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-auth-set openrouter sk-or-v1-xxxxxxxxxxxx
+<span class="comment"># supported names: openrouter, openai, anthropic, google, nvidia</span>
+<span class="prompt">PS&gt;</span> ai-policy   <span class="comment"># see which providers are configured</span></code></pre>
+    </div>
+    <p class="narrow"><code>ai-auth-set</code> writes to <code>~/.ai-platform/config/auth.json</code> — a file kept outside the repo and outside git entirely (it's in <code>.gitignore</code>). That's the one supported way to add a key: never hand-edit an environment variable for this, and never put a key in any tracked file.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd want this</span><p>You're deep into a large, multi-file refactor your local model keeps stumbling on, or your machine simply can't fit a model big enough for the task at hand. A cloud key is the escape hatch for that specific moment — not a replacement for local by default.</p></div>
+    </div>
+
+    <div class="analogy">
+      <span class="glyph">📡</span>
+      <div>
+        <span class="tag">What "scales" actually means here</span>
+        <p>This isn't autoscaling infrastructure — there's no fleet of servers spinning up. "Scaling" for a single-machine tool like this means one thing: swapping which model answers a given request, from a small one that fits on your GPU to a much larger one that runs on someone else's. Storing a key is step one of that swap. Whether a swap actually happens depends on which command you're using — covered honestly below, not glossed over.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px">What actually consumes a stored key today</h3>
+    <p class="narrow">Checked directly against the shipped code, not the design docs — the two disagree in places, and the code is what actually runs.</p>
+
+    <figure>
+      <div class="screen">
+        <svg viewBox="0 0 940 260" role="img" aria-label="Diagram showing that a key stored via ai-auth-set is not currently consumed by ai-code, which always uses the local backend; is only partially relevant to provider-policy.json's cloud fields, which today only choose between local Ollama and vLLM; and would be consumed by a proposed ai-claude-on cloud profile that is designed but not yet built.">
+          <defs>
+            <marker id="arrow-sc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="240" y1="130" x2="290" y2="50" marker-end="url(#arrow-sc)"/>
+            <line class="edge" x1="240" y1="130" x2="290" y2="130" marker-end="url(#arrow-sc)"/>
+            <line class="edge" x1="240" y1="130" x2="290" y2="210" marker-end="url(#arrow-sc)"/>
+          </g>
+
+          <rect class="node-box" x="20" y="90" width="220" height="80" rx="3" style="stroke:var(--teal-soft)"/>
+          <text class="node-text" x="130" y="122" text-anchor="middle" style="fill:var(--teal-soft);font-weight:700">auth.json</text>
+          <text class="node-text" x="130" y="140" text-anchor="middle" style="font-size:10.5px">key stored here</text>
+          <text class="node-text" x="130" y="155" text-anchor="middle" style="font-size:10.5px">via ai-auth-set</text>
+
+          <rect class="node-box" x="300" y="20" width="620" height="60" rx="3" style="stroke:var(--danger)"/>
+          <text class="node-text" x="320" y="42" style="fill:var(--danger);font-weight:700">ai-code (aider)  —  NOT WIRED</text>
+          <text class="node-text" x="320" y="60" style="font-size:10.5px;opacity:.8">always launches against your local backend — never reads this file</text>
+
+          <rect class="node-box" x="300" y="100" width="620" height="60" rx="3" style="stroke:var(--amber-soft)"/>
+          <text class="node-text" x="320" y="122" style="fill:var(--amber-soft);font-weight:700">provider-policy.json cloud fields  —  PARTIAL</text>
+          <text class="node-text" x="320" y="140" style="font-size:10.5px;opacity:.8">read by ai-start, but only to choose local Ollama vs. local vLLM — not real cloud routing</text>
+
+          <rect class="node-box" x="300" y="180" width="620" height="60" rx="3" style="stroke:var(--amber-soft);stroke-dasharray:4 4"/>
+          <text class="node-text" x="320" y="202" style="fill:var(--amber-soft);font-weight:700">ai-claude-on -Profile openrouter  —  PROPOSED</text>
+          <text class="node-text" x="320" y="220" style="font-size:10.5px;opacity:.8">designed in ADR-009 (status: Proposed) — not built yet, this is the path that would use it</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--teal-soft)"></i>live and working</span>
+        <span><i style="background:var(--amber-soft)"></i>partial or proposed, not full cloud routing yet</span>
+        <span><i style="background:var(--danger)"></i>not connected at all</span>
+      </div>
+      <figcaption>Storing a key today is real and safe — it just doesn't do anything on its own yet. Nothing shipped currently spends an OpenRouter/OpenAI/Anthropic/Google key to route a request; the one path designed to (Claude Code's multi-provider profile switch) is a proposal, not shipped code. Verified 2026-08-15 by reading <code>ai-code</code>, <code>Start-AI.ps1</code>, and <code>ADR-009</code> directly.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="showcase">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">05</span><h2>Everything Airlock can do, at a glance</h2></div>
+    <p class="section-sub">The whole platform in one scannable list, grouped by what it's actually for. Every row is tagged honestly — <span class="pill live">live</span> means shipped and working today, <span class="pill partial">partial</span> means it does something real but not the whole job yet, <span class="pill proposed">proposed</span> means designed but not built, and <span class="pill notwired">not wired</span> means the plumbing for it doesn't connect yet. Nothing here is rounded up.</p>
+
+    <div class="showcase-group">
+      <h3>Local backend &amp; safety</h3>
+      <div class="showcase-row"><span class="cap-name">Single-instance local model serving</span><span class="cap-desc"><code>ai-start</code>/<code>ai-stop</code> — kills rogue processes, one clean instance, firewalled port.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">vLLM as an alternate backend</span><span class="cap-desc">Higher-throughput option for NVIDIA GPU + Docker Desktop owners.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Dead-redirect / orphaned-pointer diagnosis</span><span class="cap-desc"><code>ai-doctor</code> — tells the two failure modes apart and prints the exact fix. See the animated walkthrough below.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Install-drift detection</span><span class="cap-desc"><code>ai-doctor</code> also flags when your installed copy has fallen behind the source it was built from.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Pre-commit secret scanning</span><span class="cap-desc">Blocks or flags commits matching a configurable policy (API keys, passwords, PII patterns) before they land.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Clean, previewable uninstall</span><span class="cap-desc"><code>ai-uninstall -WhatIf</code> shows exactly what would go, with nothing touched, before you commit to it.</span><span class="pill live">live</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Session control</h3>
+      <div class="showcase-row"><span class="cap-name">Session-scoped Claude Code redirect</span><span class="cap-desc"><code>ai-claude-on</code>/<code>-off</code> — this terminal only, checked alive first, gone automatically.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Task routing &amp; cloud-limit handoff</span><span class="cap-desc"><code>ai-route</code> gives an advisory local-vs-cloud recommendation; <code>ai-handoff</code> logs the switch so nothing is silently lost.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Cross-harness session resume</span><span class="cap-desc">Carrying context between Claude Code, Grok CLI, Pi CLI, and OpenCode without re-explaining yourself.</span><span class="pill partial">partial</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Memory &amp; retrieval</h3>
+      <div class="showcase-row"><span class="cap-name">Retrieval-augmented chat</span><span class="cap-desc"><code>ai-memory-start</code>/<code>-on</code> — recalls relevant context from earlier in the same project. Full deep dive further down.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Fail-closed retrieval</span><span class="cap-desc">A weak match is dropped, never guessed — a response is honestly marked unaugmented rather than faking recall.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Per-project memory, per-session checkpoints</span><span class="cap-desc">Two genuinely separate stores under the hood — see the storage section for exactly how.</span><span class="pill live">live</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Cloud scaling</h3>
+      <div class="showcase-row"><span class="cap-name">Cloud key storage</span><span class="cap-desc"><code>ai-auth-set</code> — safely stored, gitignored, outside the repo.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">A stored key actually routing a request</span><span class="cap-desc">Depends which command — see the full breakdown two sections up.</span><span class="pill notwired">not wired</span></div>
+      <div class="showcase-row"><span class="cap-name">Claude Code multi-provider profile switch</span><span class="cap-desc"><code>ai-claude-on -Profile openrouter</code> — designed in ADR-009, not built yet.</span><span class="pill proposed">proposed</span></div>
+    </div>
+
+    <div class="showcase-group">
+      <h3>Other tools in the repo</h3>
+      <div class="showcase-row"><span class="cap-name">3D system visualizer</span><span class="cap-desc">Explorable node-graph view of any system, with animated call-path playback. Launch guide below.</span><span class="pill live">live</span></div>
+      <div class="showcase-row"><span class="cap-name">Containerized Hermes agent</span><span class="cap-desc"><code>ai-hermes-start</code>/<code>-stop</code> — sandboxed agent for job-search tasks, isolated from your other files.</span><span class="pill live">live</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="commands" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">06</span><h2>The commands</h2></div>
+    <p class="section-sub">Every command starts with <code>ai-</code>. Type it, hit Enter — that's the whole learning curve. Below: what each one actually does, the exact snippet, and a real moment you'd reach for it.</p>
+
+    <div class="cmd-grid">
+      <div class="cmd-card"><span class="cmd-name">ai-start</span><p>Starts your local model backend and gets it ready to use.</p></div>
+      <div class="cmd-card"><span class="cmd-name">ai-stop</span><p>Shuts the backend down cleanly and clears session state.</p></div>
+      <div class="cmd-card"><span class="cmd-name">ai-doctor</span><p>Diagnoses connection problems and tells you the exact fix.</p></div>
+      <div class="cmd-card"><span class="cmd-name">ai-claude-on / -off</span><p>Points Claude Code at your local model, for this terminal only.</p></div>
+      <div class="cmd-card"><span class="cmd-name">ai-memory-on / -off</span><p>Turns retrieval-augmented memory on or off for your chats.</p></div>
+      <div class="cmd-card"><span class="cmd-name">ai-uninstall</span><p>Removes Airlock from your machine, with a safe preview first.</p></div>
+    </div>
+
+    <h3 style="margin-top:48px">ai-start — get your local model running</h3>
+    <p class="narrow">Run this once at the start of a work session. It checks for any leftover Ollama processes and closes them, starts one clean instance on a fixed local port, and puts a firewall rule around that port so nothing outside your machine can reach it.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-start
+<span class="comment"># picks a model that fits your hardware and starts it — takes a few seconds</span></code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You've just opened your laptop and want to start coding with a local model. <code>ai-start</code> is the first thing you type — everything else in Airlock assumes the backend from this command is already running.</p></div>
+    </div>
+    <p class="narrow">Want a specific model or backend? Add flags:</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-start -Model qwen2.5-coder:7b
+<span class="prompt">PS&gt;</span> ai-start -Backend vllm   <span class="comment"># if you have an NVIDIA GPU + Docker Desktop</span></code></pre>
+    </div>
+
+    <h3 style="margin-top:48px">ai-doctor — find out why something won't connect</h3>
+    <p class="narrow">If Claude Code, or any other tool, seems to be talking to the wrong place — or won't connect at all — run this. It checks every place a "point this tool at localhost" setting can hide, and prints the exact fix in plain language, instead of you hunting through settings by hand.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-doctor</code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>Claude Code shows a connection error, or a tool behaves like it's talking to nothing. Before checking anything by hand, run <code>ai-doctor</code> — it tells you what's set, where, whether it's actually broken or just stale, and exactly what to do next.</p></div>
+    </div>
+
+    <div class="analogy">
+      <span class="glyph">🔧</span>
+      <div>
+        <span class="tag">Two kinds of problem it tells apart</span>
+        <p>A setting can be broken in two different ways that look identical from the outside. A <b>dead redirect</b> is a light left on in a room you're not in — you can just walk over and switch it off yourself. An <b>orphaned pointer</b> is a light wired in by something else entirely, still fed by a circuit you can't reach from where you're standing — clearing it here does nothing; you have to close the whole session (sign out or reboot) to actually kill it. <code>ai-doctor</code> tells you which one you're looking at, so you don't waste time on the wrong fix.</p>
+      </div>
+    </div>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-doctor" viewBox="0 0 920 300" role="img" aria-label="Decision flow for ai-doctor: it checks whether a connection setting is present, whether anything answers at that address, and whether it is set in more than one place, to tell a simple leftover setting apart from one it cannot clear on its own.">
+          <defs>
+            <marker id="arrow-d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="190" y1="150" x2="228" y2="150" marker-end="url(#arrow-d)"/>
+            <line class="edge" x1="410" y1="150" x2="448" y2="150" marker-end="url(#arrow-d)"/>
+            <line class="edge" x1="640" y1="150" x2="668" y2="150" marker-end="url(#arrow-d)"/>
+            <line class="edge dashed" x1="95" y1="180" x2="95" y2="228" marker-end="url(#arrow-d)"/>
+            <line class="edge dashed" x1="305" y1="180" x2="305" y2="228" marker-end="url(#arrow-d)"/>
+            <line class="edge dashed" x1="525" y1="180" x2="525" y2="228" marker-end="url(#arrow-d)"/>
+          </g>
+
+          <rect id="d-n1" class="node-box" x="10" y="122" width="180" height="56" rx="3"/>
+          <text class="node-text" x="100" y="145" text-anchor="middle">Is a redirect set</text>
+          <text class="node-text" x="100" y="161" text-anchor="middle">in this shell?</text>
+
+          <rect id="d-n2" class="node-box" x="230" y="122" width="180" height="56" rx="3"/>
+          <text class="node-text" x="320" y="145" text-anchor="middle">Anything listening</text>
+          <text class="node-text" x="320" y="161" text-anchor="middle">at that address?</text>
+
+          <rect id="d-n3" class="node-box" x="450" y="122" width="190" height="56" rx="3"/>
+          <text class="node-text" x="545" y="145" text-anchor="middle">Also set somewhere</text>
+          <text class="node-text" x="545" y="161" text-anchor="middle">more permanent?</text>
+
+          <rect id="d-n4" class="node-box final" x="670" y="105" width="240" height="90" rx="3"/>
+          <text class="node-text" x="790" y="132" text-anchor="middle">ORPHANED POINTER</text>
+          <text class="node-text" x="790" y="150" text-anchor="middle" style="opacity:.8">only a sign-out or reboot</text>
+          <text class="node-text" x="790" y="166" text-anchor="middle" style="opacity:.8">actually clears this one</text>
+
+          <rect class="leaf-box" x="20" y="228" width="160" height="42" rx="3"/>
+          <text class="leaf-text" x="100" y="245" text-anchor="middle">not set →</text>
+          <text class="leaf-text" x="100" y="259" text-anchor="middle">nothing to fix</text>
+
+          <rect class="leaf-box" x="230" y="228" width="160" height="42" rx="3"/>
+          <text class="leaf-text" x="310" y="245" text-anchor="middle">yes →</text>
+          <text class="leaf-text" x="310" y="259" text-anchor="middle">it's working, nothing to fix</text>
+
+          <rect class="leaf-box" x="450" y="228" width="190" height="42" rx="3"/>
+          <text class="leaf-text" x="545" y="245" text-anchor="middle">yes →</text>
+          <text class="leaf-text" x="545" y="259" text-anchor="middle">DEAD REDIRECT, just clear it</text>
+
+          <circle id="d-token" class="token" r="7" cx="100" cy="150"/>
+        </svg>
+      </div>
+      <div class="controls">
+        <button data-flow="doctor" data-action="step">Step →</button>
+        <button data-flow="doctor" data-action="play">▶ Play</button>
+        <button data-flow="doctor" data-action="reset">Reset</button>
+      </div>
+      <div class="status-line" id="status-doctor"><span class="prefix">$</span>press step or play to watch ai-doctor tell these apart</div>
+      <figcaption>The path shown here plays out the orphaned-pointer branch, since it's the one with the least obvious fix. The dashed side branches are the other two outcomes — <code>ai-doctor</code> follows whichever one your actual situation matches.</figcaption>
+    </figure>
+
+    <h3 style="margin-top:48px">ai-claude-on / ai-claude-off — use Claude Code with your local model</h3>
+    <p class="narrow">This points Claude Code at your local model instead of the cloud, for this terminal window only. It's checked as actually working before anything is switched, and it undoes itself automatically the moment you're done — no file on disk is ever edited.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-claude-on
+<span class="prompt">PS&gt;</span> claude   <span class="comment"># use Claude Code exactly like normal from here</span>
+<span class="prompt">PS&gt;</span> ai-claude-off   <span class="comment"># or just close the terminal — same result</span></code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You want to code with Claude Code without spending your cloud subscription's usage, or you're working somewhere without a reliable connection. <code>ai-claude-on</code> switches this one terminal over; every other terminal, and Claude Code everywhere else on your machine, is unaffected.</p></div>
+    </div>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-claudeon" viewBox="0 0 980 220" role="img" aria-label="Flow for ai-claude-on: check the backend is Ollama, check it is alive, remember the shell's current settings so they can be restored later, apply the redirect for this shell only, then confirm it is active.">
+          <defs>
+            <marker id="arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="140" y1="110" x2="168" y2="110" marker-end="url(#arrow-c)"/>
+            <line class="edge" x1="310" y1="110" x2="338" y2="110" marker-end="url(#arrow-c)"/>
+            <line class="edge" x1="510" y1="110" x2="538" y2="110" marker-end="url(#arrow-c)"/>
+            <line class="edge" x1="730" y1="110" x2="758" y2="110" marker-end="url(#arrow-c)"/>
+            <line class="edge dashed" x1="70" y1="138" x2="70" y2="176" marker-end="url(#arrow-c)"/>
+            <line class="edge dashed" x1="240" y1="138" x2="240" y2="176" marker-end="url(#arrow-c)"/>
+          </g>
+
+          <rect id="c-n1" class="node-box" x="10" y="82" width="130" height="56" rx="3"/>
+          <text class="node-text" x="75" y="106" text-anchor="middle">Backend is</text>
+          <text class="node-text" x="75" y="122" text-anchor="middle">Ollama?</text>
+
+          <rect id="c-n2" class="node-box" x="170" y="82" width="140" height="56" rx="3"/>
+          <text class="node-text" x="240" y="106" text-anchor="middle">Is it actually</text>
+          <text class="node-text" x="240" y="122" text-anchor="middle">running right now?</text>
+
+          <rect id="c-n3" class="node-box" x="340" y="82" width="170" height="56" rx="3"/>
+          <text class="node-text" x="425" y="106" text-anchor="middle">Remember this shell's</text>
+          <text class="node-text" x="425" y="122" text-anchor="middle">current settings</text>
+
+          <rect id="c-n4" class="node-box" x="540" y="82" width="190" height="56" rx="3"/>
+          <text class="node-text" x="635" y="106" text-anchor="middle">Apply the redirect</text>
+          <text class="node-text" x="635" y="122" text-anchor="middle">for this shell only</text>
+
+          <rect id="c-n5" class="node-box final" x="760" y="74" width="210" height="72" rx="3"/>
+          <text class="node-text" x="865" y="102" text-anchor="middle">Ready to use</text>
+          <text class="node-text" x="865" y="120" text-anchor="middle" style="opacity:.8">restored automatically</text>
+          <text class="node-text" x="865" y="136" text-anchor="middle" style="opacity:.8">on ai-claude-off</text>
+
+          <rect class="leaf-box" x="0" y="176" width="140" height="36" rx="3"/>
+          <text class="leaf-text" x="70" y="198" text-anchor="middle">no → explains why, stops here</text>
+
+          <rect class="leaf-box" x="170" y="176" width="140" height="36" rx="3"/>
+          <text class="leaf-text" x="240" y="198" text-anchor="middle">not yet → run ai-start first</text>
+
+          <circle id="c-token" class="token" r="7" cx="75" cy="110"/>
+        </svg>
+      </div>
+      <div class="controls">
+        <button data-flow="claudeon" data-action="step">Step →</button>
+        <button data-flow="claudeon" data-action="play">▶ Play</button>
+        <button data-flow="claudeon" data-action="reset">Reset</button>
+      </div>
+      <div class="status-line" id="status-claudeon"><span class="prefix">$</span>press step or play to watch a redirect get checked and applied</div>
+      <figcaption>Two checks happen before anything is switched. If either one fails, <code>ai-claude-on</code> stops and tells you what to do instead of half-applying the redirect.</figcaption>
+    </figure>
+
+    <h3 style="margin-top:48px">ai-memory-start / ai-memory-on / ai-memory-off — give your chats memory</h3>
+    <p class="narrow">Turns on an optional add-on called <code>memory-service</code>: your model can recall relevant things you or it wrote down earlier in the same project, instead of starting fresh every message. Covered in full depth further down this page.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-memory-start   <span class="comment"># turn the service on, once</span>
+<span class="prompt">PS&gt;</span> ai-memory-on       <span class="comment"># route your chats through it</span>
+<span class="prompt">PS&gt;</span> ai-memory-off      <span class="comment"># back to a direct connection, any time</span></code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You're working on the same project across several sessions and want the model to remember decisions or context you've already established, instead of re-explaining them every time.</p></div>
+    </div>
+
+    <h3 style="margin-top:48px">ai-stop — shut everything down cleanly</h3>
+    <p class="narrow">Stops the backend, clears session state, and undoes any active <code>ai-claude-on</code> redirect in that shell — the tidy opposite of <code>ai-start</code>.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-stop</code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You're done for the day, or you want to free up the RAM/GPU your local model was using for something else.</p></div>
+    </div>
+
+    <h3 style="margin-top:48px">ai-uninstall — remove Airlock from your machine</h3>
+    <p class="narrow">Removes what the installer put in place: the installed copy, the source clone it was built from, the line in your PowerShell profile that loads Airlock's commands, and any firewall rules it created. Your models and Ollama itself are left completely alone — those are yours, independent of Airlock.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> ai-uninstall -WhatIf   <span class="comment"># preview only — nothing is touched</span>
+<span class="prompt">PS&gt;</span> ai-uninstall          <span class="comment"># do it for real, once you're sure</span></code></pre>
+    </div>
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You're setting up a new machine and moving your workflow there, or you've decided Airlock isn't for you. Run it with <code>-WhatIf</code> first to see the exact list of what would be removed, with zero changes made — then run it again without the flag when you're ready.</p></div>
+    </div>
+
+    <p class="narrow">The very first thing it does, before removing anything, is check this terminal for a leftover setting — the same check <code>ai-doctor</code> runs — so you get that information while everything is still in place to look at.</p>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-uninstall" viewBox="0 0 900 170" role="img" aria-label="Flow for ai-uninstall: first check this shell for a leftover redirect while everything still exists to inspect, then remove the installed copy, the source clone, the profile line, and finally any firewall rules.">
+          <defs>
+            <marker id="arrow-u" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="200" y1="90" x2="220" y2="90" marker-end="url(#arrow-u)"/>
+            <line class="edge" x1="340" y1="90" x2="360" y2="90" marker-end="url(#arrow-u)"/>
+            <line class="edge" x1="480" y1="90" x2="500" y2="90" marker-end="url(#arrow-u)"/>
+            <line class="edge" x1="620" y1="90" x2="640" y2="90" marker-end="url(#arrow-u)"/>
+          </g>
+          <rect id="u-n1" class="node-box" x="10" y="66" width="190" height="48" rx="3" style="stroke:var(--teal-soft)"/>
+          <text class="node-text" x="105" y="86" text-anchor="middle" style="fill:var(--teal-soft)">check this shell first —</text>
+          <text class="node-text" x="105" y="101" text-anchor="middle" style="fill:var(--teal-soft)">nothing removed yet</text>
+          <rect id="u-n2" class="node-box" x="220" y="70" width="120" height="40" rx="3"/><text class="node-text" x="280" y="94" text-anchor="middle">remove installed copy</text>
+          <rect id="u-n3" class="node-box" x="360" y="70" width="120" height="40" rx="3"/><text class="node-text" x="420" y="94" text-anchor="middle">remove source clone</text>
+          <rect id="u-n4" class="node-box" x="500" y="70" width="120" height="40" rx="3"/><text class="node-text" x="560" y="94" text-anchor="middle">remove profile line</text>
+          <rect id="u-n5" class="node-box final" x="640" y="66" width="140" height="48" rx="3"/><text class="node-text" x="710" y="86" text-anchor="middle">remove firewall</text><text class="node-text" x="710" y="101" text-anchor="middle" style="opacity:.8">rules — done</text>
+          <circle id="u-token" class="token" r="7" cx="105" cy="90"/>
+        </svg>
+      </div>
+      <div class="controls">
+        <button data-flow="uninstall" data-action="step">Step →</button>
+        <button data-flow="uninstall" data-action="play">▶ Play</button>
+        <button data-flow="uninstall" data-action="reset">Reset</button>
+      </div>
+      <div class="status-line" id="status-uninstall"><span class="prefix">$</span>press step or play to walk through a full teardown</div>
+      <figcaption>Checking first, before anything is deleted, means the check always has everything it needs available to read — a small ordering choice that keeps the command reliable regardless of exactly how or where it's run from.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="visualizer">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">07</span><h2>Launching the 3D system visualizer</h2></div>
+    <p class="section-sub">A second standalone tool in this repo, separate from the <code>ai-*</code> commands above: a 3D scene at <code>tools/3d-system-visualizer/index.html</code> that draws a system — services, data stores, and the edges between them — as an explorable node graph, with animated workflow playback: a glowing packet travels the actual call path, step by step.</p>
+
+    <div class="analogy">
+      <span class="glyph">🧊</span>
+      <div>
+        <span class="tag">How it's different from the diagrams on this page</span>
+        <p>Everything animated earlier on this page is a fixed, hand-drawn picture of one specific flow in Airlock's own code. The 3D visualizer is a general-purpose tool — point it at a <code>{nodes, edges, flows}</code> JSON file describing <i>any</i> system, including your own projects, and it draws and animates that instead. It ships with a demo scene, and a way to generate a scene from this platform's own real activity (below).</p>
+      </div>
+    </div>
+
+    <h3>Starting it</h3>
+    <p class="narrow">One real requirement: it loads Three.js from a CDN via an import map, which needs an actual HTTP origin — opening <code>index.html</code> straight from disk (<code>file://</code>) will fail to load. Serve it over a local HTTP server instead, from the repo root:</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> python -m http.server 8347 --directory tools/3d-system-visualizer
+<span class="comment"># or, if you have Node:</span>
+<span class="prompt">PS&gt;</span> npx serve tools/3d-system-visualizer</code></pre>
+    </div>
+    <p class="narrow">Then open <code>http://localhost:8347</code> and click a workflow button in the top-left panel to watch it animate through the graph. Click any box or connector for a metadata panel — nodes carry a <code>healthy</code>/<code>degraded</code>/<code>down</code> status that glows amber or red right in the scene, so a problem reads at a glance without clicking anything.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd use this</span><p>You want to explain your own system's architecture to someone — or to yourself, six months from now — as something explorable rather than a static diagram, including which call paths actually exist and which services depend on which.</p></div>
+    </div>
+
+    <h3 style="margin-top:40px">Seeing Airlock's own real activity, not just the demo</h3>
+    <p class="narrow"><code>Generate-LiveScene.ps1</code> reads this platform's own audit log (<code>~/.ai-platform/logs/&lt;date&gt;.jsonl</code>) and turns what actually happened — backend selections, model pulls, firewall guards, starts and stops — into a scene using the same schema, registered automatically so it shows up in the picker.</p>
+    <div class="snippet-wrap">
+      <span class="snippet-tab">powershell</span>
+      <pre class="snippet"><code><span class="prompt">PS&gt;</span> .\tools\3d-system-visualizer\scenes\Generate-LiveScene.ps1
+<span class="comment"># then pick "local-ai-platform (live)" from the Scene dropdown in the browser,</span>
+<span class="comment"># or open http://localhost:8347/?scene=scenes/local-ai-platform-live.json directly</span></code></pre>
+    </div>
+    <p class="narrow">It's a snapshot, not a live stream — re-run it after a session to refresh with whatever happened since.</p>
+  </div>
+</section>
+
+<section id="rag" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">08</span><h2>The memory service, in depth: RAG, the vector database, LangChain, and LangGraph</h2></div>
+    <p class="section-sub">Airlock ships an optional component called <code>memory-service</code> — a small program that sits between your chat client and your local model. This is the one place in Airlock that does retrieval-augmented generation, using the pieces defined in the glossary above. Here's exactly how it works.</p>
+
+    <div class="usecase">
+      <span class="glyph">💡</span>
+      <div><span class="tag">When you'd want this on</span><p>You're going back and forth on the same project across several separate chat sessions this week, and you're tired of re-explaining decisions you already made yesterday. Turn it on with <code>ai-memory-start</code> and <code>ai-memory-on</code> (see the commands section above) — this is what those two commands actually turn on, underneath.</p></div>
+    </div>
+
+    <div class="analogy">
+      <span class="glyph">📋</span>
+      <div>
+        <span class="tag">RAG in one sentence</span>
+        <p>Before the model answers you, a librarian (<code>memory-service</code>) checks a card catalog (the vector database) for anything relevant that was written down earlier — and only whispers it to the model if it's a genuinely close match. If nothing in the catalog is close enough, the librarian says nothing at all rather than handing over a card that's probably wrong. That "say nothing rather than guess" rule is called <b>failing closed</b>, and it's the most important design decision in this service.</p>
+      </div>
+    </div>
+
+    <div class="precision">
+      <span class="tag">Precision check — what's actually LangChain here</span>
+      <p style="max-width:none">"LangChain" often implies chains, retrievers, and agents. In this repo it doesn't. <code>requirements.txt</code> pulls in <code>langchain-core</code> only as a dependency of LangGraph — there is no LangChain chain, retriever, or agent anywhere in this codebase. Retrieval is a direct call to the vector database. The embedding step is hand-written, not LangChain's default:</p>
+      <ul>
+        <li><b>Why hand-written embeddings.</b> LangChain's default embedding backends reach for a cloud provider. That would send your conversation content off your machine, which goes against this platform's local-first design. So the embedding step talks only to the Ollama instance Airlock itself manages — never a cloud endpoint.</li>
+        <li><b><code>langsmith</code> is installed and deliberately switched off.</b> It's LangGraph's tracing/telemetry client, and it can transmit externally if enabled. It's turned off explicitly at startup, so tracing needs a deliberate decision to turn on, not just an unset variable somewhere else on the machine.</li>
+        <li><b>LangGraph is the actual orchestrator.</b> It's a small two-step sequence (below) — not because the pipeline is simple, but because it doesn't need to be more than that yet.</li>
+      </ul>
+    </div>
+
+    <h3 style="margin-top:44px">The request path, step by step</h3>
+    <p class="narrow">Every chat message that comes in through <code>memory-service</code> takes one of two paths, decided by a single check: is the active backend Ollama? Ollama can produce embeddings; vLLM can't. So when vLLM is active, retrieval simply can't run — the service degrades to a plain passthrough rather than erroring, or worse, reaching for a cloud embedding service to keep going.</p>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-rag" viewBox="0 0 1000 340" role="img" aria-label="Request flow for a chat message in memory-service: check which backend is active, then either the Ollama path (retrieve relevant memories, search the vector database, filter by similarity, add them to the prompt, reply) or the vLLM path (send straight through, unaugmented).">
+          <defs>
+            <marker id="arrow-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g style="color:var(--console-line)">
+            <line class="edge" x1="120" y1="160" x2="148" y2="160" marker-end="url(#arrow-r)"/>
+            <line class="edge" x1="270" y1="160" x2="298" y2="160" marker-end="url(#arrow-r)"/>
+            <line class="edge" x1="410" y1="160" x2="438" y2="160" marker-end="url(#arrow-r)"/>
+            <line class="edge" x1="560" y1="160" x2="588" y2="160" marker-end="url(#arrow-r)"/>
+            <line class="edge" x1="720" y1="160" x2="748" y2="160" marker-end="url(#arrow-r)"/>
+            <line class="edge dashed" id="r-degrade-edge" x1="205" y1="188" x2="205" y2="248" marker-end="url(#arrow-r)"/>
+          </g>
+
+          <rect id="r-n1" class="node-box" x="10" y="132" width="110" height="56" rx="3"/>
+          <text class="node-text" x="65" y="155" text-anchor="middle">You send</text>
+          <text class="node-text" x="65" y="171" text-anchor="middle" style="font-size:10.5px">a chat message</text>
+
+          <rect id="r-n2" class="node-box" x="150" y="132" width="120" height="56" rx="3"/>
+          <text class="node-text" x="210" y="155" text-anchor="middle">Check backend</text>
+          <text class="node-text" x="210" y="171" text-anchor="middle">provider</text>
+
+          <rect id="r-n3" class="node-box" x="300" y="132" width="110" height="56" rx="3"/>
+          <text class="node-text" x="355" y="151" text-anchor="middle" style="font-size:10.5px">Retrieve step</text>
+          <text class="node-text" x="355" y="167" text-anchor="middle">looks for context</text>
+
+          <rect id="r-n4" class="node-box" x="440" y="132" width="120" height="56" rx="3"/>
+          <text class="node-text" x="500" y="151" text-anchor="middle" style="font-size:10.5px">Vector database</text>
+          <text class="node-text" x="500" y="167" text-anchor="middle">searched</text>
+
+          <rect id="r-n5" class="node-box" x="590" y="132" width="130" height="56" rx="3"/>
+          <text class="node-text" x="655" y="151" text-anchor="middle">similarity filter</text>
+          <text class="node-text" x="655" y="167" text-anchor="middle" style="font-size:10.5px">fail-closed</text>
+
+          <rect id="r-n6" class="node-box" x="750" y="132" width="130" height="56" rx="3"/>
+          <text class="node-text" x="815" y="151" text-anchor="middle" style="font-size:10.5px">add to prompt</text>
+          <text class="node-text" x="815" y="167" text-anchor="middle">→ backend</text>
+
+          <rect id="r-n7" class="node-box final" x="900" y="115" width="90" height="90" rx="3"/>
+          <text class="node-text" x="945" y="145" text-anchor="middle" style="font-size:10.5px">reply +</text>
+          <text class="node-text" x="945" y="161" text-anchor="middle" style="font-size:10.5px">augmented</text>
+          <text class="node-text" x="945" y="177" text-anchor="middle" style="font-size:10.5px">flag → you</text>
+
+          <rect id="r-degrade" class="node-box" x="120" y="250" width="220" height="56" rx="3" style="stroke:var(--amber-soft)"/>
+          <text class="node-text" x="230" y="273" text-anchor="middle" style="fill:var(--amber-soft)">vLLM active — sent straight</text>
+          <text class="node-text" x="230" y="289" text-anchor="middle" style="fill:var(--amber-soft)">through, augmented: false</text>
+
+          <circle id="r-token" class="token" r="7" cx="65" cy="160"/>
+        </svg>
+      </div>
+      <div class="controls">
+        <button data-flow="rag" data-action="step">Step →</button>
+        <button data-flow="rag" data-action="play">▶ Play</button>
+        <button data-flow="rag" data-action="reset">Reset</button>
+        <button class="toggle" id="rag-toggle" data-flow="rag" data-action="toggle">Show the vLLM path instead</button>
+      </div>
+      <div class="status-line" id="status-rag"><span class="prefix">$</span>press step or play to trace one chat message through memory-service</div>
+      <figcaption>The Ollama path is the default. The amber branch is the real fallback when your backend is vLLM instead — retrieval can't run, so the reply is clearly marked unaugmented rather than pretending memory was used.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="swimlane">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">09</span><h2>The same request, as a swimlane</h2></div>
+    <p class="section-sub">The flow above shows <i>what</i> happens. This shows <i>who</i> does each step — which piece of the system — for one real turn through the Ollama path.</p>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-swim" viewBox="0 0 980 600" role="img" aria-label="Swimlane diagram of one chat turn across five lanes: you, the API server, LangGraph, the memory store and vector database, and the backend model server. Fifteen steps in sequence from your message through retrieval, generation, saving, and the reply back to you.">
+          <defs>
+            <marker id="arrow-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <g style="color:var(--console-line)">
+            <line class="lane-line" x1="90" y1="50" x2="90" y2="560"/>
+            <line class="lane-line" x1="280" y1="50" x2="280" y2="560"/>
+            <line class="lane-line" x1="470" y1="50" x2="470" y2="560"/>
+            <line class="lane-line" x1="660" y1="50" x2="660" y2="560"/>
+            <line class="lane-line" x1="860" y1="50" x2="860" y2="560"/>
+          </g>
+          <text class="lane-label" x="90" y="30" text-anchor="middle">You</text>
+          <text class="lane-label" x="280" y="30" text-anchor="middle">API server</text>
+          <text class="lane-label" x="470" y="30" text-anchor="middle">LangGraph</text>
+          <text class="lane-label" x="660" y="30" text-anchor="middle">Memory store</text>
+          <text class="lane-label" x="860" y="30" text-anchor="middle">Backend</text>
+
+          <g style="color:var(--console-line)" id="swim-edges">
+            <line class="edge" x1="90"  y1="70"  x2="270" y2="70"  marker-end="url(#arrow-s)"/>
+            <line class="edge" x1="280" y1="120" x2="460" y2="120" marker-end="url(#arrow-s)"/>
+            <line class="edge" x1="470" y1="170" x2="650" y2="170" marker-end="url(#arrow-s)"/>
+            <line class="edge" x1="660" y1="220" x2="650" y2="220" marker-end="url(#arrow-s)" style="opacity:.35"/>
+            <line class="edge dashed" x1="660" y1="270" x2="480" y2="270" marker-end="url(#arrow-s)"/>
+            <line class="edge" x1="470" y1="330" x2="850" y2="330" marker-end="url(#arrow-s)"/>
+            <line class="edge dashed" x1="860" y1="380" x2="480" y2="380" marker-end="url(#arrow-s)"/>
+            <line class="edge dashed" x1="470" y1="430" x2="290" y2="430" marker-end="url(#arrow-s)"/>
+            <line class="edge dashed" x1="280" y1="480" x2="100" y2="480" marker-end="url(#arrow-s)"/>
+          </g>
+
+          <text class="node-text" x="150" y="65" style="font-size:11px">you send a message</text>
+          <text class="node-text" x="330" y="115" style="font-size:11px">passes it to LangGraph</text>
+          <text class="node-text" x="520" y="165" style="font-size:11px">asks the memory store</text>
+          <text class="node-text" x="500" y="215" style="font-size:10px;opacity:.6">searches the vector database</text>
+          <text class="node-text" x="520" y="265" style="font-size:11px">similarity filter applied here</text>
+          <text class="node-text" x="600" y="325" style="font-size:11px">sends the augmented prompt</text>
+          <text class="node-text" x="620" y="375" style="font-size:11px">model's reply</text>
+          <text class="node-text" x="480" y="420" style="font-size:10px;opacity:.6">this step is saved automatically</text>
+          <text class="node-text" x="300" y="425" style="font-size:11px">final result</text>
+          <text class="node-text" x="110" y="475" style="font-size:11px">reply + whether it was augmented</text>
+
+          <circle id="s-token" class="token" r="7" cx="90" cy="70"/>
+        </svg>
+      </div>
+      <div class="controls">
+        <button data-flow="swim" data-action="step">Step →</button>
+        <button data-flow="swim" data-action="play">▶ Play</button>
+        <button data-flow="swim" data-action="reset">Reset</button>
+      </div>
+      <div class="status-line" id="status-swim"><span class="prefix">$</span>press step or play to walk one full turn across every part of the system</div>
+      <figcaption>One message, one round trip. The automatic save (dim label, no lane change) is what lets a later message in the same conversation build on this one, without you resending anything yourself.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="er" class="deep">
+  <div class="wrap">
+    <div class="section-head"><span class="section-num">10</span><h2>Two stores, two keys, no shared row</h2></div>
+    <p class="section-sub">"Memory" sounds like one thing, but it's two separate stores here, each with its own key, and they are never joined in storage — only for a moment, at request time, by whatever you send in.</p>
+
+    <figure>
+      <div class="screen">
+        <svg id="svg-er" viewBox="0 0 880 440" role="img" aria-label="Diagram of two unconnected stores: a vector database collection per project, containing remembered chunks with metadata; and a separate short-term memory store keyed by conversation, holding chat state snapshots. A broken link between them is labeled: not joined in storage, connected only by what is sent in at request time.">
+          <rect class="node-box" x="20" y="30" width="380" height="380" rx="4"/>
+          <text class="node-text" x="210" y="60" text-anchor="middle" style="font-weight:700;fill:var(--teal-soft)">Vector database (per project)</text>
+          <line x1="40" y1="74" x2="380" y2="74" style="stroke:var(--console-line)"/>
+          <text class="node-text" x="40" y="98" style="font-size:11px">collection</text>
+          <text class="node-text" x="200" y="98" style="font-size:11px;opacity:.75">one per project, kept separate</text>
+          <text class="node-text" x="40" y="130" style="font-weight:700;font-size:11px">Each remembered chunk</text>
+          <text class="node-text" x="40" y="154" style="font-size:11px">id</text>
+          <text class="node-text" x="200" y="154" style="font-size:11px;opacity:.75">a fingerprint of the text</text>
+          <text class="node-text" x="40" y="178" style="font-size:11px">text</text>
+          <text class="node-text" x="200" y="178" style="font-size:11px;opacity:.75">the remembered content</text>
+          <text class="node-text" x="40" y="202" style="font-size:11px">source</text>
+          <text class="node-text" x="40" y="226" style="font-size:11px">file path</text>
+          <text class="node-text" x="200" y="226" style="font-size:11px;opacity:.75">optional</text>
+          <text class="node-text" x="40" y="250" style="font-size:11px">line range</text>
+          <text class="node-text" x="200" y="250" style="font-size:11px;opacity:.75">optional</text>
+          <text class="node-text" x="40" y="274" style="font-size:11px">saved-at commit</text>
+          <text class="node-text" x="40" y="298" style="font-size:11px">saved-at time</text>
+          <text class="node-text" x="200" y="298" style="font-size:11px;opacity:.75">for freshness checks</text>
+          <text class="node-text" x="40" y="340" style="font-size:10.5px;opacity:.6">read whenever memory-service</text>
+          <text class="node-text" x="40" y="356" style="font-size:10.5px;opacity:.6">looks something up</text>
+          <text class="node-text" x="40" y="386" style="font-size:10.5px;opacity:.6">written whenever something</text>
+          <text class="node-text" x="40" y="400" style="font-size:10.5px;opacity:.6">is explicitly remembered</text>
+
+          <rect class="node-box" x="480" y="30" width="380" height="380" rx="4"/>
+          <text class="node-text" x="670" y="60" text-anchor="middle" style="font-weight:700;fill:var(--amber-soft)">Short-term memory (per conversation)</text>
+          <line x1="500" y1="74" x2="840" y2="74" style="stroke:var(--console-line)"/>
+          <text class="node-text" x="500" y="98" style="font-size:11px">key</text>
+          <text class="node-text" x="620" y="98" style="font-size:11px;opacity:.75">the conversation's own id</text>
+          <text class="node-text" x="500" y="130" style="font-weight:700;font-size:11px">Saved snapshot</text>
+          <text class="node-text" x="500" y="154" style="font-size:11px">project</text>
+          <text class="node-text" x="500" y="178" style="font-size:11px">messages so far</text>
+          <text class="node-text" x="500" y="202" style="font-size:11px">what was retrieved</text>
+          <text class="node-text" x="500" y="226" style="font-size:11px">whether it was augmented</text>
+          <text class="node-text" x="500" y="270" style="font-size:10.5px;opacity:.6">one snapshot saved automatically</text>
+          <text class="node-text" x="500" y="286" style="font-size:10.5px;opacity:.6">after every step of the</text>
+          <text class="node-text" x="500" y="302" style="font-size:10.5px;opacity:.6">conversation, no action needed</text>
+          <text class="node-text" x="500" y="340" style="font-size:10.5px;opacity:.6">gives a conversation continuity</text>
+          <text class="node-text" x="500" y="356" style="font-size:10.5px;opacity:.6">across separate messages — this</text>
+          <text class="node-text" x="500" y="372" style="font-size:10.5px;opacity:.6">is the "short-term memory" layer</text>
+
+          <line x1="400" y1="220" x2="480" y2="220" style="stroke:var(--console-line);stroke-dasharray:3 5"/>
+          <text class="node-text" x="440" y="205" text-anchor="middle" style="font-size:18px">✕</text>
+          <text class="leaf-text" x="440" y="440" text-anchor="middle" style="max-width:none">not joined in storage — connected only by the project and conversation you specify, at request time</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--teal-soft)"></i>long-term memory — survives restarts, shared across sessions in a project</span>
+        <span><i style="background:var(--amber-soft)"></i>short-term memory — lives only for one conversation</span>
+      </div>
+      <figcaption>Two different keys, two different lifetimes, two different tables — with no link between them anywhere in storage. A project's long-term memories aren't tied to any one conversation; a conversation's short-term state isn't tied to any one project beyond what's in its own snapshot.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap narrow">
+    <p><b>Sources for everything above:</b> the Airlock repository's <code>memory-service/app/</code> source, <code>scripts/profile-helpers.ps1</code>, <code>scripts/Uninstall-AI.ps1</code>, and <code>README.md</code> — read directly for this page, not recalled from memory.</p>
+    <p>Diagrams are hand-drawn SVG with a small reusable step-player, and the architecture diagram uses genuine CSS 3D transforms (<code>perspective</code> + <code>rotateX</code>/<code>rotateY</code>) — no charting library, no 3D engine, nothing loaded from outside this page. This page respects <code>prefers-reduced-motion</code>.</p>
+    <p>Part of the Airlock repository — <a href="../../README.md">back to README</a>. Kept next to the code it documents; update this page in the same PR that changes the behavior it describes.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function FlowPlayer(cfg){
+    this.token = document.getElementById(cfg.tokenId);
+    this.boxes = cfg.nodeIds.map(function(id){ return document.getElementById(id); });
+    this.points = cfg.points;
+    this.captions = cfg.captions;
+    this.statusEl = document.getElementById(cfg.statusId);
+    this.playBtns = [];
+    this.i = 0;
+    this.timer = null;
+    this.playing = false;
+    this.render();
+  }
+  FlowPlayer.prototype.registerPlayBtn = function(btn){ this.playBtns.push(btn); };
+  FlowPlayer.prototype.render = function(){
+    var self = this;
+    this.boxes.forEach(function(b, idx){ if(b) b.classList.toggle("active", idx === self.i); });
+    var p = this.points[this.i];
+    if(this.token){ this.token.setAttribute("cx", p.x); this.token.setAttribute("cy", p.y); }
+    if(this.statusEl){ this.statusEl.innerHTML = '<span class="prefix">$</span>' + this.captions[this.i]; }
+  };
+  FlowPlayer.prototype.step = function(){
+    this.i = (this.i + 1) % this.points.length;
+    this.render();
+    if(this.i === this.points.length - 1){ this.pause(); }
+  };
+  FlowPlayer.prototype.reset = function(){
+    this.pause(); this.i = 0; this.render();
+  };
+  FlowPlayer.prototype.play = function(){
+    if(this.playing) { this.pause(); return; }
+    if(this.i === this.points.length - 1){ this.i = 0; this.render(); }
+    this.playing = true;
+    this.playBtns.forEach(function(b){ b.textContent = "⏸ Pause"; });
+    var self = this;
+    var delay = reduced ? 1 : 1100;
+    this.timer = setInterval(function(){
+      self.step();
+      if(!self.playing){ clearInterval(self.timer); }
+    }, delay);
+  };
+  FlowPlayer.prototype.pause = function(){
+    this.playing = false;
+    if(this.timer) clearInterval(this.timer);
+    this.playBtns.forEach(function(b){ b.textContent = "▶ Play"; });
+  };
+
+  function centers(ids){
+    return ids.map(function(id){
+      var el = document.getElementById(id);
+      var x = parseFloat(el.getAttribute("x")), y = parseFloat(el.getAttribute("y"));
+      var w = parseFloat(el.getAttribute("width")), h = parseFloat(el.getAttribute("height"));
+      return { x: x + w/2, y: y + h/2 };
+    });
+  }
+
+  var doctorIds = ["d-n1","d-n2","d-n3","d-n4"];
+  var doctor = new FlowPlayer({
+    tokenId:"d-token", statusId:"status-doctor", nodeIds: doctorIds,
+    points: centers(doctorIds),
+    captions: [
+      "A redirect is set in this shell — worth checking further.",
+      "Nothing answers at that address — it's not currently working.",
+      "Checking whether it's also set somewhere more permanent: it isn't.",
+      "ORPHANED POINTER. Something outside this shell is handing it a frozen value — sign out or reboot to actually clear it."
+    ]
+  });
+
+  var claudeonIds = ["c-n1","c-n2","c-n3","c-n4","c-n5"];
+  var claudeon = new FlowPlayer({
+    tokenId:"c-token", statusId:"status-claudeon", nodeIds: claudeonIds,
+    points: centers(claudeonIds),
+    captions: [
+      "Confirming the active backend is Ollama.",
+      "Liveness check: yes, it's really running right now.",
+      "Remembering this shell's current settings, so ai-claude-off can restore them exactly.",
+      "Redirect applied — this shell only, nothing written to disk.",
+      "Ready. It reverts automatically on ai-claude-off or when the shell closes."
+    ]
+  });
+
+  var uninstallIds = ["u-n1","u-n2","u-n3","u-n4","u-n5"];
+  var uninstall = new FlowPlayer({
+    tokenId:"u-token", statusId:"status-uninstall", nodeIds: uninstallIds,
+    points: centers(uninstallIds),
+    captions: [
+      "First, check this shell for a leftover redirect — while everything still exists to inspect.",
+      "Remove the installed copy of Airlock.",
+      "Remove the source clone the installer made.",
+      "Remove the line in your PowerShell profile that loads Airlock's commands.",
+      "Remove any firewall rules Airlock created. Done — Ollama and your models are untouched."
+    ]
+  });
+
+  var ragIds = ["r-n1","r-n2","r-n3","r-n4","r-n5","r-n6","r-n7"];
+  var ragDegradeIds = ["r-n1","r-n2","r-degrade","r-n7"];
+  var ragHealthy = new FlowPlayer({
+    tokenId:"r-token", statusId:"status-rag", nodeIds: ragIds,
+    points: centers(ragIds),
+    captions: [
+      "A chat message arrives at memory-service.",
+      "Backend is Ollama — retrieval can run.",
+      "The retrieve step looks for anything relevant already saved.",
+      "The vector database is searched for the closest matches.",
+      "Fail-closed: anything not similar enough is dropped, not returned as a guess.",
+      "What survived is added to the prompt, then sent to the real backend.",
+      "Reply comes back tagged as augmented — true here, since real context made it through."
+    ]
+  });
+  var ragDegraded = new FlowPlayer({
+    tokenId:"r-token", statusId:"status-rag", nodeIds: ragDegradeIds,
+    points: centers(ragDegradeIds),
+    captions: [
+      "A chat message arrives at memory-service.",
+      "Backend is vLLM this time — it can't produce embeddings, so retrieval can't run at all.",
+      "Passthrough mode: chat keeps working, memory silently sits out instead of erroring.",
+      "Reply comes back tagged augmented: false — visibly unaugmented, never disguised as a real retrieval."
+    ]
+  });
+  var ragActive = ragHealthy;
+  var ragToggleOn = false;
+
+  var swimPoints = [
+    {x:90,y:70},{x:280,y:70},{x:280,y:120},{x:470,y:120},{x:470,y:170},
+    {x:660,y:170},{x:660,y:220},{x:660,y:270},{x:470,y:270},{x:470,y:330},
+    {x:860,y:330},{x:860,y:380},{x:470,y:380},{x:280,y:430},{x:90,y:480}
+  ];
+  var swim = new FlowPlayer({
+    tokenId:"s-token", statusId:"status-swim", nodeIds: [],
+    points: swimPoints,
+    captions: [
+      "You send a message.",
+      "The API server receives it.",
+      "It hands the conversation over to LangGraph.",
+      "LangGraph starts the retrieve step.",
+      "The retrieve step asks the memory store for relevant context.",
+      "The memory store hands off to the vector database.",
+      "The vector database searches this project's saved chunks.",
+      "Back at the memory store: anything not similar enough gets dropped.",
+      "What survived arrives back at the retrieve step.",
+      "The augmented prompt is assembled.",
+      "The real backend (Ollama or vLLM) generates a reply.",
+      "The backend returns its reply.",
+      "This step is saved automatically — that's the conversation's short-term memory.",
+      "The final result goes back to the API server.",
+      "You get the reply, plus whether it was augmented."
+    ]
+  });
+
+  var ragPlayBtn = document.querySelector('[data-flow="rag"][data-action="play"]');
+  doctor.registerPlayBtn(document.querySelector('[data-flow="doctor"][data-action="play"]'));
+  claudeon.registerPlayBtn(document.querySelector('[data-flow="claudeon"][data-action="play"]'));
+  uninstall.registerPlayBtn(document.querySelector('[data-flow="uninstall"][data-action="play"]'));
+  swim.registerPlayBtn(document.querySelector('[data-flow="swim"][data-action="play"]'));
+  ragHealthy.registerPlayBtn(ragPlayBtn);
+  ragDegraded.registerPlayBtn(ragPlayBtn);
+
+  document.querySelectorAll(".controls button").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      var flow = btn.getAttribute("data-flow");
+      var action = btn.getAttribute("data-action");
+      var target = flow === "doctor" ? doctor : flow === "claudeon" ? claudeon : flow === "uninstall" ? uninstall : flow === "swim" ? swim : ragActive;
+
+      if(flow === "rag" && action === "toggle"){
+        ragToggleOn = !ragToggleOn;
+        btn.classList.toggle("on", ragToggleOn);
+        btn.textContent = ragToggleOn ? "Showing the vLLM path — click for Ollama" : "Show the vLLM path instead";
+        ragActive.pause();
+        ragActive = ragToggleOn ? ragDegraded : ragHealthy;
+        ragActive.reset();
+        return;
+      }
+      if(action === "step") target.pause(), target.step();
+      if(action === "play") target.play();
+      if(action === "reset") target.reset();
+    });
+  });
+
+  // Flip cards: click/tap toggles (in addition to hover/focus via CSS), so touch devices work too.
+  document.querySelectorAll(".flip-card").forEach(function(card){
+    card.addEventListener("click", function(){ card.classList.toggle("flipped"); });
+  });
+})();
+</script>

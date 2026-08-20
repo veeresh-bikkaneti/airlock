@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Airlock — one door open at a time</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Cascadia Code"; src: local("Cascadia Code"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+      body { font-family: "Inter", -apple-system, "Segoe UI", sans-serif; }
+      .mono { font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace; }
+
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+
+      .scene { position: absolute; inset: 0; background: #0c100e; }
+      .center-col {
+        position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 22px;
+      }
+
+      /* ---- scene 1 ---- */
+      #dot {
+        width: 14px; height: 14px; border-radius: 50%; background: #e8a23c;
+        box-shadow: 0 0 18px 4px rgba(232, 162, 60, 0.6); opacity: 0;
+      }
+      #s1-headline {
+        font-size: 92px; font-weight: 700; color: #dcd8c9; text-align: center;
+        letter-spacing: 2px; opacity: 1;
+      }
+      #s1-sub { font-size: 32px; color: #6b7269; opacity: 0; }
+
+      /* ---- scene 2 (stack) ---- */
+      .stack-wrap { position: absolute; inset: 0; }
+      .layer {
+        position: absolute; left: 510px; width: 900px; height: 110px; border-radius: 6px;
+        border: 1.5px solid #39433c; display: flex; align-items: center; padding: 0 34px;
+        opacity: 1;
+      }
+      .layer .layer-title { font-size: 30px; font-weight: 700; color: #4fc3b8; }
+      .layer .layer-sub { font-size: 19px; color: #8a9089; margin-top: 4px; }
+      .layer-text { display: flex; flex-direction: column; }
+      #layer1 { top: 225px; }
+      #layer2 { top: 355px; }
+      #layer3 { top: 485px; }
+      #layer4 { top: 615px; border-style: dashed; }
+      #layer5 { top: 745px; border-color: #e8a23c; }
+      #layer5 .layer-title { color: #e8a23c; }
+
+      /* ---- scene 3 (doctor flow) ---- */
+      .node-row { position: absolute; inset: 0; }
+      .node {
+        position: absolute; top: 360px; width: 440px; height: 140px; border-radius: 6px;
+        border: 1.5px solid #39433c; display: flex; align-items: center; justify-content: center;
+        text-align: center; padding: 0 24px; opacity: 1;
+      }
+      .node .node-text { font-size: 26px; color: #dcd8c9; font-weight: 700; }
+      #node1 { left: 180px; }
+      #node2 { left: 740px; }
+      #node3 { left: 1300px; }
+      #token3 {
+        position: absolute; top: 520px; left: 388px; width: 26px; height: 26px; border-radius: 50%;
+        background: #e8a23c; box-shadow: 0 0 16px 3px rgba(232, 162, 60, 0.7); opacity: 0;
+      }
+      .s3-caption {
+        position: absolute; left: 260px; width: 1400px; text-align: center; opacity: 0;
+      }
+      #s3-line1 { top: 700px; font-size: 34px; color: #dcd8c9; }
+      #s3-line2 { top: 760px; font-size: 34px; color: #dcd8c9; font-weight: 700; }
+      #s3-line3 { top: 850px; font-size: 24px; color: #6b7269; }
+
+      /* ---- scene 4 (showcase) ---- */
+      .cap-row {
+        position: absolute; left: 360px; width: 1200px; height: 100px; border-radius: 6px;
+        border: 1px solid #39433c; display: flex; align-items: center; justify-content: space-between;
+        padding: 0 32px; opacity: 1;
+      }
+      .cap-row .cap-name { font-size: 26px; color: #dcd8c9; }
+      .pill4 {
+        font-size: 18px; font-weight: 700; letter-spacing: 1px; padding: 6px 20px; border-radius: 99px;
+        text-transform: uppercase; flex: none;
+      }
+      .pill4.live { color: #4fc3b8; border: 1.5px solid #4fc3b8; }
+      .pill4.notwired { color: #e0665a; border: 1.5px solid #e0665a; }
+      #cap-row1 { top: 366px; }
+      #cap-row2 { top: 490px; }
+      #cap-row3 { top: 614px; }
+
+      /* ---- scene 5 (outro) ---- */
+      #wordmark { font-size: 128px; font-weight: 700; color: #dcd8c9; letter-spacing: 8px; opacity: 0; }
+      #tagline { font-size: 34px; color: #e8a23c; opacity: 0; }
+      #finalline { font-size: 26px; color: #6b7269; opacity: 0; }
+      #footer5 {
+        position: absolute; bottom: 56px; left: 0; right: 0; text-align: center;
+        font-size: 20px; color: #767d74; opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-width="1920"
+      data-height="1080"
+      data-duration="20"
+    >
+      <!-- Scene 1: Hook (0-3s) -->
+      <section id="scene1" class="scene clip" data-start="0" data-duration="3" data-track-index="1">
+        <div class="center-col">
+          <div id="dot"></div>
+          <h1 id="s1-headline" class="mono">ONE DOOR OPEN AT A TIME.</h1>
+          <p id="s1-sub" class="mono">Everything else stays sealed.</p>
+        </div>
+      </section>
+
+      <!-- Scene 2: Reveal — the 5-layer stack (3-7s) -->
+      <section id="scene2" class="scene clip" data-start="3" data-duration="4" data-track-index="1">
+        <div class="stack-wrap">
+          <div id="layer1" class="layer">
+            <div class="layer-text mono"><span class="layer-title">TERMINAL</span><span class="layer-sub">You, typing an ai-* command</span></div>
+          </div>
+          <div id="layer2" class="layer">
+            <div class="layer-text mono"><span class="layer-title">AIRLOCK CLI</span><span class="layer-sub">profile-helpers.ps1</span></div>
+          </div>
+          <div id="layer3" class="layer">
+            <div class="layer-text mono"><span class="layer-title">LOCAL BACKEND</span><span class="layer-sub">Ollama or vLLM, one port, firewalled</span></div>
+          </div>
+          <div id="layer4" class="layer">
+            <div class="layer-text mono"><span class="layer-title">MEMORY SERVICE</span><span class="layer-sub">optional</span></div>
+          </div>
+          <div id="layer5" class="layer">
+            <div class="layer-text mono"><span class="layer-title">CLOUD</span><span class="layer-sub">gated — only on purpose</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 3: Key moment 1 — the doctor flow (7-12s) -->
+      <section id="scene3" class="scene clip" data-start="7" data-duration="5" data-track-index="1">
+        <div class="node-row">
+          <div id="node1" class="node"><span class="node-text mono">REDIRECT SET?</span></div>
+          <div id="node2" class="node"><span class="node-text mono">STILL DEAD?</span></div>
+          <div id="node3" class="node"><span class="node-text mono">ORPHANED POINTER</span></div>
+          <div id="token3"></div>
+        </div>
+        <p id="s3-line1" class="s3-caption mono">A dead setting looked identical to a live one.</p>
+        <p id="s3-line2" class="s3-caption mono">It cost two hours.</p>
+        <p id="s3-line3" class="s3-caption mono">ai-doctor tells you which one.</p>
+      </section>
+
+      <!-- Scene 4: Key moment 2 — the honest showcase (12-16s) -->
+      <section id="scene4" class="scene clip" data-start="12" data-duration="4" data-track-index="1">
+        <div id="cap-row1" class="cap-row">
+          <span class="cap-name mono">Single-instance local model serving</span>
+          <span class="pill4 live mono">live</span>
+        </div>
+        <div id="cap-row2" class="cap-row">
+          <span class="cap-name mono">Retrieval-augmented chat</span>
+          <span class="pill4 live mono">live</span>
+        </div>
+        <div id="cap-row3" class="cap-row">
+          <span class="cap-name mono">Cloud key actually routing a request</span>
+          <span class="pill4 notwired mono">not wired</span>
+        </div>
+      </section>
+
+      <!-- Scene 5: Outro (16-20s) -->
+      <section id="scene5" class="scene clip" data-start="16" data-duration="4" data-track-index="1">
+        <div class="center-col">
+          <h1 id="wordmark" class="mono">AIRLOCK</h1>
+          <p id="tagline" class="mono">One door open at a time.</p>
+          <p id="finalline" class="mono">It tells you the truth, even about itself.</p>
+        </div>
+        <p id="footer5" class="mono">github.com/veeresh-bikkaneti/airlock</p>
+      </section>
+
+      <!-- Audio: SFX only. No music bed — cinematic-mood track catalog requires an interactive
+           heygen OAuth login not available in this session; forcing a mismatched "happy business
+           beats" bundled track onto a deadpan/cinematic brief would be worse than restraint.
+           Documented in brag-plan.md. -->
+      <audio id="sfx-layer1" data-start="3.3" data-track-index="10" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-layer2" data-start="3.7" data-track-index="11" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-layer3" data-start="4.1" data-track-index="12" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-layer4" data-start="4.5" data-track-index="13" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-layer5" data-start="4.9" data-track-index="14" data-volume="0.6" src="assets/sfx/switch_001.ogg"></audio>
+
+      <audio id="sfx-type" data-start="7.3" data-track-index="15" data-volume="0.4" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx-node1" data-start="7.6" data-track-index="16" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-node2" data-start="8.5" data-track-index="17" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-node3" data-start="9.5" data-track-index="18" data-volume="0.6" src="assets/sfx/switch_007.ogg"></audio>
+
+      <audio id="sfx-row1" data-start="12.2" data-track-index="19" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-row2" data-start="12.7" data-track-index="20" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-row3" data-start="14.0" data-track-index="21" data-volume="0.55" src="assets/sfx/switch_007.ogg"></audio>
+
+      <audio id="sfx-outro" data-start="16.2" data-track-index="22" data-volume="0.7" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true, defaults: { duration: 0.5, ease: "power3.out" } });
+
+      // ---------- Scene 1: Hook (0-3s) ----------
+      tl.set("#dot", { opacity: 0 }, 0);
+      tl.fromTo("#dot", { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.35, ease: "power2.out" }, 0.1);
+
+      tl.set("#s1-headline", { opacity: 0, scale: 0.9 }, 0);
+      tl.fromTo(
+        "#s1-headline",
+        { opacity: 0, scale: 0.9 },
+        { opacity: 1, scale: 1, duration: 0.5, ease: "power4.out" },
+        0.2,
+      );
+
+      tl.set("#s1-sub", { opacity: 0 }, 0);
+      tl.fromTo("#s1-sub", { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: 0.4 }, 1.0);
+
+      // ---------- Scene 2: Reveal — the stack (3-7s) ----------
+      tl.set(".layer", { opacity: 0, y: -24 }, 3.0);
+      tl.fromTo("#layer1", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.4 }, 3.3);
+      tl.fromTo("#layer2", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.4 }, 3.7);
+      tl.fromTo("#layer3", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.4 }, 4.1);
+      tl.fromTo("#layer4", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.4 }, 4.5);
+      tl.fromTo("#layer5", { opacity: 0, y: -24 }, { opacity: 1, y: 0, duration: 0.4, ease: "power4.out" }, 4.9);
+
+      // ---------- Scene 3: Key moment 1 — doctor flow (7-12s) ----------
+      tl.set("#node1, #node2, #node3", { opacity: 0, y: -16 }, 7.0);
+      tl.fromTo("#node1", { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.35 }, 7.1);
+      tl.fromTo("#node2", { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.35 }, 7.6);
+      tl.fromTo("#node3", { opacity: 0, y: -16 }, { opacity: 1, y: 0, duration: 0.35 }, 8.1);
+
+      tl.set("#token3", { opacity: 0 }, 7.0);
+      tl.fromTo("#token3", { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.3 }, 7.6);
+      tl.to("#token3", { x: 560, duration: 0.5, ease: "power2.inOut" }, 8.5); // node1 -> node2 (948-388)
+      tl.to("#token3", { x: 1120, duration: 0.5, ease: "power2.inOut" }, 9.5); // node1 -> node3 (1508-388)
+      tl.to("#node3", { borderColor: "#e8a23c", duration: 0.2 }, 9.9);
+
+      tl.set("#s3-line1, #s3-line2, #s3-line3", { opacity: 0 }, 7.0);
+      tl.fromTo("#s3-line1", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 7.3);
+      tl.fromTo("#s3-line2", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 8.3);
+      tl.fromTo("#s3-line3", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 9.6);
+
+      // ---------- Scene 4: Key moment 2 — honest showcase (12-16s) ----------
+      tl.set("#cap-row1, #cap-row2, #cap-row3", { opacity: 0, y: -18 }, 12.0);
+      tl.fromTo("#cap-row1", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.4 }, 12.2);
+      tl.fromTo("#cap-row2", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.4 }, 12.7);
+      tl.fromTo("#cap-row3", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.4, ease: "power4.out" }, 14.0);
+
+      // ---------- Scene 5: Outro (16-20s) ----------
+      tl.set("#wordmark, #tagline, #finalline, #footer5", { opacity: 0 }, 16.0);
+      tl.fromTo(
+        "#wordmark",
+        { opacity: 0, scale: 0.85 },
+        { opacity: 1, scale: 1, duration: 0.4, ease: "power4.out" },
+        16.2,
+      );
+      tl.fromTo("#tagline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 17.0);
+      tl.fromTo("#finalline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 17.8);
+      tl.fromTo("#footer5", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 18.6);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

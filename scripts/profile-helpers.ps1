@@ -506,6 +506,45 @@ function global:ai-memory-stop {
     & "$env:USERPROFILE\.ai-platform\scripts\Stop-MemoryService.ps1" @args
 }
 
+# Start the opt-in tool-call proxy (fixes unreliable Ollama tool-calling for
+# harnesses like opencode - see opencode.json.template).
+function global:ai-tool-proxy-start {
+    & "$env:USERPROFILE\.ai-platform\scripts\Start-ToolProxy.ps1" @args
+}
+
+# Stop the tool-call proxy.
+function global:ai-tool-proxy-stop {
+    & "$env:USERPROFILE\.ai-platform\scripts\Stop-ToolProxy.ps1" @args
+}
+
+# Show tool-proxy health (process, API, firewall).
+function global:ai-tool-proxy-status {
+    $file = "$env:USERPROFILE\.ai-platform\.tool-proxy-port.json"
+    if (-not (Test-Path $file)) {
+        Write-Host "tool-proxy not running. Run ai-tool-proxy-start first." -ForegroundColor Yellow
+        return
+    }
+    $state = Get-Content $file -Raw | ConvertFrom-Json
+
+    Write-Host "Tool-Call Proxy Status" -ForegroundColor Cyan
+    Write-Host "======================" -ForegroundColor DarkCyan
+
+    $proc = Get-Process -Id $state.pid -ErrorAction SilentlyContinue
+    Write-Host "  Process   : $(if ($proc) { "RUNNING (PID $($state.pid))" } else { "NOT RUNNING (stale state)" })" -ForegroundColor $(if ($proc) { "Green" } else { "Red" })
+
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(5)
+        $resp = $c.GetAsync("http://127.0.0.1:$($state.port)/health").Result
+        Write-Host "  API       : $(if ($resp.IsSuccessStatusCode) { "HEALTHY (port $($state.port))" } else { "UNHEALTHY (HTTP $($resp.StatusCode))" })" -ForegroundColor $(if ($resp.IsSuccessStatusCode) { "Green" } else { "Red" })
+    } catch {
+        Write-Host "  API       : UNREACHABLE (port $($state.port))" -ForegroundColor Red
+    }
+
+    $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-ToolProxy-Block-$($state.port)" -ErrorAction SilentlyContinue
+    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $($state.port)" } else { "NO RULE on port $($state.port) (defense-in-depth only - listener is loopback-only, not externally reachable either way)" })" -ForegroundColor $(if ($fwRule) { "Green" } else { "Yellow" })
+}
+
 # Show memory-service health (process, API, firewall).
 function global:ai-memory-status {
     $file = "$env:USERPROFILE\.ai-platform\.memory-port.json"

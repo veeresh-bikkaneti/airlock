@@ -1,0 +1,1 @@
+Airlock: one door open at a time. A hardened, single-instance local AI platform for Windows — and probably the only launch video that includes the slide admitting what doesn't work yet.

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Airlock: your first run (start here)",
+    "file": "airlock-first-run.json"
+  },
+  {
+    "name": "E-commerce order flow",
+    "file": "ecommerce-demo.json"
+  },
+  {
+    "name": "local-ai-platform (live)",
+    "file": "local-ai-platform-live.json"
+  }
+]
