@@ -255,12 +255,12 @@ ai-claude-off   # or just close the shell — the redirect never outlives it eit
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:12345",
-    "ANTHROPIC_API_KEY": "ollama"
+    "ANTHROPIC_AUTH_TOKEN": "ollama"
   }
 }
 ```
 
-`ANTHROPIC_API_KEY` can be any non-empty string — Ollama doesn't check it, it just needs to see *something* there. This repo used to ship a `claude-settings.json.template` that invented a different, fake settings schema; it's been deleted. The `env` block above is the real one.
+`ANTHROPIC_AUTH_TOKEN` can be any non-empty string — Ollama doesn't check it, it just needs to see *something* there. Use `ANTHROPIC_AUTH_TOKEN`, not `ANTHROPIC_API_KEY`: per [Anthropic's authentication docs](https://code.claude.com/docs/en/authentication), `AUTH_TOKEN` is the documented variable for gateway/proxy routing and outranks `API_KEY` in precedence, while `API_KEY` is for direct Anthropic API access and, in interactive sessions, needs a one-time approval that a previously-declined key silently skips. This repo used to ship a `claude-settings.json.template` that invented a different, fake settings schema; it's been deleted. The `env` block above is the real one.
 
 ⚠️ **Know the tradeoff before you use this route.** Unlike `ai-claude-on`, this block has no liveness check and no off switch — it applies to *every* Claude Code session on the machine, including ones with nothing to do with this platform, and it stays in effect after `ai-stop`, a reboot, or a port change, until you remove it by hand. See the troubleshooting entry below for what that looks like when it goes wrong.
 
@@ -268,7 +268,7 @@ ai-claude-off   # or just close the shell — the redirect never outlives it eit
 
 ```powershell
 $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:12345"
-$env:ANTHROPIC_API_KEY = "ollama"
+$env:ANTHROPIC_AUTH_TOKEN = "ollama"
 $env:ANTHROPIC_MODEL = "qwen2.5-coder:7b"
 claude -p "Reply with exactly: OK"
 ```
@@ -290,9 +290,10 @@ Or manually:
 ```powershell
 Get-ChildItem Env: | Where-Object { $_.Name -match 'ANTHROPIC' }
 [Environment]::GetEnvironmentVariable('ANTHROPIC_BASE_URL','User')
-Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
-[Environment]::SetEnvironmentVariable('ANTHROPIC_BASE_URL', $null, 'User')
-[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY',  $null, 'User')
+Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_AUTH_TOKEN, Env:\ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
+[Environment]::SetEnvironmentVariable('ANTHROPIC_BASE_URL',   $null, 'User')
+[Environment]::SetEnvironmentVariable('ANTHROPIC_AUTH_TOKEN', $null, 'User')
+[Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY',    $null, 'User')
 ```
 
 Also check the project-local file — it's easy to miss and holds its own separate copy:

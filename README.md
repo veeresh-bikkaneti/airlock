@@ -154,7 +154,7 @@ Some local models (`qwen2.5-coder:7b`, `qwen3-coder:30b`) reproducibly fail to e
   {
     "env": {
       "ANTHROPIC_BASE_URL": "http://127.0.0.1:12345",
-      "ANTHROPIC_API_KEY": "ollama"
+      "ANTHROPIC_AUTH_TOKEN": "ollama"
     }
   }
   ```
