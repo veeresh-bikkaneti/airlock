@@ -85,12 +85,13 @@ try {
         Write-Host "FAILED: runtime '$($selectedProfile.runtime)' has no adapter yet (Phase B implements Ollama only)." -ForegroundColor Red
         exit 1
     }
-    $discovery = Get-OllamaDiscovery
+    $ollamaBaseUrl = Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir
+    $discovery = Get-OllamaDiscovery -BaseUrl $ollamaBaseUrl
     if (-not $discovery.Reachable) {
         Write-Host "FAILED: Ollama is not reachable. Run ai-start first." -ForegroundColor Red
         exit 1
     }
-    $inspection = Get-OllamaInspection -ModelRef $selectedProfile.modelRef
+    $inspection = Get-OllamaInspection -ModelRef $selectedProfile.modelRef -BaseUrl $ollamaBaseUrl
     if (-not $inspection.Found) {
         Write-Host "FAILED: model '$($selectedProfile.modelRef)' not found. Acquisition (§6 Acquire) is not implemented in this pass - pull it manually first." -ForegroundColor Red
         exit 1
@@ -108,7 +109,11 @@ try {
             break
         }
 
-        $endpointUrl = if ($next.Transport -eq 'ollama-openai-proxy') { "http://127.0.0.1:12347/v1" } else { "http://127.0.0.1:12345/v1" }
+        # Same snapshot-file convention tool-proxy and hermes-container/run-hermes.ps1
+        # use - the live port, not a fixed value (§7.1's endpoint identity must
+        # match what Discover/Inspect actually probed, not a guessed default).
+        $endpointBase = if ($next.Transport -eq 'ollama-openai-proxy') { Get-AirlockToolProxyBaseUrl -PlatformDir $PlatformDir } else { Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir }
+        $endpointUrl = "$endpointBase/v1"
         $evidenceKey = Get-AirlockCapabilityEvidenceKey -ContractVersion "1" -ProfileId $selectedProfile.profileId `
             -ModelRef $selectedProfile.modelRef -ModelDigest $inspection.Digest -ArtifactHash $inspection.Digest `
             -Runtime "ollama" -RuntimeVersion $discovery.Version -EndpointMode $next.Transport -EndpointIdentity $endpointUrl `
