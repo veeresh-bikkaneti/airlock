@@ -1,6 +1,8 @@
 # Self-check for runtime-adapters/ollama.ps1 (ADR-012 Phase B, §6/§6.1).
-# Covers the pure decision logic only - Get-OllamaDiscovery/Get-OllamaInspection
-# require a real Ollama install (§10.2 live acceptance suite).
+# Covers the pure decision logic and port-snapshot resolution only -
+# Get-OllamaDiscovery/Get-OllamaInspection require a real Ollama install
+# (§10.2 live acceptance suite). The runtime-agnostic acquisition-gate and
+# StopIfOwned checks moved to Test-AdapterContractHelpers.ps1.
 # Run: pwsh -File scripts/Test-OllamaAdapter.ps1
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -26,33 +28,27 @@ foreach ($h in @('opencode', 'pi-worker', 'aider')) {
     Assert-True ($r.TransportCandidates[1] -eq 'ollama-openai-proxy') "$h has ollama-openai-proxy as the fallback, in that order"
 }
 
-# --- Resolve-OllamaAcquisitionGate ---
+# --- Get-AirlockOllamaBaseUrl / Get-AirlockToolProxyBaseUrl: port-snapshot convention ---
 
-$g1 = Resolve-OllamaAcquisitionGate -RequiresConfirmation $true -UserConfirmed $false
-Assert-True (-not $g1.Allowed) "unconfirmed acquisition requiring confirmation is refused"
+$workDir = Join-Path ([System.IO.Path]::GetTempPath()) "airlock-ollama-adapter-test-$([guid]::NewGuid().ToString('N'))"
+New-Item -Path $workDir -ItemType Directory -Force | Out-Null
+try {
+    $noSnapshot = Get-AirlockOllamaBaseUrl -PlatformDir $workDir
+    Assert-True ($noSnapshot -eq "http://127.0.0.1:12345") "with no .active-port.json, Ollama base URL falls back to Airlock's own default (12345), not Ollama's raw default (11434)"
 
-$g2 = Resolve-OllamaAcquisitionGate -RequiresConfirmation $true -UserConfirmed $true
-Assert-True $g2.Allowed "confirmed acquisition is allowed"
+    Set-Content -Path (Join-Path $workDir ".active-port.json") -Value '{"port":19999}' -Encoding utf8NoBOM
+    $withSnapshot = Get-AirlockOllamaBaseUrl -PlatformDir $workDir
+    Assert-True ($withSnapshot -eq "http://127.0.0.1:19999") "with a .active-port.json snapshot present, the live port is used instead of any default"
 
-$g3 = Resolve-OllamaAcquisitionGate -RequiresConfirmation $true -UserConfirmed $true -AnotherPullAlreadyInProgress $true
-Assert-True (-not $g3.Allowed) "a confirmed acquisition is still refused while another pull is already in progress - never parallel pulls"
+    $noProxySnapshot = Get-AirlockToolProxyBaseUrl -PlatformDir $workDir
+    Assert-True ($noProxySnapshot -eq "http://127.0.0.1:12347") "with no .tool-proxy-port.json, tool-proxy base URL falls back to Start-ToolProxy.ps1's own default (12347)"
 
-$g4 = Resolve-OllamaAcquisitionGate -RequiresConfirmation $false
-Assert-True $g4.Allowed "acquisition not requiring confirmation is allowed with no other pull in progress"
-
-# --- Resolve-OllamaStopOwnership ---
-
-$s1 = Resolve-OllamaStopOwnership -RecordedOwnerAlive $false -PidMatches $true -StartTimeMatches $true -InstanceNonceMatches $true
-Assert-True (-not $s1.Allowed) "no live recorded owner -> stop refused (nothing to stop)"
-
-$s2 = Resolve-OllamaStopOwnership -RecordedOwnerAlive $true -PidMatches $true -StartTimeMatches $true -InstanceNonceMatches $false
-Assert-True (-not $s2.Allowed) "PID and start time match but instance nonce does not -> refused (PID reuse guard)"
-
-$s3 = Resolve-OllamaStopOwnership -RecordedOwnerAlive $true -PidMatches $false -StartTimeMatches $true -InstanceNonceMatches $true
-Assert-True (-not $s3.Allowed) "PID mismatch alone -> refused"
-
-$s4 = Resolve-OllamaStopOwnership -RecordedOwnerAlive $true -PidMatches $true -StartTimeMatches $true -InstanceNonceMatches $true
-Assert-True $s4.Allowed "PID, start time, and instance nonce all match -> stop allowed"
+    Set-Content -Path (Join-Path $workDir ".tool-proxy-port.json") -Value '{"port":29999}' -Encoding utf8NoBOM
+    $withProxySnapshot = Get-AirlockToolProxyBaseUrl -PlatformDir $workDir
+    Assert-True ($withProxySnapshot -eq "http://127.0.0.1:29999") "with a .tool-proxy-port.json snapshot present, the live proxy port is used instead of the default"
+} finally {
+    Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 if ($failures -gt 0) {
     Write-Host ""
