@@ -21,9 +21,24 @@ Write-Host "Testing Invoke-OpenCodeCapabilityContract.ps1..." -ForegroundColor C
 $sessionId = [guid]::NewGuid().ToString()
 $content = Get-OpenCodeStagedConfigContent -ModelRef "gemma4:12b" -EndpointUrl "http://127.0.0.1:12345/v1" -SessionId $sessionId
 $parsed = $content | ConvertFrom-Json
-Assert-True ($parsed.model -eq "gemma4:12b") "staged config carries the exact model ref"
-Assert-True ($parsed.provider.baseUrl -eq "http://127.0.0.1:12345/v1") "staged config carries the exact endpoint URL"
-Assert-True ($parsed.airlockSessionId -eq $sessionId) "staged config embeds the session id for correlation (§8.1)"
+# Shape confirmed via `opencode debug config` against a real install (BUG
+# FOUND BY A LIVE RUN: the original flat {model, provider:{baseUrl}} shape
+# was never checked against opencode's real schema - see the fix's comment
+# in Get-OpenCodeStagedConfigContent for the full story).
+Assert-True ($parsed.model -eq "airlock/gemma4:12b") "staged config's top-level model is '<providerId>/<modelRef>', matching the CLI's own -m format"
+Assert-True ($parsed.provider.airlock.npm -eq "@ai-sdk/openai-compatible") "staged config declares the openai-compatible adapter opencode needs for a custom endpoint"
+Assert-True ($parsed.provider.airlock.options.baseURL -eq "http://127.0.0.1:12345/v1") "staged config carries the exact endpoint URL under options.baseURL (capital URL, real key name)"
+Assert-True ($parsed.provider.airlock.models.'gemma4:12b'.name -eq "gemma4:12b") "staged config declares the exact model ref under provider.models"
+Assert-True ($parsed.provider.airlock.options.apiKey -eq "airlock-session-$sessionId") "staged config embeds the session id in the free-text apiKey for correlation (§8.1) - opencode's schema has no room for an arbitrary top-level field"
+
+# --- Test-AirlockOpenCodeRawToolEventInStdout ---
+# BUG FOUND BY A LIVE RUN: qwen2.5-coder:7b prints raw {"name": "write",
+# "arguments": {...}} lines to plain stdout instead of issuing a real tool
+# call - the original regex only matched {"action"/{"tool_call(s)" and missed
+# this real, observed shape entirely.
+Assert-True (Test-AirlockOpenCodeRawToolEventInStdout -Stdout '{"name": "write", "arguments": {"content": "DONE", "filePath": "output.md"}}') "a raw {`"name`": ...} line is detected as a fallback tool event, not a real one"
+Assert-True (Test-AirlockOpenCodeRawToolEventInStdout -Stdout '{"action": "write"}') "the original {`"action`"...} shape is still detected"
+Assert-True (-not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout "I've created output.md with the requested content. DONE")) "normal prose output is not flagged as a fallback tool event"
 
 # --- Invoke-AirlockOpenCodeCapabilityContract: config transaction correlation via a mocked Run ---
 # Function -Run injection isn't exposed on Invoke-AirlockOpenCodeCapabilityContract

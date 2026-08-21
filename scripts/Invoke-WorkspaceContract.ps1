@@ -50,6 +50,19 @@ function Resolve-AirlockWorkspaceTrialVerdict {
     return [pscustomobject]@{ Passed = $true; Reason = "Exact marker echoed; no boundary or tool-event violations." }
 }
 
+# Pure: given a completed contract's per-trial results, decide whether every
+# trial's transport specifically returned valid structured tool events -
+# distinct from the folded Passed/Reason verdict, which can also fail for
+# reasons unrelated to transport (marker mismatch, out-of-workspace). §4.1's
+# three-state fit model (Resolve-AirlockFitState in agent-profile-helpers.ps1)
+# needs this as an independent signal from HarnessContractPassed, not the
+# same boolean wearing two names.
+function Resolve-AirlockContractTransportFit {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$TrialResults)
+    if ($TrialResults.Count -eq 0) { return $false }
+    return -not [bool]($TrialResults | Where-Object { -not $_.UsedValidStructuredToolEvents })
+}
+
 # Pure: the contract passes only after ALL trials pass (§7.2 step 7 + "The
 # contract is a pass only after all trials pass").
 function Resolve-AirlockWorkspaceContractVerdict {
@@ -93,10 +106,11 @@ function Invoke-AirlockWorkspaceTrial {
             -ToolResultLoopDetected $observations.ToolResultLoopDetected
 
         return [pscustomobject]@{
-            Passed        = $verdict.Passed
-            Reason        = $verdict.Reason
-            LatencyMs     = ([DateTime]::UtcNow - $started).TotalMilliseconds
-            SanitizedInfo = $observations.SanitizedInfo
+            Passed                        = $verdict.Passed
+            Reason                        = $verdict.Reason
+            LatencyMs                     = ([DateTime]::UtcNow - $started).TotalMilliseconds
+            SanitizedInfo                 = $observations.SanitizedInfo
+            UsedValidStructuredToolEvents = $observations.UsedValidStructuredToolEvents
         }
     } finally {
         Remove-Item -Path $workspacePath -Recurse -Force -ErrorAction SilentlyContinue
@@ -112,5 +126,6 @@ function Invoke-AirlockWorkspaceContract {
     )
     $trials = 1..$TrialCount | ForEach-Object { Invoke-AirlockWorkspaceTrial -WorkspaceRoot $WorkspaceRoot -Invoke $Invoke }
     $verdict = Resolve-AirlockWorkspaceContractVerdict -TrialResults $trials
-    return [pscustomobject]@{ Passed = $verdict.Passed; Reason = $verdict.Reason; Trials = $trials }
+    $transportFit = Resolve-AirlockContractTransportFit -TrialResults $trials
+    return [pscustomobject]@{ Passed = $verdict.Passed; Reason = $verdict.Reason; Trials = $trials; TransportReturnedValidToolEvents = $transportFit }
 }
