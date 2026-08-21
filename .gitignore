@@ -43,6 +43,7 @@ logs/
 .env.*.local
 auth.json
 auth.json.local
+ANTHROPIC_AUTH_TOKEN
 *.key
 *.pem
 id_rsa
