@@ -131,6 +131,30 @@ try {
     Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# --- airlock-worker:latest image (Phase F gap: Start-AgentWorkerJob.ps1's
+# -ContainerImage default previously had no matching Dockerfile anywhere in
+# the repo, so every real dispatch failed with docker's "image not found").
+# The Dockerfile's existence is a pure file check; the actual `docker build`
+# requires a live, reachable Docker daemon (§10.2 live acceptance suite
+# pattern - same live-hardware gate as Test-LlamaCppAdapter.ps1/
+# Test-PiCapabilityContract.ps1), so it's skipped gracefully when Docker
+# isn't reachable here rather than failing the whole suite. ---
+$dockerContextDir = Join-Path (Split-Path -Parent $PSScriptRoot) "airlock-worker-container"
+$dockerfilePath = Join-Path $dockerContextDir "Dockerfile"
+Assert-True (Test-Path $dockerfilePath) "airlock-worker-container/Dockerfile exists (closes the Phase F missing-image gap)"
+
+$dockerOsType = & docker info --format '{{.OSType}}' 2>$null
+if ($LASTEXITCODE -eq 0 -and $dockerOsType -eq 'linux') {
+    & docker build -t airlock-worker:latest $dockerContextDir 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) "docker build -t airlock-worker:latest succeeds against airlock-worker-container/Dockerfile"
+} else {
+    # Not just "docker missing" - a reachable daemon in Windows-container mode
+    # (the default on GitHub's windows-latest runner) reports OSType
+    # 'windows' and would fail to build this Linux base image, which is a
+    # CI-environment limitation, not a regression - skip rather than red.
+    Write-Host "SKIP: no Linux-container Docker daemon reachable here (OSType: '$dockerOsType') - 'docker build' not exercised (live-hardware gate, same as Test-LlamaCppAdapter.ps1)." -ForegroundColor Yellow
+}
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures Start-AgentWorkerJob check(s) FAILED" -ForegroundColor Red
