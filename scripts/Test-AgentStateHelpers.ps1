@@ -139,6 +139,39 @@ try {
     Remove-Item -Path $certWorkDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# --- Resolve-AirlockCertificateValidity: missing / expired / incompatible-harness / valid ---
+
+$now = [DateTime]::UtcNow
+$validCert = [pscustomobject]@{ harness = "pi-worker"; expiresAt = $now.AddMinutes(5).ToString('o') }
+$expiredCert = [pscustomobject]@{ harness = "pi-worker"; expiresAt = $now.AddMinutes(-5).ToString('o') }
+$wrongHarnessCert = [pscustomobject]@{ harness = "opencode"; expiresAt = $now.AddMinutes(5).ToString('o') }
+$noExpiryCert = [pscustomobject]@{ harness = "pi-worker" }
+
+$vMissing = Resolve-AirlockCertificateValidity -Certificate $null -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True (-not $vMissing.Valid) "null certificate -> invalid"
+Assert-True ($vMissing.Reason -eq 'missing') "null certificate -> reason is 'missing'"
+
+$vExpired = Resolve-AirlockCertificateValidity -Certificate $expiredCert -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True (-not $vExpired.Valid) "expired certificate -> invalid"
+Assert-True ($vExpired.Reason -eq 'expired') "expired certificate -> reason is 'expired'"
+
+$vWrongHarness = Resolve-AirlockCertificateValidity -Certificate $wrongHarnessCert -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True (-not $vWrongHarness.Valid) "certificate issued for a different harness -> invalid"
+Assert-True ($vWrongHarness.Reason -eq 'incompatible_harness') "wrong-harness certificate -> reason is 'incompatible_harness'"
+
+$vNoExpiry = Resolve-AirlockCertificateValidity -Certificate $noExpiryCert -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True (-not $vNoExpiry.Valid) "certificate with no expiresAt -> invalid"
+Assert-True ($vNoExpiry.Reason -eq 'missing') "certificate with no expiresAt -> reason is 'missing'"
+
+$vValid = Resolve-AirlockCertificateValidity -Certificate $validCert -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True $vValid.Valid "current, compatible-harness certificate -> valid"
+
+# expiresAt already reparsed to a real [DateTime] by ConvertFrom-Json (the
+# same quirk New-AirlockLock's ownerStartTimeTicks comment documents) must
+# still be handled, not just the plain-string case above.
+$vDateTimeExpiry = Resolve-AirlockCertificateValidity -Certificate ([pscustomobject]@{ harness = "pi-worker"; expiresAt = $now.AddMinutes(5) }) -Now $now -CompatibleHarnesses @('pi-worker')
+Assert-True $vDateTimeExpiry.Valid "expiresAt already typed as [DateTime] (not a string) is still handled correctly"
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures agent-state-helpers check(s) FAILED" -ForegroundColor Red

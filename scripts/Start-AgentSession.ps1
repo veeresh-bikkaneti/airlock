@@ -26,6 +26,7 @@ param(
 . (Join-Path $PSScriptRoot "agent-capability-registry.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "ollama.ps1")
 . (Join-Path $PSScriptRoot "Invoke-OpenCodeCapabilityContract.ps1")
+. (Join-Path $PSScriptRoot "Invoke-PiCapabilityContract.ps1")
 
 if (-not $ProfileCataloguePath) { $ProfileCataloguePath = Join-Path $PSScriptRoot ".." "config" "agent-profiles.json" }
 if (-not $WorkspaceRoot) { $WorkspaceRoot = Join-Path $PlatformDir "workspaces" }
@@ -126,13 +127,23 @@ try {
         if ($cached.FromCache) {
             $contractPassed = ($cached.Entry.verdict -eq 'pass')
         } else {
-            if ($Harness -ne 'opencode') {
-                Write-Host "FAILED: only the OpenCode contract is implemented in this pass." -ForegroundColor Red
-                exit 1
+            # §7.3: each harness implements its own invocation wrapper around
+            # the shared §7.2 workspace contract - dispatch to the one that
+            # matches, never silently reuse another harness's contract.
+            $contractResult = switch ($Harness) {
+                'opencode' {
+                    Invoke-AirlockOpenCodeCapabilityContract -ModelRef $selectedProfile.modelRef -EndpointUrl $endpointUrl `
+                        -OpenCodeConfigPath $OpenCodeConfigPath -LockPath (Join-Path $PlatformDir "state" "opencode-config.lock") `
+                        -BackupDir $BackupDir -TransactionDir $TransactionDir -WorkspaceRoot $WorkspaceRoot
+                }
+                'pi-worker' {
+                    Invoke-AirlockPiCapabilityContract -ModelRef $selectedProfile.modelRef -EndpointUrl $endpointUrl -WorkspaceRoot $WorkspaceRoot
+                }
+                default {
+                    Write-Host "FAILED: no contract for harness '$Harness' is implemented in this pass." -ForegroundColor Red
+                    exit 1
+                }
             }
-            $contractResult = Invoke-AirlockOpenCodeCapabilityContract -ModelRef $selectedProfile.modelRef -EndpointUrl $endpointUrl `
-                -OpenCodeConfigPath $OpenCodeConfigPath -LockPath (Join-Path $PlatformDir "state" "opencode-config.lock") `
-                -BackupDir $BackupDir -TransactionDir $TransactionDir -WorkspaceRoot $WorkspaceRoot
             $contractPassed = $contractResult.Passed
             Set-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath `
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
