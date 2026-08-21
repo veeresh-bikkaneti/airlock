@@ -119,8 +119,13 @@ if ($WhatIf) {
 }
 
 # --- Create the isolated worktree (§9.2) ---
-if (Test-Path $JobDir) {
-    Write-Host "FAILED: job directory already exists at $JobDir - refusing to reuse a jobId. Use a fresh jobId." -ForegroundColor Red
+# Checked against the worktree path, not $JobDir: Write-JobAuditLog above
+# already created $JobDir (to hold the ManifestValidate/EvidenceKeyCheck
+# entries) before this point on every real run, so testing $JobDir itself
+# would misfire "already exists" on a job's first-ever run, not just a
+# genuine jobId reuse.
+if (Test-Path $WorktreePath) {
+    Write-Host "FAILED: a worktree already exists at $WorktreePath for job '$JobId' - refusing to reuse a jobId. Use a fresh jobId." -ForegroundColor Red
     exit 1
 }
 if (-not (Test-Path $manifest.repo.path)) {
@@ -201,8 +206,15 @@ if (-not $exited) {
 # --- Final patch/test summary (§9.2, §13: "produces only an unmerged
 # patch"). This script never merges or pushes, regardless of the manifest's
 # output.allowMerge/allowPush - those are recorded for the caller only. ---
-$diffStat = (& git -C $WorktreePath diff --stat 2>&1 | Out-String).Trim()
 $statusPorcelain = (& git -C $WorktreePath status --porcelain 2>&1 | Out-String).Trim()
+# `git diff --stat` alone misses new files a worker created (they're
+# untracked, not modified) - confirmed live: a worker that only adds a new
+# file produced an empty diffStat despite hasChanges being true. Stage
+# everything in THIS disposable, never-merged/never-pushed job worktree
+# first so the stat covers new/modified/deleted files alike; staging here
+# has no effect outside the worktree itself.
+if ($statusPorcelain) { & git -C $WorktreePath add -A 2>&1 | Out-Null }
+$diffStat = (& git -C $WorktreePath diff --cached --stat 2>&1 | Out-String).Trim()
 
 $summary = [ordered]@{
     schemaVersion      = 1

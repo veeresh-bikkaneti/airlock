@@ -98,6 +98,35 @@ try {
     & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $validManifestPath -PlatformDir $whatIfPlatform -WhatIf | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "-WhatIf on a schema-valid manifest with a passing evidence key exits 0"
     Assert-True (-not (Test-Path (Join-Path $whatIfPlatform "jobs" $jobId))) "-WhatIf creates no job directory at all - no worktree, no audit log, no result"
+
+    # --- Real (non-WhatIf) run against a real git repo: the worktree must
+    # actually get created on a job's first-ever run. Regression test for a
+    # real bug found via live Docker verification: Write-JobAuditLog creates
+    # $JobDir as a side effect for the ManifestValidate/EvidenceKeyCheck
+    # entries BEFORE the worktree-creation step, so a reuse guard that tested
+    # $JobDir itself (instead of the worktree path) misfired "already exists"
+    # on every single real run, not just genuine jobId reuse. This never
+    # requires Docker - worktree creation happens before the docker-not-found
+    # check. ---
+    $realRepoPath = Join-Path $workDir "real-repo"
+    New-Item -Path $realRepoPath -ItemType Directory -Force | Out-Null
+    & git -C $realRepoPath init -q -b main 2>&1 | Out-Null
+    & git -C $realRepoPath config user.email "test@test.local" 2>&1 | Out-Null
+    & git -C $realRepoPath config user.name "Test" 2>&1 | Out-Null
+    Set-Content -Path (Join-Path $realRepoPath "README.md") -Value "hello" -Encoding utf8
+    & git -C $realRepoPath add README.md 2>&1 | Out-Null
+    & git -C $realRepoPath commit -q -m "init" 2>&1 | Out-Null
+
+    $realManifestPath = Join-Path $workDir "real-manifest.json"
+    New-ManifestFile -Path $realManifestPath -Overrides @{ repo = [ordered]@{ path = $realRepoPath; ref = "main" } }
+    $realPlatform = Join-Path $workDir "platform-real"
+    New-PassingRegistry -Path (Join-Path $realPlatform "state" "capability-registry.json")
+    & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $realManifestPath -PlatformDir $realPlatform 2>&1 | Out-Null
+    Assert-True (Test-Path (Join-Path $realPlatform "jobs" $jobId "worktree" "README.md")) "a real (non-WhatIf) first run against a real repo actually creates the worktree - not blocked by the audit log's own directory creation"
+
+    # A genuine jobId reuse (worktree already exists) must still be refused.
+    & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $realManifestPath -PlatformDir $realPlatform 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -ne 0) "reusing a jobId whose worktree already exists is still refused"
 } finally {
     Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }
