@@ -95,6 +95,19 @@ if ($WhatIf) {
 # --- Step 1: acquire the single user-scoped bootstrap lock ---
 $lock = New-AirlockLock -LockPath $LockPath
 try {
+    # BUG FOUND BY A LIVE RUN: a hung workspace trial (fixed with a
+    # per-process timeout in Invoke-OpenCodeCapabilityContract.ps1) or this
+    # orchestrator being killed from outside can abandon a harness config
+    # transaction mid-flight, leaving the real global config (e.g.
+    # ~/.opencode/opencode.json) replaced with Airlock's staged content
+    # indefinitely. Get-AirlockOrphanedHarnessTransactions and
+    # Resolve-AirlockConfigRestore already existed for exactly this but
+    # nothing called them - swept here, on every real run, before anything
+    # else touches a harness config.
+    Invoke-AirlockOrphanedHarnessTransactionRecovery -TransactionDir $TransactionDir | ForEach-Object {
+        Write-Host "RECOVERED: orphaned config transaction for session $($_.SessionId) ($($_.Action) on $($_.ConfigPath))" -ForegroundColor Yellow
+    }
+
     # --- Step 2: resolve profile ---
     $selectedProfile = Resolve-SessionProfile
 
@@ -227,6 +240,30 @@ try {
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
                 -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness }) `
                 -PassTtlMinutes 5 -FailTtlMinutes 1 -NoCache:$NoCache | Out-Null
+
+            # §4.1's three independent fit states, wired here (not just built
+            # and unit-tested) so a failure names WHICH dimension didn't fit
+            # instead of a single folded "contract failed". Only computable
+            # for Ollama today - $inspection.Residency and free-VRAM
+            # measurement aren't modeled for llama-server/lmstudio's adapters
+            # yet (see their "unknown" runtimeVersion sentinels above for the
+            # same honest-gap pattern), so this stays Ollama-only rather than
+            # fabricate a residency/VRAM reading that was never measured.
+            if ($selectedProfile.runtime -eq 'ollama') {
+                $freeVramGiB = Get-AirlockFreeVramGiB
+                if ($null -ne $freeVramGiB) {
+                    $fitState = Resolve-AirlockFitState -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB $selectedProfile.minimumFreeVramGiB `
+                        -Residency $inspection.Residency -TransportReturnedValidToolEvents $contractResult.TransportReturnedValidToolEvents `
+                        -HarnessContractPassed $contractPassed
+                    if (-not $fitState.CodingReady) {
+                        $dims = @()
+                        if (-not $fitState.ArtifactFit) { $dims += "artifact (${freeVramGiB}GiB free vs $($selectedProfile.minimumFreeVramGiB)GiB required, residency=$($inspection.Residency))" }
+                        if (-not $fitState.TransportFit) { $dims += "transport (no valid structured tool events)" }
+                        if (-not $fitState.HarnessFit) { $dims += "harness (capability contract failed)" }
+                        $failureReasons += "Transport '$($next.Transport)' is not coding-ready: $($dims -join '; ')."
+                    }
+                }
+            }
         }
 
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }

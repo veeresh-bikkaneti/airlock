@@ -52,6 +52,22 @@ function Resolve-AirlockProfileSelection {
     return [pscustomobject]@{ Selected = $match; Reason = "Explicitly requested and found in the catalogue." }
 }
 
+# Host-level free VRAM in GiB via nvidia-smi, for Resolve-AirlockFitState's
+# ArtifactFit input. Returns $null (not 0) when nvidia-smi is absent or
+# unparsable, so a caller can tell "no GPU info available" apart from
+# "confirmed zero free VRAM" rather than treating both the same way.
+function Get-AirlockFreeVramGiB {
+    if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) { return $null }
+    try {
+        $raw = & nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+        $freeMiB = [double](($raw | Select-Object -First 1) -replace '\s', '')
+        return $freeMiB / 1024
+    } catch {
+        return $null
+    }
+}
+
 # §4.1: three independent eligibility states, all required for coding-ready.
 # Pure given already-measured inputs - the caller (Start-AgentSession.ps1)
 # is responsible for actually measuring VRAM/residency/contract results.

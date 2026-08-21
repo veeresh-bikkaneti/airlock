@@ -82,6 +82,17 @@ function Get-OllamaDiscovery {
 function Get-OllamaInspection {
     # §6 Inspect + §6.1: model digest, effective context, template/parser
     # identity, and GPU residency (full/partial/CPU) for the running model.
+    #
+    # BUG FOUND BY A LIVE RUN (not caught by any mock/unit test): Ollama's
+    # real /api/show response has NO top-level `digest` field at all
+    # (confirmed against a live Ollama 0.32.14 - its keys are license,
+    # modelfile, template, system, details, model_info, tensors,
+    # capabilities, modified_at). Reading $show.digest silently returned
+    # $null, which PowerShell's [string] parameter binding coerces to ""
+    # before Get-AirlockCapabilityEvidenceKey's Mandatory check rejects it -
+    # so every real (non-mocked) inspection call failed outright. The real
+    # digest lives on /api/tags's per-model list (already used by
+    # Get-OllamaDiscovery), matched by name.
     param([Parameter(Mandatory)][string]$ModelRef, [string]$BaseUrl = (Get-AirlockOllamaBaseUrl))
     try {
         $c = [System.Net.Http.HttpClient]::new()
@@ -92,6 +103,17 @@ function Get-OllamaInspection {
             return [pscustomobject]@{ Found = $false }
         }
         $show = $resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+
+        $tagsResp = $c.GetAsync("$BaseUrl/api/tags").Result
+        $digest = $null
+        if ($tagsResp.IsSuccessStatusCode) {
+            $tagEntry = ($tagsResp.Content.ReadAsStringAsync().Result | ConvertFrom-Json).models | Where-Object { $_.name -eq $ModelRef } | Select-Object -First 1
+            if ($tagEntry) { $digest = $tagEntry.digest }
+        }
+        if (-not $digest) {
+            return [pscustomobject]@{ Found = $false }
+        }
+
         $psResp = $c.GetAsync("$BaseUrl/api/ps").Result
         $residency = 'CpuOnly'
         if ($psResp.IsSuccessStatusCode) {
@@ -103,7 +125,7 @@ function Get-OllamaInspection {
         }
         return [pscustomobject]@{
             Found      = $true
-            Digest     = $show.digest
+            Digest     = $digest
             Template   = $show.template
             Residency  = $residency
         }

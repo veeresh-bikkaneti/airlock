@@ -169,3 +169,48 @@ function Get-AirlockOrphanedHarnessTransactions {
         }
     }
 }
+
+# BUG FOUND BY A LIVE RUN: a workspace trial that hangs inside the
+# transaction's -Run scriptblock blocks Invoke-AirlockHarnessConfigTransaction
+# itself, so its finally-block restore never runs either - and if the whole
+# pwsh process is then killed from outside (Ctrl+C, a wrapper's own timeout,
+# a crash), the config stays staged and the lock stays held forever. A
+# per-child-process timeout (see Invoke-OpenCodeCapabilityContract.ps1) fixes
+# the first case; this is the second layer, for when the orchestrator itself
+# died. Same class of defect as the Phase D/E zero-caller gap:
+# Get-AirlockOrphanedHarnessTransactions and Resolve-AirlockConfigRestore's
+# PreserveRecoveryRecord branch already existed but nothing called them.
+#
+# Only auto-recovers orphans whose owner process is confirmed dead AND whose
+# restore was never even attempted (restoreResult still $null - the
+# abandoned-mid-flight case this bug produces). An orphan already marked
+# PRESERVED_FOR_RECOVERY made its cautious decision correctly (something else
+# changed the config hash) and still needs a human, so it's left untouched -
+# recovering it automatically here would defeat the exact protection §8.1
+# describes ("never overwrite a user change").
+function Invoke-AirlockOrphanedHarnessTransactionRecovery {
+    param([Parameter(Mandatory)][string]$TransactionDir)
+    $orphans = @(Get-AirlockOrphanedHarnessTransactions -TransactionDir $TransactionDir)
+    $recovered = @()
+    foreach ($orphan in $orphans) {
+        if ($orphan.OwnerAlive) { continue }
+        if ($null -ne $orphan.Record.restoreResult) { continue }
+
+        $configPath = $orphan.Record.configPath
+        $currentHash = if (Test-Path $configPath) { (Get-FileHash -Path $configPath -Algorithm SHA256).Hash } else { $null }
+        $decision = Resolve-AirlockConfigRestore -CurrentHash $currentHash -StagedHash $orphan.Record.stagedHash -OriginalAbsent $orphan.Record.originalAbsent
+
+        switch ($decision.Action) {
+            'RestoreBackup' { Copy-Item -Path $orphan.Record.backupPath -Destination $configPath -Force }
+            'DeleteConfig' { Remove-Item -Path $configPath -Force -ErrorAction SilentlyContinue }
+        }
+
+        $record = $orphan.Record | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+        $record.restoreResult = "OrphanRecovery ($($decision.Action)): $($decision.Reason)"
+        $record.finishedAt = [DateTime]::UtcNow.ToString('o')
+        Write-AirlockAtomicJson -Path $orphan.RecordPath -Data $record
+
+        $recovered += [pscustomobject]@{ SessionId = $orphan.Record.sessionId; ConfigPath = $configPath; Action = $decision.Action }
+    }
+    return $recovered
+}

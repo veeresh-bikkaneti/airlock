@@ -93,6 +93,40 @@ try {
     $orphans = Get-AirlockOrphanedHarnessTransactions -TransactionDir $txnDir
     Assert-True (($orphans | Where-Object { $_.Record.restoreResult -match 'PRESERVED_FOR_RECOVERY' }).Count -ge 1) "Get-AirlockOrphanedHarnessTransactions surfaces the preserved-for-recovery transaction"
 
+    # --- Invoke-AirlockOrphanedHarnessTransactionRecovery: the abandoned-mid-flight case (BUG FOUND BY A LIVE RUN) ---
+    # Simulates exactly what a killed pwsh process leaves behind: staged
+    # content already on disk, a backup of the original, and a transaction
+    # record whose restoreResult never got set because nothing ever reached
+    # the finally block.
+    $abandonedConfigPath = Join-Path $workDir "config" "abandoned-harness.json"
+    Set-Content -Path $abandonedConfigPath -Value '{"staged":true}' -Encoding utf8NoBOM -NoNewline
+    $abandonedStagedHash = (Get-FileHash $abandonedConfigPath -Algorithm SHA256).Hash
+    $abandonedBackupPath = Join-Path $backupDir "abandoned-harness.json.$([guid]::NewGuid().ToString('N')).bak"
+    Set-Content -Path $abandonedBackupPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
+    $abandonedRecord = [ordered]@{
+        sessionId           = [guid]::NewGuid().ToString()
+        ownerPid            = 999999  # not a real, live process
+        ownerStartTimeTicks = 1
+        configPath          = $abandonedConfigPath
+        startedAt           = [DateTime]::UtcNow.ToString('o')
+        originalAbsent      = $false
+        originalHash        = "irrelevant-for-this-test"
+        backupPath          = $abandonedBackupPath
+        stagedHash          = $abandonedStagedHash
+        processLaunchTime   = [DateTime]::UtcNow.ToString('o')
+        restoreResult       = $null
+        finishedAt          = $null
+    }
+    Write-AirlockAtomicJson -Path (Join-Path $txnDir "$($abandonedRecord.sessionId).json") -Data $abandonedRecord
+
+    $recovered = Invoke-AirlockOrphanedHarnessTransactionRecovery -TransactionDir $txnDir
+    Assert-True (($recovered | Where-Object { $_.SessionId -eq $abandonedRecord.sessionId }).Count -eq 1) "the abandoned (restoreResult=null, dead owner) transaction is recovered"
+    Assert-True ((Get-Content $abandonedConfigPath -Raw) -eq '{"original":true}') "recovery restores the original content from backup"
+    $recoveredRecord = Get-Content (Join-Path $txnDir "$($abandonedRecord.sessionId).json") -Raw | ConvertFrom-Json
+    Assert-True ($recoveredRecord.restoreResult -match 'OrphanRecovery') "the transaction record is updated so it is never re-swept as an orphan again"
+    Assert-True ((Invoke-AirlockOrphanedHarnessTransactionRecovery -TransactionDir $txnDir | Where-Object { $_.SessionId -eq $abandonedRecord.sessionId }).Count -eq 0) "re-running recovery is a no-op for an already-recovered transaction"
+    Assert-True ((Invoke-AirlockOrphanedHarnessTransactionRecovery -TransactionDir $txnDir | Where-Object { $_.SessionId -eq $tamperResult.Record.sessionId }).Count -eq 0) "a transaction already correctly PRESERVED_FOR_RECOVERY is left alone, never auto-overwritten"
+
     # --- -WhatIf: no mutation at all ---
     Set-Content -Path $configPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
     $beforeHash = (Get-FileHash $configPath -Algorithm SHA256).Hash
