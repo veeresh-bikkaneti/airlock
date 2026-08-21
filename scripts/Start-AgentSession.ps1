@@ -25,8 +25,25 @@ param(
 . (Join-Path $PSScriptRoot "agent-profile-helpers.ps1")
 . (Join-Path $PSScriptRoot "agent-capability-registry.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "ollama.ps1")
+. (Join-Path $PSScriptRoot "runtime-adapters" "llamacpp.ps1")
+. (Join-Path $PSScriptRoot "runtime-adapters" "lmstudio.ps1")
 . (Join-Path $PSScriptRoot "Invoke-OpenCodeCapabilityContract.ps1")
 . (Join-Path $PSScriptRoot "Invoke-PiCapabilityContract.ps1")
+
+# Runtime-agnostic endpoint-mode dispatch, used by both -WhatIf (to print the
+# plan the real path will actually follow) and the real path. Found by
+# review: -WhatIf used to hardcode Resolve-OllamaEndpointMode regardless of
+# the selected profile's runtime, so a non-Ollama profile's -WhatIf printed
+# a transport plan the real path would never attempt.
+function Resolve-SessionEndpointMode {
+    param([Parameter(Mandatory)][string]$Runtime, [Parameter(Mandatory)][string]$Harness)
+    switch ($Runtime) {
+        'ollama' { return Resolve-OllamaEndpointMode -Harness $Harness }
+        'llama-server' { return Resolve-LlamaCppEndpointMode -Harness $Harness }
+        'lmstudio' { return Resolve-LMStudioEndpointMode -Harness $Harness }
+        default { return [pscustomobject]@{ TransportCandidates = @(); Reason = "No adapter for runtime '$Runtime' yet." } }
+    }
+}
 
 if (-not $ProfileCataloguePath) { $ProfileCataloguePath = Join-Path $PSScriptRoot ".." "config" "agent-profiles.json" }
 if (-not $WorkspaceRoot) { $WorkspaceRoot = Join-Path $PlatformDir "workspaces" }
@@ -64,7 +81,7 @@ function Resolve-SessionProfile {
 # acquisition) - even the lock file is state this must never write. ---
 if ($WhatIf) {
     $selectedProfile = Resolve-SessionProfile
-    $endpointMode = Resolve-OllamaEndpointMode -Harness $Harness
+    $endpointMode = Resolve-SessionEndpointMode -Runtime $selectedProfile.runtime -Harness $Harness
     Write-Host "WHATIF: would acquire lock at $LockPath" -ForegroundColor Cyan
     Write-Host "WHATIF: selected profile '$($selectedProfile.profileId)' ($($selectedProfile.displayName))" -ForegroundColor Cyan
     Write-Host "WHATIF: would try transports in order: $($endpointMode.TransportCandidates -join ', ')" -ForegroundColor Cyan
@@ -81,24 +98,78 @@ try {
     # --- Step 2: resolve profile ---
     $selectedProfile = Resolve-SessionProfile
 
-    # --- Step 4/5: start/adopt runtime, inspect (Ollama-only path in Phase B) ---
-    if ($selectedProfile.runtime -ne 'ollama') {
-        Write-Host "FAILED: runtime '$($selectedProfile.runtime)' has no adapter yet (Phase B implements Ollama only)." -ForegroundColor Red
-        exit 1
-    }
-    $ollamaBaseUrl = Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir
-    $discovery = Get-OllamaDiscovery -BaseUrl $ollamaBaseUrl
-    if (-not $discovery.Reachable) {
-        Write-Host "FAILED: Ollama is not reachable. Run ai-start first." -ForegroundColor Red
-        exit 1
-    }
-    $inspection = Get-OllamaInspection -ModelRef $selectedProfile.modelRef -BaseUrl $ollamaBaseUrl
-    if (-not $inspection.Found) {
-        Write-Host "FAILED: model '$($selectedProfile.modelRef)' not found. Acquisition (§6 Acquire) is not implemented in this pass - pull it manually first." -ForegroundColor Red
-        exit 1
+    # --- Step 4/5: start/adopt runtime, inspect. One branch per adapter -
+    # the shapes genuinely differ: Ollama assumes an always-on daemon that
+    # already has models resident (Discover then Inspect); llama-server
+    # starts exactly one model per process and has no persistent daemon to
+    # discover (an instance must already be running - Acquire/Start
+    # automation isn't implemented in this pass, matching Ollama's own
+    # missing-model gap below); LM Studio is a local server you start
+    # yourself, discoverable via its own API once running. Every branch
+    # ends with $runtimeVersion/$modelDigest/$chatTemplateIdentity set so
+    # the evidence key and certificate below aren't Ollama-specific either. ---
+    $runtimeVersion = $null
+    $modelDigest = $null
+    $chatTemplateIdentity = "n/a"
+
+    switch ($selectedProfile.runtime) {
+        'ollama' {
+            $baseUrl = Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir
+            $discovery = Get-OllamaDiscovery -BaseUrl $baseUrl
+            if (-not $discovery.Reachable) {
+                Write-Host "FAILED: Ollama is not reachable. Run ai-start first." -ForegroundColor Red
+                exit 1
+            }
+            $inspection = Get-OllamaInspection -ModelRef $selectedProfile.modelRef -BaseUrl $baseUrl
+            if (-not $inspection.Found) {
+                Write-Host "FAILED: model '$($selectedProfile.modelRef)' not found. Acquisition (§6 Acquire) is not implemented in this pass - pull it manually first." -ForegroundColor Red
+                exit 1
+            }
+            $runtimeVersion = $discovery.Version
+            $modelDigest = $inspection.Digest
+            $chatTemplateIdentity = $inspection.Template ?? "n/a"
+        }
+        'llama-server' {
+            $baseUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $PlatformDir
+            if (-not $baseUrl) {
+                Write-Host "FAILED: no llama-server instance is running for this profile. Start (§6 Start) is not automated in this pass - run Start-LlamaCppRuntime manually first." -ForegroundColor Red
+                exit 1
+            }
+            $inspection = Get-LlamaCppInspection -BaseUrl $baseUrl
+            if (-not $inspection.Reachable -or $inspection.TemplateVerdict -ne 'Pass') {
+                Write-Host "FAILED: llama-server template verification failed: $($inspection.Reason)" -ForegroundColor Red
+                exit 1
+            }
+            # llama-server documents no version endpoint this adapter reads, and no
+            # separate artifact-digest surface exists yet - template identity is
+            # the closest proven identity signal, used honestly rather than
+            # fabricating a version/digest that was never actually observed.
+            $runtimeVersion = "unknown"
+            $modelDigest = $inspection.TemplateIdentity
+            $chatTemplateIdentity = $inspection.TemplateIdentity
+        }
+        'lmstudio' {
+            $baseUrl = Get-LMStudioBaseUrl -PlatformDir $PlatformDir
+            $inspection = Get-LMStudioInspection -ModelRef $selectedProfile.modelRef -BaseUrl $baseUrl
+            if (-not $inspection.Found -or $inspection.Verdict -ne 'Pass') {
+                Write-Host "FAILED: LM Studio model verification failed: $($inspection.Reason)" -ForegroundColor Red
+                exit 1
+            }
+            # LM Studio documents no server/build-version endpoint anywhere
+            # (see lmstudio.ps1's header) - Get-AirlockCapabilityEvidenceKey's
+            # RuntimeVersion is mandatory, so this sentinel makes the gap
+            # visible rather than inventing a real-looking value.
+            $runtimeVersion = "unknown"
+            $modelDigest = $inspection.ModelId
+            $chatTemplateIdentity = $inspection.ToolKind
+        }
+        default {
+            Write-Host "FAILED: runtime '$($selectedProfile.runtime)' has no adapter yet." -ForegroundColor Red
+            exit 1
+        }
     }
 
-    $endpointMode = Resolve-OllamaEndpointMode -Harness $Harness
+    $endpointMode = Resolve-SessionEndpointMode -Runtime $selectedProfile.runtime -Harness $Harness
     $attempted = @{}
     $publishedCertificate = $null
     $failureReasons = @()
@@ -113,12 +184,19 @@ try {
         # Same snapshot-file convention tool-proxy and hermes-container/run-hermes.ps1
         # use - the live port, not a fixed value (§7.1's endpoint identity must
         # match what Discover/Inspect actually probed, not a guessed default).
-        $endpointBase = if ($next.Transport -eq 'ollama-openai-proxy') { Get-AirlockToolProxyBaseUrl -PlatformDir $PlatformDir } else { Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir }
+        # Only Ollama has a direct/proxy port split to resolve here - llama-server
+        # and LM Studio have exactly one transport candidate, so $baseUrl (already
+        # resolved and validated in the runtime switch above) is the endpoint.
+        $endpointBase = if ($selectedProfile.runtime -eq 'ollama') {
+            if ($next.Transport -eq 'ollama-openai-proxy') { Get-AirlockToolProxyBaseUrl -PlatformDir $PlatformDir } else { Get-AirlockOllamaBaseUrl -PlatformDir $PlatformDir }
+        } else {
+            $baseUrl
+        }
         $endpointUrl = "$endpointBase/v1"
         $evidenceKey = Get-AirlockCapabilityEvidenceKey -ContractVersion "1" -ProfileId $selectedProfile.profileId `
-            -ModelRef $selectedProfile.modelRef -ModelDigest $inspection.Digest -ArtifactHash $inspection.Digest `
-            -Runtime "ollama" -RuntimeVersion $discovery.Version -EndpointMode $next.Transport -EndpointIdentity $endpointUrl `
-            -RuntimeConfigHash "n/a" -ChatTemplateIdentity ($inspection.Template ?? "n/a") -EffectiveContext "$Context" `
+            -ModelRef $selectedProfile.modelRef -ModelDigest $modelDigest -ArtifactHash $modelDigest `
+            -Runtime $selectedProfile.runtime -RuntimeVersion $runtimeVersion -EndpointMode $next.Transport -EndpointIdentity $endpointUrl `
+            -RuntimeConfigHash "n/a" -ChatTemplateIdentity $chatTemplateIdentity -EffectiveContext "$Context" `
             -KvCacheMode "default" -Harness $Harness -HarnessVersion "n/a" -HarnessConfigHash "n/a" `
             -ToolSurfaceHash $selectedProfile.toolSurface -SandboxPolicyVersion "1"
 
@@ -147,7 +225,7 @@ try {
             $contractPassed = $contractResult.Passed
             Set-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath `
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
-                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $inspection.Digest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness }) `
+                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness }) `
                 -PassTtlMinutes 5 -FailTtlMinutes 1 -NoCache:$NoCache | Out-Null
         }
 
@@ -159,8 +237,8 @@ try {
                 sessionId             = $lock.sessionId
                 profileId             = $selectedProfile.profileId
                 model                 = $selectedProfile.modelRef
-                modelDigest           = $inspection.Digest
-                runtime               = [pscustomobject]@{ name = "ollama"; version = $discovery.Version }
+                modelDigest           = $modelDigest
+                runtime               = [pscustomobject]@{ name = $selectedProfile.runtime; version = $runtimeVersion }
                 transport             = [pscustomobject]@{ mode = $next.Transport; endpoint = $endpointUrl }
                 effectiveContext      = $Context
                 harness               = $Harness

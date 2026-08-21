@@ -30,6 +30,16 @@ try {
     Assert-True ($whatIfExit -eq 0) "-WhatIf on a valid profile exits 0"
     Assert-True (-not (Test-Path $platformDir)) "-WhatIf creates no platform state directory at all - no lock, no registry, no certificate"
 
+    # --- -WhatIf on a non-Ollama runtime prints THAT profile's own transport
+    # plan, not Ollama's - regression test for a real bug: -WhatIf used to
+    # hardcode Resolve-OllamaEndpointMode regardless of the selected
+    # profile's runtime, so it printed a plan the real path (which correctly
+    # dispatches per-runtime) would never actually attempt. ---
+    $llamaCppWhatIfOutput = & pwsh -NoProfile -File $SessionScript -Profile 'llamacpp-qwen38-ud-q3-k-xl' -Harness 'opencode' `
+        -PlatformDir $platformDir -ProfileCataloguePath $cataloguePath -WhatIf 2>&1 | Out-String
+    Assert-True ($llamaCppWhatIfOutput -match 'openai-direct') "-WhatIf on a llama-server profile prints its own transport candidate (openai-direct)"
+    Assert-True ($llamaCppWhatIfOutput -notmatch 'ollama-openai') "-WhatIf on a llama-server profile never prints Ollama's transport candidates"
+
     # --- Unknown profile: fails cleanly, no lock left behind ---
     & pwsh -NoProfile -File $SessionScript -Profile 'does-not-exist' -Harness 'opencode' `
         -PlatformDir $platformDir -ProfileCataloguePath $cataloguePath | Out-Null
