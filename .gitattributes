@@ -1,0 +1,5 @@
+# Shell scripts get COPYed straight into Linux Docker build contexts
+# (hermes-container/, airlock-worker-container/) - a CRLF-converted
+# checkout on Windows would break their #!/bin/bash shebang at container
+# run time ("bad interpreter"). Force LF regardless of local autocrlf.
+*.sh text eol=lf
