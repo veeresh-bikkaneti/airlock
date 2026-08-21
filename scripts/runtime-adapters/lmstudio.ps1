@@ -62,6 +62,17 @@ function Get-LMStudioBaseUrl {
     return "http://127.0.0.1:1234"
 }
 
+# §3/§6.3: LM Studio has one OpenAI-compatible route per profile-recorded
+# apiMode, no native/proxy split the way Ollama has (see
+# Resolve-OllamaEndpointMode / Resolve-LlamaCppEndpointMode for the same
+# shape on the other two adapters). Added so Start-AgentSession.ps1 can
+# dispatch on runtime without special-casing LM Studio - before this,
+# nothing in the orchestrator called any function in this file at all.
+function Resolve-LMStudioEndpointMode {
+    param([Parameter(Mandatory)][ValidateSet('opencode', 'pi-worker', 'aider', 'openclaw')][string]$Harness)
+    return [pscustomobject]@{ TransportCandidates = @('openai-direct'); Reason = "$Harness uses LM Studio's single OpenAI-compatible route (Chat Completions or Responses per profile apiMode) - no proxy fallback or native/direct split." }
+}
+
 # --- Pure decision functions ---
 
 # ADR §6.3's core invariant for this phase: "It does not use LM Studio's

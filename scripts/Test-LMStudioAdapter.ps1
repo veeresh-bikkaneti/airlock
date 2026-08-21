@@ -47,6 +47,16 @@ Assert-True ($missingApiMode.Verdict -eq 'Refuse') "a profile with no apiMode re
 $unrecognizedApiMode = Resolve-LMStudioApiRoute -Profile ([pscustomobject]@{ apiMode = 'legacy-completions' })
 Assert-True ($unrecognizedApiMode.Verdict -eq 'Refuse') "a profile with an unrecognized apiMode value is refused, not guessed"
 
+# --- Resolve-LMStudioEndpointMode: single transport candidate, no native/proxy split ---
+# Added so Start-AgentSession.ps1 can dispatch on runtime the same way it
+# does for Ollama/llama.cpp - before this, nothing called into lmstudio.ps1
+# from the orchestrator at all.
+
+foreach ($h in @('opencode', 'pi-worker', 'aider', 'openclaw')) {
+    $r = Resolve-LMStudioEndpointMode -Harness $h
+    Assert-True (($r.TransportCandidates -join ',') -eq 'openai-direct') "$h gets exactly one transport candidate: openai-direct (no native/proxy split for LM Studio)"
+}
+
 # --- Stop-LMStudioIfOwned: PID + start-time + instance-nonce ownership check ---
 
 $workDir = Join-Path ([System.IO.Path]::GetTempPath()) "airlock-lmstudio-adapter-test-$([guid]::NewGuid().ToString('N'))"
