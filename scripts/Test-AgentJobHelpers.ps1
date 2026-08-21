@@ -139,6 +139,34 @@ Assert-True ($dockerArgs -contains '--read-only') "the container root filesystem
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_WALL_CLOCK_MINUTES=45') "maxWallClockMinutes from the manifest is passed through"
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_TOOL_STEPS=80') "maxToolSteps from the manifest is passed through"
 
+Assert-True ($dockerArgs -contains '--cap-drop') "docker args include --cap-drop"
+$capDropIdx = [array]::IndexOf($dockerArgs, '--cap-drop')
+Assert-True ($dockerArgs[$capDropIdx + 1] -eq 'ALL') "--cap-drop is ALL - no Linux capabilities retained inside the worker"
+
+Assert-True ($dockerArgs -contains '--security-opt') "docker args include --security-opt"
+$secOptIdx = [array]::IndexOf($dockerArgs, '--security-opt')
+Assert-True ($dockerArgs[$secOptIdx + 1] -eq 'no-new-privileges') "--security-opt is no-new-privileges - no privilege escalation inside the worker"
+
+Assert-True ($dockerArgs -contains '--pids-limit') "docker args include --pids-limit"
+$pidsIdx = [array]::IndexOf($dockerArgs, '--pids-limit')
+Assert-True ($dockerArgs[$pidsIdx + 1] -eq '256') "--pids-limit bounds the number of processes the worker can fork"
+
+# Explicit non-default -CpuLimit/-MemoryLimit values (not the 2.0/"4g"
+# defaults) so these two assertions can't pass by coincidentally matching
+# a hardcoded literal instead of what Build-AirlockWorkerDockerArgs
+# actually emitted for the caller-supplied limit.
+$dockerArgsLimits = Build-AirlockWorkerDockerArgs -JobWorktreePath 'C:\platform\jobs\abc\worktree' `
+    -PolicyFilePath 'C:\platform\jobs\abc\job-policy.json' -ContainerImage 'airlock-worker:latest' `
+    -NetworkDecision 'Disabled' -MaxWallClockMinutes 45 -MaxToolSteps 80 -CpuLimit 1.5 -MemoryLimit '2g'
+
+Assert-True ($dockerArgsLimits -contains '--cpus') "docker args include --cpus"
+$cpusIdx = [array]::IndexOf($dockerArgsLimits, '--cpus')
+Assert-True ($dockerArgsLimits[$cpusIdx + 1] -eq '1.5') "--cpus reflects the caller-supplied CPU limit, not left unbounded"
+
+Assert-True ($dockerArgsLimits -contains '--memory') "docker args include --memory"
+$memIdx = [array]::IndexOf($dockerArgsLimits, '--memory')
+Assert-True ($dockerArgsLimits[$memIdx + 1] -eq '2g') "--memory reflects the caller-supplied memory limit, not left unbounded"
+
 $dockerArgsEnabled = Build-AirlockWorkerDockerArgs -JobWorktreePath 'C:\platform\jobs\abc\worktree' `
     -PolicyFilePath 'C:\platform\jobs\abc\job-policy.json' -ContainerImage 'airlock-worker:latest' `
     -NetworkDecision 'Enabled' -MaxWallClockMinutes 45 -MaxToolSteps 80
