@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "allowedOperators": ["local-cli"],
+  "jobTemplates": [
+    {
+      "templateId": "fixture-smoke-test",
+      "task": "Run the repository's existing test command and report pass/fail. Do not modify code outside the worktree.",
+      "allowedCommands": ["pnpm test", "git status", "git diff"],
+      "network": "disabled",
+      "credentials": "none",
+      "maxWallClockMinutes": 15,
+      "maxToolSteps": 20,
+      "output": { "createBranch": true, "allowMerge": false, "allowPush": false }
+    }
+  ]
+}
