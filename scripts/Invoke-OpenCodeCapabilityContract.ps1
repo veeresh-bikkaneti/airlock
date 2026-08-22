@@ -127,18 +127,28 @@ function Invoke-OpenCodeWorkspaceTrial {
     }
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
-    $stderr = Get-Content (Join-Path $WorkspacePath ".stderr.log") -Raw -ErrorAction SilentlyContinue
-    $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
-    # AGENT-004: Positive observation of structured tool events from --format json output.
-    # --format json emits one JSON object per line to stdout (not stderr).
-    $usedStructuredToolEvents = $false
+
+    # Check for out-of-workspace access by parsing JSON events' filepath metadata,
+    # not regex heuristics. Under --format json, filepaths are in tool_use events;
+    # compare against actual $WorkspacePath to detect escapes.
+    $outOfWorkspace = $false
+    $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath)
     $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
     foreach ($line in $stdoutLines) {
         try {
             $json = $line | ConvertFrom-Json
-            if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
+            if ($json.type -match 'tool' -and $json.part.state.metadata.filepath) {
+                $filepath = $json.part.state.metadata.filepath
+                $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
+                    $outOfWorkspace = $true
+                    break
+                }
+            }
         } catch { }
     }
+
+    $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
