@@ -111,10 +111,22 @@ Unit tests cover config correlation, parameter passing, and JSON parsing without
 
 ## Live Verification (Required Before Merge)
 
-Real sandboxed trials needed:
-1. **Success case:** Model correctly completes task (e.g., writes output.md) — capture full stderr JSON event stream
-2. **Failure case:** Model falls back to raw JSON in stdout, task fails — capture full stderr to verify no tool-type events
-3. Parse captured JSON for actual field names and verify code regex matches them
-4. Confirm `$usedStructuredToolEvents` correctly distinguishes success from failure
+Real sandboxed trials inside `Invoke-AirlockHarnessConfigTransaction` scope needed:
 
-Do not merge until live observations confirm exact event types and the parser correctly identifies them.
+1. **Success case:** Model correctly completes task (e.g., writes output.md)
+   - Run `opencode run --auto --format json` inside Airlock sandbox
+   - Capture full stdout (JSON event stream)
+   - Extract actual `type` field values from tool-related events
+   - Verify code regex `$json.type -match 'tool'` correctly matches them
+
+2. **Failure case:** Model falls back to raw JSON, task fails
+   - Capture full stdout to verify no tool-type events present
+   - Confirm `$usedStructuredToolEvents` correctly is false
+
+3. **Hang investigation** (known issue from team-lead testing)
+   - Both `--format json --auto` runs hung and timed out (~120s)
+   - Unclear root cause: `--auto`+json interaction? cold-start? config pollution?
+   - Verify timeout correctly triggers trial failure: `ProcessSucceeded=$false`, `SanitizedInfo="timedOut=true"`
+   - If hang is reproducible, document trigger conditions
+
+Do not merge until live observations confirm: (a) exact event types captured, (b) parser correctly identifies them, (c) timeout behavior is correct.
