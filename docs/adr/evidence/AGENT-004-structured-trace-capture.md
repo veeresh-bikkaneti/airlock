@@ -15,7 +15,7 @@ Both inferred success from the ABSENCE of raw JSON fallback patterns in stdout, 
 
 ### OpenCode (Invoke-OpenCodeCapabilityContract.ps1)
 
-**Change:** Added `--print-logs` flag to `opencode run` command to enable structured event logging.
+**Change:** Switched to `--format json` flag to emit structured JSON event stream (one JSON object per line).
 
 ```powershell
 # Before
@@ -25,9 +25,9 @@ $proc = Start-Process -FilePath $opencodeCommand.Source `
     -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
     -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
 
-# After
+# After (real structured JSON event stream)
 $proc = Start-Process -FilePath $opencodeCommand.Source `
-    -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--print-logs", $instruction) `
+    -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--format", "json", $instruction) `
     -WorkingDirectory $WorkspacePath -NoNewWindow -PassThru `
     -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
     -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
@@ -39,9 +39,15 @@ $proc = Start-Process -FilePath $opencodeCommand.Source `
 # Before (negative inference)
 $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
 
-# After (positive observation)
-$allOutput = "$stdout`n$stderr"
-$usedStructuredToolEvents = [bool]($allOutput -match '"type"\s*:\s*"tool-call"' -or $allOutput -match '"type"\s*:\s*"tool-result"')
+# After (positive observation of JSON events with type field)
+$usedStructuredToolEvents = $false
+$stderrLines = @($stderr -split "`n" | Where-Object { $_.Trim() })
+foreach ($line in $stderrLines) {
+    try {
+        $json = $line | ConvertFrom-Json
+        if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
+    } catch { }
+}
 ```
 
 ### Pi (Invoke-PiCapabilityContract.ps1)
@@ -76,37 +82,24 @@ $allOutput = "$Stdout`n$Stderr"
 $usedStructuredToolEvents = [bool]($allOutput -match '"type"\s*:\s*"tool-call"' -or $allOutput -match '"type"\s*:\s*"tool-result"')
 ```
 
-## Structured Event Format
+## Structured Event Format (Real Observations Needed)
 
-Both OpenCode (with `--print-logs`) and Pi (via container logs) emit structured JSON events:
+OpenCode `--format json` emits one JSON object per line. Real observed structure to be captured from live sandboxed trial runs inside `Invoke-AirlockHarnessConfigTransaction` scope.
 
+The code currently checks for `$json.type -match 'tool'` as a flexible positive indicator — exact event type field values (e.g., `"type": "tool-call"` vs. `"type": "call_tool"` vs. something else) will be confirmed during live verification.
+
+Example placeholder (structure not yet verified live):
 ```json
-{
-  "type": "tool-call",
-  "requestId": "req-12345",
-  "toolName": "write_file",
-  "arguments": { "path": "output.md", "content": "..." }
-}
+{"type": "tool-call", "requestId": "...", "toolName": "write_file", "arguments": {...}}
+{"type": "tool-result", "requestId": "...", "success": true, "result": {...}}
 ```
 
-```json
-{
-  "type": "tool-result",
-  "requestId": "req-12345",
-  "success": true,
-  "result": { "bytesWritten": 42 }
-}
-```
+## Request-ID Correlation (To Be Verified)
 
-## Request-ID Correlation
-
-The structured trace allows correlation across the tool-call → tool-result → next-turn sequence:
-
-1. Model requests a tool via structured `tool-call` event
-2. Harness executes tool and returns structured `tool-result` event with matching `requestId`
-3. Model sees result and proceeds (next turn)
-
-All events are request-ID-correlated in the logs, providing a verifiable audit trail of the tool-use flow.
+Once real `--format json` events are captured from a live sandboxed trial, verify:
+1. Model issues a structured event with `type` field containing "tool" and includes `requestId`
+2. Harness executes and returns result with matching `requestId`  
+3. Model sees result and proceeds
 
 ## Test Coverage
 
@@ -114,12 +107,14 @@ Both test suites verify:
 - `Test-OpenCodeCapabilityContract.ps1`: All 11 checks pass
 - `Test-PiCapabilityContract.ps1`: All 18 checks pass
 
-Unit tests cover config correlation, parameter passing, and basic observation classification without requiring live OpenCode/Pi/Docker installs.
+Unit tests cover config correlation, parameter passing, and JSON parsing without requiring live OpenCode/Pi/Docker installs.
 
-## Live Verification
+## Live Verification (Required Before Merge)
 
-When run against live Ollama + OpenCode + Pi:
-- `--print-logs` in OpenCode produces structured event logs to stderr
-- Container logs for Pi include structured tool-call/result markers
-- Positive observation correctly identifies models that issue structured tool calls
-- Absence of structured events correctly identifies models that fail silently or fall back to unstructured output
+Real sandboxed trials needed:
+1. **Success case:** Model correctly completes task (e.g., writes output.md) — capture full stderr JSON event stream
+2. **Failure case:** Model falls back to raw JSON in stdout, task fails — capture full stderr to verify no tool-type events
+3. Parse captured JSON for actual field names and verify code regex matches them
+4. Confirm `$usedStructuredToolEvents` correctly distinguishes success from failure
+
+Do not merge until live observations confirm exact event types and the parser correctly identifies them.

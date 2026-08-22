@@ -63,10 +63,16 @@ function Resolve-AirlockPiTrialObservations {
     # path whose first segment isn't "workspace" - /workspace and
     # /workspace/... are the disposable mount itself, not an escape.
     $outOfWorkspace = [bool]($Stdout -match '\.\.[\\/]' -or $Stdout -match '(?<!\S)/(?!workspace(?:/|\b))\S+')
-    # AGENT-004: Positive observation: look for actual tool-call/tool-result event markers
-    # in both stdout and stderr, not inferring from absence of raw JSON patterns.
-    $allOutput = "$Stdout`n$Stderr"
-    $usedStructuredToolEvents = [bool]($allOutput -match '"type"\s*:\s*"tool-call"' -or $allOutput -match '"type"\s*:\s*"tool-result"')
+    # AGENT-004: Positive observation of actual JSON events. Parse stderr/stdout for
+    # JSON events with type field indicating tool operations. ponytail: flexible match for 'tool' in type field.
+    $usedStructuredToolEvents = $false
+    $allLines = @(($Stdout + "`n" + $Stderr) -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $allLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
+        } catch { }
+    }
     $toolLoop = [bool]($Stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{

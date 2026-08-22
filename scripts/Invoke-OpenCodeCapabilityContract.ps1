@@ -112,10 +112,10 @@ function Invoke-OpenCodeWorkspaceTrial {
     # content forever, since nothing was left to run the transaction's restore
     # step. -PassThru without -Wait plus a manual WaitForExit(timeout) lets us
     # kill the process and fail the trial cleanly instead.
-    # AGENT-004: --print-logs enables structured event logging; capture logs for
-    # positive observation of tool-call/tool-result pairs, not absence inference.
+    # AGENT-004: --format json emits structured JSON event stream; capture real
+    # events for positive observation of tool-call/tool-result pairs.
     $proc = Start-Process -FilePath $opencodeCommand.Source `
-        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--print-logs", $instruction) `
+        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--format", "json", $instruction) `
         -WorkingDirectory $WorkspacePath -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
         -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
@@ -129,11 +129,17 @@ function Invoke-OpenCodeWorkspaceTrial {
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
     $stderr = Get-Content (Join-Path $WorkspacePath ".stderr.log") -Raw -ErrorAction SilentlyContinue
     $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
-    # AGENT-004: Positive observation of structured tool events. Look for actual
-    # tool-call/tool-result sequences in logs (request-ID-correlated) rather than
-    # inferring from absence of raw JSON. Both stdout and stderr may contain logs.
-    $allOutput = "$stdout`n$stderr"
-    $usedStructuredToolEvents = [bool]($allOutput -match '"type"\s*:\s*"tool-call"' -or $allOutput -match '"type"\s*:\s*"tool-result"')
+    # AGENT-004: Positive observation of structured tool events from --format json output.
+    # Look for actual JSON event lines (one per line) with type field indicating tool operations.
+    # Stderr typically contains event stream; stdout is output. ponytail: parse JSON and observe real type values during live verification.
+    $usedStructuredToolEvents = $false
+    $stderrLines = @($stderr -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $stderrLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
+        } catch { }
+    }
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
