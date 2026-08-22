@@ -112,8 +112,10 @@ function Invoke-OpenCodeWorkspaceTrial {
     # content forever, since nothing was left to run the transaction's restore
     # step. -PassThru without -Wait plus a manual WaitForExit(timeout) lets us
     # kill the process and fail the trial cleanly instead.
+    # AGENT-004: --print-logs enables structured event logging; capture logs for
+    # positive observation of tool-call/tool-result pairs, not absence inference.
     $proc = Start-Process -FilePath $opencodeCommand.Source `
-        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", $instruction) `
+        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--print-logs", $instruction) `
         -WorkingDirectory $WorkspacePath -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
         -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
@@ -125,15 +127,13 @@ function Invoke-OpenCodeWorkspaceTrial {
     }
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
+    $stderr = Get-Content (Join-Path $WorkspacePath ".stderr.log") -Raw -ErrorAction SilentlyContinue
     $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
-    # BUG FOUND BY A LIVE RUN: qwen2.5-coder:7b's real (weak) tool-calling
-    # behavior prints raw {"name": "write", "arguments": {...}} lines to plain
-    # stdout instead of issuing a real tool call - opencode never executes it,
-    # output.md never appears. The original regex only matched {"action" /
-    # {"tool_call(s)", missing this real, observed shape entirely; without
-    # --print-logs there is no legitimate reason for opencode's own output to
-    # contain a raw JSON object at all, so match broadly rather than by key name.
-    $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
+    # AGENT-004: Positive observation of structured tool events. Look for actual
+    # tool-call/tool-result sequences in logs (request-ID-correlated) rather than
+    # inferring from absence of raw JSON. Both stdout and stderr may contain logs.
+    $allOutput = "$stdout`n$stderr"
+    $usedStructuredToolEvents = [bool]($allOutput -match '"type"\s*:\s*"tool-call"' -or $allOutput -match '"type"\s*:\s*"tool-result"')
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
