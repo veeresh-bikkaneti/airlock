@@ -112,8 +112,10 @@ function Invoke-OpenCodeWorkspaceTrial {
     # content forever, since nothing was left to run the transaction's restore
     # step. -PassThru without -Wait plus a manual WaitForExit(timeout) lets us
     # kill the process and fail the trial cleanly instead.
+    # AGENT-004: --format json emits structured JSON event stream; capture real
+    # events for positive observation of tool-call/tool-result pairs.
     $proc = Start-Process -FilePath $opencodeCommand.Source `
-        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", $instruction) `
+        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--format", "json", $instruction) `
         -WorkingDirectory $WorkspacePath -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
         -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
@@ -125,14 +127,27 @@ function Invoke-OpenCodeWorkspaceTrial {
     }
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
-    $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
-    # BUG FOUND BY A LIVE RUN: qwen2.5-coder:7b's real (weak) tool-calling
-    # behavior prints raw {"name": "write", "arguments": {...}} lines to plain
-    # stdout instead of issuing a real tool call - opencode never executes it,
-    # output.md never appears. The original regex only matched {"action" /
-    # {"tool_call(s)", missing this real, observed shape entirely; without
-    # --print-logs there is no legitimate reason for opencode's own output to
-    # contain a raw JSON object at all, so match broadly rather than by key name.
+
+    # Check for out-of-workspace access by parsing JSON events' filepath metadata,
+    # not regex heuristics. Under --format json, filepaths are in tool_use events;
+    # compare against actual $WorkspacePath to detect escapes.
+    $outOfWorkspace = $false
+    $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath)
+    $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $stdoutLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            if ($json.type -match 'tool' -and $json.part.state.metadata.filepath) {
+                $filepath = $json.part.state.metadata.filepath
+                $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
+                    $outOfWorkspace = $true
+                    break
+                }
+            }
+        } catch { }
+    }
+
     $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
