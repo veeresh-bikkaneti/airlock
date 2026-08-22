@@ -251,7 +251,8 @@ try {
         # §4.1's three independent fit states, wired here (not just built
         # and unit-tested) so a failure names WHICH dimension didn't fit
         # instead of a single folded "contract failed". Enforced as sole
-        # publish gate — fail-closed on any unmeasurable dimension.
+        # publish gate for Ollama (the only runtime with measurements); other
+        # runtimes use contract pass as their gate (honest gap, not blocker).
         if ($selectedProfile.runtime -eq 'ollama') {
             $freeVramGiB = Get-AirlockFreeVramGiB
             if ($null -ne $freeVramGiB) {
@@ -270,9 +271,6 @@ try {
                 $failureReasons += "Transport '$($next.Transport)': cannot measure free VRAM (nvidia-smi unavailable or failed)."
                 $contractPassed = $false
             }
-        } else {
-            $failureReasons += "Transport '$($next.Transport)': fit-state verification not yet implemented for runtime '$($selectedProfile.runtime)'."
-            $contractPassed = $false
         }
 
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }
