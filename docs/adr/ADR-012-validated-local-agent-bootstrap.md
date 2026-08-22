@@ -1,7 +1,7 @@
 # ADR-012: Validated local-agent bootstrap — one command, one source of truth
 
 ## Status
-Proposed. Not yet implemented. Requires its own brainstorm/spec pass before implementation (see "Next step" below): this ADR records the decision to build it and why, not an implementation plan.
+Phases A-G implemented and merged as of commit `e3a075b` (PR #29-#32). An independent retest at that same commit (2026-08-22) returned **FAIL** for the primary acceptance goal: see "Retest gaps" below for the open P0/P1 items. Treat the "Next step" section below as historical — implementation started despite it.
 
 ## Context
 
@@ -144,3 +144,28 @@ own clarifying-questions → approaches → sectioned design → spec →
 review cycle before any code is written, the same process the Linux
 port spec (`docs/superpowers/specs/2026-08-19-linux-port-design.md`)
 just went through. Not started as of this ADR.
+
+## Retest gaps (2026-08-22, commit `e3a075b`)
+
+Independent retest verdict: **FAIL** for the primary coding-agent
+acceptance goal — the normal path still serves models by size/install
+state, not proven capability. Live-verified against this repo's
+current code (Ollama 0.32.14, `qwen3-coder:30b`/`qwen2.5-coder:7b`
+resident, OpenCode 1.18.18, RTX 5000 Ada 16GB available on this
+machine, so live proof is possible here, unlike the reviewer's Linux
+sandbox). P0 items block certification; sequence reflects real
+dependencies (003 gates the cert 002 relies on; 004/006 feed the trace
+003 checks; 005 is the only item safe to parallelize as new files).
+
+| ID | Confirmed at HEAD | Required remedy | Status |
+|----|---|---|---|
+| AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. | Open |
+| AGENT-004 | Yes — `Invoke-OpenCodeCapabilityContract.ps1:136` and `Invoke-PiCapabilityContract.ps1:62` both derive `UsedValidStructuredToolEvents` from "stdout does not contain a raw-JSON-looking tool object," not an observed tool-call/tool-result event pair. | Capture a structured trace (request-ID-correlated tool-call -> tool-result -> next turn) from the endpoint/proxy/harness; no stdout-absence inference. | Open |
+| AGENT-002 | Yes — `agent-profile-helpers.ps1` has no `ai-agent-start`/`ai-opencode` wrapper; `ai-code`/`ai-switch` don't consume or invalidate `active-agent.json`. | Make `ai-agent-start`/`ai-opencode` the only coding entry points; gate `ai-code` and the Pi/worker path on an unexpired certificate; `ai-switch` invalidates it. | Open |
+| AGENT-005 | Not yet re-checked this session. | Replace the read/write-marker fixture with: read spec -> break a test -> run allowlisted test -> parse failure -> one repair -> rerun to pass; 3 cold + 3 warm trials; structured trace required each round. | Open (needs confirmation) |
+| AGENT-006 | Not yet re-checked this session. | Plan/apply model acquisition with confirmation + provenance; Airlock starts and health-checks its own proxy fallback instance rather than assuming one is already running. | Open (needs confirmation) |
+| AGENT-001 | Not yet re-checked this session (original finding: `Start-AI.ps1` defaults to `qwen2.5-coder:7b`; `Select-BestCuratedModel` ranks by installed-state then size, not agent eligibility). | Separate chat-ready from coding-ready; auto-acquisition may download a candidate only, never publish it as agent-ready without the full live contract. | Open (needs confirmation) |
+
+P1 items (AGENT-007..012) and AGENT-013 (RAG acceptance) are deferred
+until the P0 set above is fixed and independently re-verified with a
+live run, not just unit tests under mocks.
