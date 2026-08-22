@@ -159,12 +159,26 @@ dependencies (003 gates the cert 002 relies on; 004/006 feed the trace
 
 | ID | Confirmed at HEAD | Required remedy | Status |
 |----|---|---|---|
-| AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. | Open |
+| AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. | Fixed (#34, `46c4d6f`) |
 | AGENT-004 | Yes — `Invoke-OpenCodeCapabilityContract.ps1:136` and `Invoke-PiCapabilityContract.ps1:62` both derive `UsedValidStructuredToolEvents` from "stdout does not contain a raw-JSON-looking tool object," not an observed tool-call/tool-result event pair. | Capture a structured trace (request-ID-correlated tool-call -> tool-result -> next turn) from the endpoint/proxy/harness; no stdout-absence inference. | Open |
 | AGENT-002 | Yes — `agent-profile-helpers.ps1` has no `ai-agent-start`/`ai-opencode` wrapper; `ai-code`/`ai-switch` don't consume or invalidate `active-agent.json`. | Make `ai-agent-start`/`ai-opencode` the only coding entry points; gate `ai-code` and the Pi/worker path on an unexpired certificate; `ai-switch` invalidates it. | Open |
 | AGENT-005 | Not yet re-checked this session. | Replace the read/write-marker fixture with: read spec -> break a test -> run allowlisted test -> parse failure -> one repair -> rerun to pass; 3 cold + 3 warm trials; structured trace required each round. | Open (needs confirmation) |
 | AGENT-006 | Not yet re-checked this session. | Plan/apply model acquisition with confirmation + provenance; Airlock starts and health-checks its own proxy fallback instance rather than assuming one is already running. | Open (needs confirmation) |
 | AGENT-001 | Not yet re-checked this session (original finding: `Start-AI.ps1` defaults to `qwen2.5-coder:7b`; `Select-BestCuratedModel` ranks by installed-state then size, not agent eligibility). | Separate chat-ready from coding-ready; auto-acquisition may download a candidate only, never publish it as agent-ready without the full live contract. | Open (needs confirmation) |
+
+**AGENT-003 disclosed gap (added on merge of #34):** the fix scopes
+`codingReady` gating to the Ollama runtime only — the runtime that can
+actually measure free VRAM and residency today. `llama-server` and
+`lmstudio` profiles still publish a certificate on harness-contract
+pass alone, with no fit-state check, exactly as they did before this
+fix (see the pre-existing "Only computable for Ollama today" comment
+in `Start-AgentSession.ps1` that predates AGENT-003). An earlier round
+of this fix made non-Ollama runtimes fail-closed unconditionally,
+which broke the shipped `llama-server` profile outright — a live
+regression, not a theoretical one — so it was reverted back to this
+disclosed, documented gap rather than a silent one. Closing it for
+real requires residency/VRAM measurement adapters for those runtimes
+(tracked nowhere yet — needs its own follow-up item, not scoped here).
 
 P1 items (AGENT-007..012) and AGENT-013 (RAG acceptance) are deferred
 until the P0 set above is fixed and independently re-verified with a

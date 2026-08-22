@@ -53,6 +53,24 @@ try {
         -PlatformDir $platformDir -ProfileCataloguePath $cataloguePath | Out-Null
     $noProfileExit = $LASTEXITCODE
     Assert-True ($noProfileExit -ne 0) "no -Profile given -> fails rather than auto-selecting any catalogued candidate"
+
+    # --- Cache entry persistence: transportReturnedValidToolEvents must round-trip ---
+    . (Join-Path $ScriptDir "agent-capability-registry.ps1")
+    $registryPath = Join-Path $platformDir "state" "capability-registry.json"
+    $testKey = "test-evidence-key-001"
+    $testData = [pscustomobject]@{
+        profileId = 'test-profile'
+        modelDigest = 'test-digest'
+        transport = 'test-transport'
+        endpoint = 'http://test'
+        harness = 'opencode'
+        transportReturnedValidToolEvents = $true
+    }
+    Set-AirlockCapabilityEntry -EvidenceKey $testKey -RegistryPath $registryPath `
+        -Verdict 'pass' -EntryData $testData -PassTtlMinutes 5 -FailTtlMinutes 1 | Out-Null
+    $loaded = Get-AirlockCapabilityEntry -EvidenceKey $testKey -RegistryPath $registryPath
+    Assert-True ($loaded.FromCache) "cache entry was written and readable"
+    Assert-True ($loaded.Entry.transportReturnedValidToolEvents -eq $true) "transportReturnedValidToolEvents persisted in cache entry"
 } finally {
     Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }

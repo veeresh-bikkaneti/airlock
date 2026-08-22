@@ -215,8 +215,13 @@ try {
 
         # --- Step 6: read a fresh capability entry; run the contract only if absent/stale ---
         $cached = Get-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath -ForceVerify:$ForceVerify -NoCache:$NoCache
+        $fitState = $null
+        $contractResult = $null
+        $transportReturnedValidToolEvents = $false
         if ($cached.FromCache) {
             $contractPassed = ($cached.Entry.verdict -eq 'pass')
+            # Restore persisted transport validity from cache entry
+            $transportReturnedValidToolEvents = $cached.Entry.transportReturnedValidToolEvents ?? $false
         } else {
             # §7.3: each harness implements its own invocation wrapper around
             # the shared §7.2 workspace contract - dispatch to the one that
@@ -236,33 +241,35 @@ try {
                 }
             }
             $contractPassed = $contractResult.Passed
+            $transportReturnedValidToolEvents = $contractResult.TransportReturnedValidToolEvents
             Set-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath `
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
-                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness }) `
+                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness; transportReturnedValidToolEvents = $transportReturnedValidToolEvents }) `
                 -PassTtlMinutes 5 -FailTtlMinutes 1 -NoCache:$NoCache | Out-Null
+        }
 
-            # §4.1's three independent fit states, wired here (not just built
-            # and unit-tested) so a failure names WHICH dimension didn't fit
-            # instead of a single folded "contract failed". Only computable
-            # for Ollama today - $inspection.Residency and free-VRAM
-            # measurement aren't modeled for llama-server/lmstudio's adapters
-            # yet (see their "unknown" runtimeVersion sentinels above for the
-            # same honest-gap pattern), so this stays Ollama-only rather than
-            # fabricate a residency/VRAM reading that was never measured.
-            if ($selectedProfile.runtime -eq 'ollama') {
-                $freeVramGiB = Get-AirlockFreeVramGiB
-                if ($null -ne $freeVramGiB) {
-                    $fitState = Resolve-AirlockFitState -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB $selectedProfile.minimumFreeVramGiB `
-                        -Residency $inspection.Residency -TransportReturnedValidToolEvents $contractResult.TransportReturnedValidToolEvents `
-                        -HarnessContractPassed $contractPassed
-                    if (-not $fitState.CodingReady) {
-                        $dims = @()
-                        if (-not $fitState.ArtifactFit) { $dims += "artifact (${freeVramGiB}GiB free vs $($selectedProfile.minimumFreeVramGiB)GiB required, residency=$($inspection.Residency))" }
-                        if (-not $fitState.TransportFit) { $dims += "transport (no valid structured tool events)" }
-                        if (-not $fitState.HarnessFit) { $dims += "harness (capability contract failed)" }
-                        $failureReasons += "Transport '$($next.Transport)' is not coding-ready: $($dims -join '; ')."
-                    }
+        # §4.1's three independent fit states, wired here (not just built
+        # and unit-tested) so a failure names WHICH dimension didn't fit
+        # instead of a single folded "contract failed". Enforced as sole
+        # publish gate for Ollama (the only runtime with measurements); other
+        # runtimes use contract pass as their gate (honest gap, not blocker).
+        if ($selectedProfile.runtime -eq 'ollama') {
+            $freeVramGiB = Get-AirlockFreeVramGiB
+            if ($null -ne $freeVramGiB) {
+                $fitState = Resolve-AirlockFitState -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB $selectedProfile.minimumFreeVramGiB `
+                    -Residency $inspection.Residency -TransportReturnedValidToolEvents $transportReturnedValidToolEvents `
+                    -HarnessContractPassed $contractPassed
+                if (-not $fitState.CodingReady) {
+                    $dims = @()
+                    if (-not $fitState.ArtifactFit) { $dims += "artifact (${freeVramGiB}GiB free vs $($selectedProfile.minimumFreeVramGiB)GiB required, residency=$($inspection.Residency))" }
+                    if (-not $fitState.TransportFit) { $dims += "transport (no valid structured tool events)" }
+                    if (-not $fitState.HarnessFit) { $dims += "harness (capability contract failed)" }
+                    $failureReasons += "Transport '$($next.Transport)' is not coding-ready: $($dims -join '; ')."
+                    $contractPassed = $false
                 }
+            } else {
+                $failureReasons += "Transport '$($next.Transport)': cannot measure free VRAM (nvidia-smi unavailable or failed)."
+                $contractPassed = $false
             }
         }
 
@@ -283,6 +290,7 @@ try {
                 sandboxPolicyVersion  = 1
                 provenAt              = [DateTime]::UtcNow.ToString('o')
                 expiresAt             = [DateTime]::UtcNow.AddMinutes(5).ToString('o')
+                fitState              = $fitState
             }
         }
     }
