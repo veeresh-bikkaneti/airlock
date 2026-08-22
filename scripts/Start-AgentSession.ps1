@@ -217,8 +217,11 @@ try {
         $cached = Get-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath -ForceVerify:$ForceVerify -NoCache:$NoCache
         $fitState = $null
         $contractResult = $null
+        $transportReturnedValidToolEvents = $false
         if ($cached.FromCache) {
             $contractPassed = ($cached.Entry.verdict -eq 'pass')
+            # Restore persisted transport validity from cache entry
+            $transportReturnedValidToolEvents = $cached.Entry.transportReturnedValidToolEvents ?? $false
         } else {
             # §7.3: each harness implements its own invocation wrapper around
             # the shared §7.2 workspace contract - dispatch to the one that
@@ -238,9 +241,10 @@ try {
                 }
             }
             $contractPassed = $contractResult.Passed
+            $transportReturnedValidToolEvents = $contractResult.TransportReturnedValidToolEvents
             Set-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath `
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
-                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness }) `
+                -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness; transportReturnedValidToolEvents = $transportReturnedValidToolEvents }) `
                 -PassTtlMinutes 5 -FailTtlMinutes 1 -NoCache:$NoCache | Out-Null
         }
 
@@ -257,7 +261,7 @@ try {
             $freeVramGiB = Get-AirlockFreeVramGiB
             if ($null -ne $freeVramGiB) {
                 $fitState = Resolve-AirlockFitState -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB $selectedProfile.minimumFreeVramGiB `
-                    -Residency $inspection.Residency -TransportReturnedValidToolEvents $(if ($contractResult) { $contractResult.TransportReturnedValidToolEvents } else { $false }) `
+                    -Residency $inspection.Residency -TransportReturnedValidToolEvents $transportReturnedValidToolEvents `
                     -HarnessContractPassed $contractPassed
                 if (-not $fitState.CodingReady) {
                     $dims = @()
