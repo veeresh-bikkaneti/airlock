@@ -250,13 +250,8 @@ try {
 
         # §4.1's three independent fit states, wired here (not just built
         # and unit-tested) so a failure names WHICH dimension didn't fit
-        # instead of a single folded "contract failed". Always checked to
-        # re-verify live residency/VRAM even when using a cached contract pass.
-        # Only computable for Ollama today - $inspection.Residency and free-VRAM
-        # measurement aren't modeled for llama-server/lmstudio's adapters
-        # yet (see their "unknown" runtimeVersion sentinels above for the
-        # same honest-gap pattern), so this stays Ollama-only rather than
-        # fabricate a residency/VRAM reading that was never measured.
+        # instead of a single folded "contract failed". Enforced as sole
+        # publish gate — fail-closed on any unmeasurable dimension.
         if ($selectedProfile.runtime -eq 'ollama') {
             $freeVramGiB = Get-AirlockFreeVramGiB
             if ($null -ne $freeVramGiB) {
@@ -271,7 +266,13 @@ try {
                     $failureReasons += "Transport '$($next.Transport)' is not coding-ready: $($dims -join '; ')."
                     $contractPassed = $false
                 }
+            } else {
+                $failureReasons += "Transport '$($next.Transport)': cannot measure free VRAM (nvidia-smi unavailable or failed)."
+                $contractPassed = $false
             }
+        } else {
+            $failureReasons += "Transport '$($next.Transport)': fit-state verification not yet implemented for runtime '$($selectedProfile.runtime)'."
+            $contractPassed = $false
         }
 
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }
