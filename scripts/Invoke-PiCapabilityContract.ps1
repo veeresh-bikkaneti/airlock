@@ -63,8 +63,8 @@ function Resolve-AirlockPiTrialObservations {
     # path whose first segment isn't "workspace" - /workspace and
     # /workspace/... are the disposable mount itself, not an escape.
     $outOfWorkspace = [bool]($Stdout -match '\.\.[\\/]' -or $Stdout -match '(?<!\S)/(?!workspace(?:/|\b))\S+')
-    # AGENT-004: Positive observation of actual JSON events. Parse stderr/stdout for
-    # JSON events with type field indicating tool operations. ponytail: flexible match for 'tool' in type field.
+    # AGENT-004: Positive observation of actual JSON events from container logs.
+    # Pi runs in Docker; event stream may come from stdout or stderr. Check both.
     $usedStructuredToolEvents = $false
     $allLines = @(($Stdout + "`n" + $Stderr) -split "`n" | Where-Object { $_.Trim() })
     foreach ($line in $allLines) {

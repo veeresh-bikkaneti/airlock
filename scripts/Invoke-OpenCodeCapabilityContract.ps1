@@ -130,11 +130,10 @@ function Invoke-OpenCodeWorkspaceTrial {
     $stderr = Get-Content (Join-Path $WorkspacePath ".stderr.log") -Raw -ErrorAction SilentlyContinue
     $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
     # AGENT-004: Positive observation of structured tool events from --format json output.
-    # Look for actual JSON event lines (one per line) with type field indicating tool operations.
-    # Stderr typically contains event stream; stdout is output. ponytail: parse JSON and observe real type values during live verification.
+    # --format json emits one JSON object per line to stdout (not stderr).
     $usedStructuredToolEvents = $false
-    $stderrLines = @($stderr -split "`n" | Where-Object { $_.Trim() })
-    foreach ($line in $stderrLines) {
+    $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $stdoutLines) {
         try {
             $json = $line | ConvertFrom-Json
             if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
