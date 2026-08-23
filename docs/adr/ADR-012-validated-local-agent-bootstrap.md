@@ -160,7 +160,7 @@ dependencies (003 gates the cert 002 relies on; 004/006 feed the trace
 | ID | Confirmed at HEAD | Required remedy | Status |
 |----|---|---|---|
 | AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. | Fixed (#34, `46c4d6f`) |
-| AGENT-004 | Yes — `Invoke-OpenCodeCapabilityContract.ps1:136` and `Invoke-PiCapabilityContract.ps1:62` both derive `UsedValidStructuredToolEvents` from "stdout does not contain a raw-JSON-looking tool object," not an observed tool-call/tool-result event pair. | Capture a structured trace (request-ID-correlated tool-call -> tool-result -> next turn) from the endpoint/proxy/harness; no stdout-absence inference. | Open |
+| AGENT-004 | Yes — `Invoke-OpenCodeCapabilityContract.ps1:136` and `Invoke-PiCapabilityContract.ps1:62` both derive `UsedValidStructuredToolEvents` from "stdout does not contain a raw-JSON-looking tool object," not an observed tool-call/tool-result event pair. | Observe a real positive tool-execution signal from the endpoint/proxy/harness (the actual `--format json` schema is atomic per-event, not a separate call/result pair — see disclosed note below); no stdout-absence inference. Also close the same-diff sandbox-escape detector regression found live during this fix. | Fixed (#35, see commit history on `air-adr012-agent004`) |
 | AGENT-002 | Yes — `agent-profile-helpers.ps1` has no `ai-agent-start`/`ai-opencode` wrapper; `ai-code`/`ai-switch` don't consume or invalidate `active-agent.json`. | Make `ai-agent-start`/`ai-opencode` the only coding entry points; gate `ai-code` and the Pi/worker path on an unexpired certificate; `ai-switch` invalidates it. | Open |
 | AGENT-005 | Not yet re-checked this session. | Replace the read/write-marker fixture with: read spec -> break a test -> run allowlisted test -> parse failure -> one repair -> rerun to pass; 3 cold + 3 warm trials; structured trace required each round. | Open (needs confirmation) |
 | AGENT-006 | Not yet re-checked this session. | Plan/apply model acquisition with confirmation + provenance; Airlock starts and health-checks its own proxy fallback instance rather than assuming one is already running. | Open (needs confirmation) |
@@ -180,22 +180,32 @@ disclosed, documented gap rather than a silent one. Closing it for
 real requires residency/VRAM measurement adapters for those runtimes
 (tracked nowhere yet — needs its own follow-up item, not scoped here).
 
-**AGENT-004 disclosed gaps:** the fix replaces stdout-absence inference
-with positive observation of structured tool-use events, plus path-containment
-workspace escape detection, verified live against OpenCode + Ollama. Three
-gaps remain explicit (not hidden):
-1. **Request-ID correlation sequencing** — code detects tool_use events but
-   does not verify call/result ID pairing or turn order. Requires extracting
-   ID field from real --format json output and cross-referencing events.
-   Deferred to AGENT-007+ for full sequencing audit.
-2. **Pi-worker contract path** — code is identical to OpenCode (shared JSON
-   parsing logic, unit tests 18/18 pass) but has zero live evidence. Pi/Docker
-   requires separate infrastructure not available in current verification
-   environment. Deferred to AGENT-007 (Pi acceptance testing) for live trials.
-3. **Workspace escape scenario** — path containment logic is correct but never
-   triggered in live trials (successful models stay in-bounds). Requires
-   adversarial instruction or model failure to observe `$outOfWorkspace=$true`.
-   Deferred to security testing, out of AGENT-004 scope.
+**AGENT-004 resolution, rewritten by the human lead after three rounds of
+evidence that didn't correspond to real events** (see
+`docs/adr/evidence/AGENT-004-structured-trace-capture.md` for the full
+record): the real `opencode run --format json` schema doesn't have a
+separate tool-call/tool-result event pair to correlate by ID — each
+`tool_use` event is atomic, already carrying its outcome in
+`part.state.status`. The fix checks `type -eq 'tool_use' -and part.type
+-eq 'tool' -and part.state.status -eq 'completed'` as the positive signal,
+which is what "no stdout-absence inference" actually requires against the
+real product, not the originally-assumed call/result pairing. Verified
+against three real captured transcripts (legit write, a genuine
+spontaneous out-of-workspace escape the model produced unprompted, and
+the known weak-model raw-JSON-in-text fallback) — all three classify
+correctly. The workspace-escape detector (a same-diff regression
+introduced and then fixed during this item, see commit history) is
+verified against a real escape, not a synthetic one.
+
+**Disclosed gap (the only one remaining):** the Pi-worker contract
+(`Invoke-PiCapabilityContract.ps1`) received the equivalent fix but has
+zero live verification — Pi requires a running Docker/Hermes container
+not available in this environment. Code-reviewed and unit-tested (all
+checks pass) only. Matches AGENT-003's Ollama-only disclosure pattern —
+explicit, not silent. Close it via a live Pi/Docker acceptance run
+whenever that infrastructure is available; not scoped as its own
+tracked item since it's a verification gap on an already-implemented
+fix, not new work.
 
 P1 items (AGENT-007..012) and AGENT-013 (RAG acceptance) are deferred
 until the P0 set above is fixed and independently re-verified with a

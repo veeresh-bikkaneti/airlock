@@ -1,4 +1,12 @@
-# AGENT-004 Live Verification Evidence
+> **Superseded — see `AGENT-004-structured-trace-capture.md`.** The trial
+> numbers below are real (from a genuine live run against commit
+> `705dcb2`), but this file only reports `UsedValidStructuredToolEvents`
+> and never reports the actual `OutOfWorkspace` value for any trial — the
+> specific security-relevant check this round exists to verify. Left here
+> unedited as part of the review trail; do not treat it as current
+> evidence for the merged fix.
+
+# AGENT-004 Live Verification Evidence (superseded)
 
 **Commit**: 705dcb2  
 **Date**: 2026-08-22  
