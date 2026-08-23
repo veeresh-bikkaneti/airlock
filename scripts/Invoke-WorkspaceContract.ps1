@@ -111,6 +111,7 @@ function Invoke-AirlockWorkspaceTrial {
             LatencyMs                     = ([DateTime]::UtcNow - $started).TotalMilliseconds
             SanitizedInfo                 = $observations.SanitizedInfo
             UsedValidStructuredToolEvents = $observations.UsedValidStructuredToolEvents
+            OutOfWorkspaceRequestDetected = $observations.OutOfWorkspaceRequestDetected
         }
     } finally {
         Remove-Item -Path $workspacePath -Recurse -Force -ErrorAction SilentlyContinue
