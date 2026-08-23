@@ -129,28 +129,59 @@ function Invoke-OpenCodeWorkspaceTrial {
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
 
     # Check for out-of-workspace access + positive observation of structured tool events by
-    # parsing JSON events' filepath metadata, not regex heuristics. Under --format json,
-    # filepaths are in tool_use events; compare against actual $WorkspacePath to detect escapes.
+    # parsing JSON events' filepath metadata + request-ID correlation, not regex heuristics.
+    # Under --format json, tool events carry IDs; match call+result pairs + verify next turn.
     $outOfWorkspace = $false
     $usedStructuredToolEvents = $false
     $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath)
     $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
-    foreach ($line in $stdoutLines) {
+
+    # ponytail: track tool-call IDs, match results, count pairs. Field names pending
+    # evidence-collector confirmation (callID observed; exact path varies by structure).
+    $toolCallIds = @{}
+    $toolResultCount = 0
+    $lineCount = $stdoutLines.Count
+    $lastEventWasTool = $false
+
+    for ($i = 0; $i -lt $lineCount; $i++) {
+        $line = $stdoutLines[$i]
         try {
             $json = $line | ConvertFrom-Json
-            if ($json.type -match 'tool') {
-                $usedStructuredToolEvents = $true
-                if ($json.part.state.metadata.filepath) {
-                    $filepath = $json.part.state.metadata.filepath
-                    $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
-                    if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
-                        $outOfWorkspace = $true
-                        break
-                    }
+
+            # Detect tool call (pending call waiting for result). Field name pending confirmation.
+            if ($json.type -match 'tool_call|tool_use|call_tool') {
+                $callId = $json.id ?? $json.callID ?? $json.call_id
+                if ($callId) {
+                    $toolCallIds[$callId] = $true
+                    $lastEventWasTool = $true
+                }
+            }
+
+            # Detect tool result (completion of earlier call).
+            if ($json.type -match 'tool_result|result') {
+                $resultId = $json.id ?? $json.callID ?? $json.call_id
+                if ($resultId -and $toolCallIds[$resultId]) {
+                    $toolResultCount++
+                    $toolCallIds.Remove($resultId)
+                    $lastEventWasTool = $true
+                }
+            }
+
+            # Check workspace escape (filepath in any tool event).
+            if ($json.part.state.metadata.filepath) {
+                $filepath = $json.part.state.metadata.filepath
+                $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
+                    $outOfWorkspace = $true
+                    break
                 }
             }
         } catch { }
     }
+
+    # Only mark as using structured tool events if we found matching call+result pairs.
+    # Lone unanswered calls don't count (model failed to get result).
+    $usedStructuredToolEvents = ($toolResultCount -gt 0)
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
