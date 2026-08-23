@@ -159,14 +159,15 @@ dependencies (003 gates the cert 002 relies on; 004/006 feed the trace
 
 | ID | Confirmed at HEAD | Required remedy | Status |
 |----|---|---|---|
-| AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. | Fixed (#34, `46c4d6f`) |
+| AGENT-003 | Yes — `Start-AgentSession.ps1:258-266` computes `$fitState.CodingReady` and only appends to `$failureReasons`; `$contractPassed` (line 219/238) is never revised, so `$publishedCertificate` still gets built at line 271 even when `CodingReady=false`. | For the Ollama runtime (the only one with measurable VRAM/residency): `codingReady = artifactFit AND transportFit AND harnessFit` must be the sole publish gate; persist fit dimensions; re-check live residency/VRAM before reusing a cached pass. Non-Ollama runtimes are out of scope for this item — see disclosed-gap note below. | Fixed (#34, `d4d024f`) |
 | AGENT-004 | Yes — `Invoke-OpenCodeCapabilityContract.ps1:136` and `Invoke-PiCapabilityContract.ps1:62` both derive `UsedValidStructuredToolEvents` from "stdout does not contain a raw-JSON-looking tool object," not an observed tool-call/tool-result event pair. | Observe a real positive tool-execution signal from the endpoint/proxy/harness (the actual `--format json` schema is atomic per-event, not a separate call/result pair — see disclosed note below); no stdout-absence inference. Also close the same-diff sandbox-escape detector regression found live during this fix. | Fixed (#35, see commit history on `air-adr012-agent004`) |
 | AGENT-002 | Yes — `agent-profile-helpers.ps1` has no `ai-agent-start`/`ai-opencode` wrapper; `ai-code`/`ai-switch` don't consume or invalidate `active-agent.json`. | Make `ai-agent-start`/`ai-opencode` the only coding entry points; gate `ai-code` and the Pi/worker path on an unexpired certificate; `ai-switch` invalidates it. | Open |
 | AGENT-005 | Not yet re-checked this session. | Replace the read/write-marker fixture with: read spec -> break a test -> run allowlisted test -> parse failure -> one repair -> rerun to pass; 3 cold + 3 warm trials; structured trace required each round. | Open (needs confirmation) |
 | AGENT-006 | Not yet re-checked this session. | Plan/apply model acquisition with confirmation + provenance; Airlock starts and health-checks its own proxy fallback instance rather than assuming one is already running. | Open (needs confirmation) |
 | AGENT-001 | Not yet re-checked this session (original finding: `Start-AI.ps1` defaults to `qwen2.5-coder:7b`; `Select-BestCuratedModel` ranks by installed-state then size, not agent eligibility). | Separate chat-ready from coding-ready; auto-acquisition may download a candidate only, never publish it as agent-ready without the full live contract. | Open (needs confirmation) |
 
-**AGENT-003 disclosed gap (added on merge of #34):** the fix scopes
+**AGENT-003 disclosed gap (added on merge of #34, clarified after a second
+independent reality-check flagged the scope as ambiguous):** the fix scopes
 `codingReady` gating to the Ollama runtime only — the runtime that can
 actually measure free VRAM and residency today. `llama-server` and
 `lmstudio` profiles still publish a certificate on harness-contract
@@ -176,9 +177,26 @@ in `Start-AgentSession.ps1` that predates AGENT-003). An earlier round
 of this fix made non-Ollama runtimes fail-closed unconditionally,
 which broke the shipped `llama-server` profile outright — a live
 regression, not a theoretical one — so it was reverted back to this
-disclosed, documented gap rather than a silent one. Closing it for
-real requires residency/VRAM measurement adapters for those runtimes
-(tracked nowhere yet — needs its own follow-up item, not scoped here).
+disclosed, documented gap rather than a silent one.
+
+This is a pre-existing, always-disclosed scope limitation, not a new
+regression introduced by AGENT-003 — the original retest's AGENT-003
+finding was specifically about a *computed* `CodingReady=false` result
+being ignored on the Ollama path, not about extending fit-state
+measurement to runtimes that never had it. AGENT-003 is correctly
+"Fixed" for the bug the retest actually reported. Closing the
+non-Ollama gap for real requires residency/VRAM measurement adapters
+for `llama-server`/`lmstudio` — a distinct, larger scope than AGENT-003,
+tracked here as a new follow-up item:
+
+**FIT-ADAPTERS-001** (not part of the original 13 AGENT-00N findings,
+opened 2026-08-22): implement residency/free-VRAM measurement for the
+`llama-server` and `lmstudio` runtime adapters (parallel to
+`Get-AirlockFreeVramGiB`'s Ollama-specific implementation), then wire
+`Resolve-AirlockFitState`'s gate to those runtimes the same way AGENT-003
+wired it for Ollama. Not P0 — no live user report of a false-pass on
+these runtimes, unlike Ollama's originally-reported symptom. Status: Open,
+unscheduled.
 
 **AGENT-004 resolution, rewritten by the human lead after three rounds of
 evidence that didn't correspond to real events** (see
