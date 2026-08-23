@@ -50,16 +50,29 @@ function Get-PiContainerRunArgs {
 # (e.g. /etc/passwd, /home/hermes/...), not a Windows drive letter -
 # reusing OpenCode's Windows-path regex here would make §7.2's
 # out-of-workspace assertion permanently unable to fire for Pi.
+# AGENT-004: Positive observation of structured tool events from both stdout
+# and stderr, not negative inference from absence. Look for actual tool-call
+# and tool-result event markers in the captured output.
 function Resolve-AirlockPiTrialObservations {
     param(
         [Parameter(Mandatory)][int]$ExitCode,
-        [AllowEmptyString()][string]$Stdout = ''
+        [AllowEmptyString()][string]$Stdout = '',
+        [AllowEmptyString()][string]$Stderr = ''
     )
     # Relative parent traversal (either path style) or an absolute POSIX
     # path whose first segment isn't "workspace" - /workspace and
     # /workspace/... are the disposable mount itself, not an escape.
     $outOfWorkspace = [bool]($Stdout -match '\.\.[\\/]' -or $Stdout -match '(?<!\S)/(?!workspace(?:/|\b))\S+')
-    $usedStructuredToolEvents = [bool]($Stdout -notmatch '(?m)^\s*\{"(action|tool_calls?)"')  # a raw JSON-looking tool object in plain stdout means Pi fell back to unstructured text, not a real tool event.
+    # AGENT-004: Positive observation of actual JSON events from container logs.
+    # Pi runs in Docker; event stream may come from stdout or stderr. Check both.
+    $usedStructuredToolEvents = $false
+    $allLines = @(($Stdout + "`n" + $Stderr) -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $allLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            if ($json.type -match 'tool') { $usedStructuredToolEvents = $true; break }
+        } catch { }
+    }
     $toolLoop = [bool]($Stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
@@ -94,7 +107,8 @@ function Invoke-PiWorkspaceTrial {
         -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
-    return Resolve-AirlockPiTrialObservations -ExitCode $proc.ExitCode -Stdout $stdout
+    $stderr = Get-Content (Join-Path $WorkspacePath ".stderr.log") -Raw -ErrorAction SilentlyContinue
+    return Resolve-AirlockPiTrialObservations -ExitCode $proc.ExitCode -Stdout $stdout -Stderr $stderr
 }
 
 function Invoke-AirlockPiCapabilityContract {

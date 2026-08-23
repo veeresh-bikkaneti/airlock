@@ -112,8 +112,10 @@ function Invoke-OpenCodeWorkspaceTrial {
     # content forever, since nothing was left to run the transaction's restore
     # step. -PassThru without -Wait plus a manual WaitForExit(timeout) lets us
     # kill the process and fail the trial cleanly instead.
+    # AGENT-004: --format json emits structured JSON event stream; capture real
+    # events for positive observation of tool-call/tool-result pairs.
     $proc = Start-Process -FilePath $opencodeCommand.Source `
-        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", $instruction) `
+        -ArgumentList @("run", "-m", "$($script:AirlockOpenCodeProviderId)/$ModelRef", "--auto", "--format", "json", $instruction) `
         -WorkingDirectory $WorkspacePath -NoNewWindow -PassThru `
         -RedirectStandardOutput (Join-Path $WorkspacePath ".stdout.log") `
         -RedirectStandardError (Join-Path $WorkspacePath ".stderr.log")
@@ -125,15 +127,35 @@ function Invoke-OpenCodeWorkspaceTrial {
     }
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
-    $outOfWorkspace = [bool]($stdout -match '\.\.[\\/]' -or $stdout -match '[A-Za-z]:\\(?!.*airlock)')
-    # BUG FOUND BY A LIVE RUN: qwen2.5-coder:7b's real (weak) tool-calling
-    # behavior prints raw {"name": "write", "arguments": {...}} lines to plain
-    # stdout instead of issuing a real tool call - opencode never executes it,
-    # output.md never appears. The original regex only matched {"action" /
-    # {"tool_call(s)", missing this real, observed shape entirely; without
-    # --print-logs there is no legitimate reason for opencode's own output to
-    # contain a raw JSON object at all, so match broadly rather than by key name.
-    $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
+
+    # AGENT-004: positive observation of structured tool events by parsing --format json's
+    # real event stream, not regex heuristics over stdout. Confirmed live (2026-08-23) that
+    # opencode emits ONE atomic event per completed tool invocation - there is no separate
+    # tool-call/tool-result pair to correlate by ID; part.state.status is the result inline
+    # on the same event as the call. part.callID is retained for evidence/logging only.
+    # Real observed shape:
+    # {"type":"tool_use","part":{"type":"tool","tool":"write","callID":"call_...",
+    #   "state":{"status":"completed","input":{...},"output":"...","metadata":{"filepath":"..."}}}}
+    $outOfWorkspace = $false
+    $usedStructuredToolEvents = $false
+    $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath)
+    $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
+    foreach ($line in $stdoutLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            if ($json.type -eq 'tool_use' -and $json.part.type -eq 'tool' -and $json.part.state.status -eq 'completed') {
+                $usedStructuredToolEvents = $true
+                if ($json.part.state.metadata.filepath) {
+                    $filepath = $json.part.state.metadata.filepath
+                    $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                    if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $outOfWorkspace = $true
+                        break
+                    }
+                }
+            }
+        } catch { }
+    }
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
