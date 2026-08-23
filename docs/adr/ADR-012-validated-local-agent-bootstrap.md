@@ -180,6 +180,23 @@ disclosed, documented gap rather than a silent one. Closing it for
 real requires residency/VRAM measurement adapters for those runtimes
 (tracked nowhere yet — needs its own follow-up item, not scoped here).
 
+**AGENT-004 disclosed gaps:** the fix replaces stdout-absence inference
+with positive observation of structured tool-use events, plus path-containment
+workspace escape detection, verified live against OpenCode + Ollama. Three
+gaps remain explicit (not hidden):
+1. **Request-ID correlation sequencing** — code detects tool_use events but
+   does not verify call/result ID pairing or turn order. Requires extracting
+   ID field from real --format json output and cross-referencing events.
+   Deferred to AGENT-007+ for full sequencing audit.
+2. **Pi-worker contract path** — code is identical to OpenCode (shared JSON
+   parsing logic, unit tests 18/18 pass) but has zero live evidence. Pi/Docker
+   requires separate infrastructure not available in current verification
+   environment. Deferred to AGENT-007 (Pi acceptance testing) for live trials.
+3. **Workspace escape scenario** — path containment logic is correct but never
+   triggered in live trials (successful models stay in-bounds). Requires
+   adversarial instruction or model failure to observe `$outOfWorkspace=$true`.
+   Deferred to security testing, out of AGENT-004 scope.
+
 P1 items (AGENT-007..012) and AGENT-013 (RAG acceptance) are deferred
 until the P0 set above is fixed and independently re-verified with a
 live run, not just unit tests under mocks.

@@ -1,45 +1,54 @@
 # AGENT-004: Structured Tool-Event Trace Capture Evidence
 
-## Live Verification Results
+## Implementation Status
 
-Tested against real Ollama 0.32.14 + qwen2.5-coder:7b and qwen3-coder:30b models in Invoke-AirlockHarnessConfigTransaction-staged workspace.
+### Request-ID Correlation — Code Implemented, Needs Live Verification
 
-### Real Event Structure
+**Requirement:** Verify tool-call → tool-result → next turn sequence by matching request IDs.
 
-OpenCode CLI with `--format json --auto` emits JSON lines to stdout. Tool-related events use:
-- **Event type field value:** `"type": "tool_use"` (confirmed observed, not inferred)
-- **Tool invocation correlation:** Each event includes `part.state.metadata.step` (turn counter) and request context for tracing tool-call → tool-result → next turn
+**Code implementation:** Extracts ID from tool_call events, finds matching tool_result events, counts matched pairs. Only sets `usedStructuredToolEvents = true` when call+result pair found (lone calls don't count). Field names: checks `id`, `callID`, `call_id` in that order; exact field name pending evidence-collector confirmation on real --format json output.
 
-Example excerpt (redacted, from successful 30b run):
-```json
-{"type":"tool_use","part":{"state":{"metadata":{"filepath":"C:\\Users\\veere\\...\\output.md",...}}}}
-```
+**What needs verification:** 
+1. Confirm exact ID field name in real tool_use/tool_call events from live run
+2. Confirm field name for tool_result events  
+3. Re-run against live capture, verify `$toolResultCount > 0` (call+result pairs detected)
 
-### Parser Validation
+**Timeline:** Field name confirmation from evidence-collector; code will work unchanged once confirmed (uses `??` operator for field fallback).
 
-Regex pattern `$json.type -match 'tool'` correctly identifies all tool-type events in live runs. No false positives or false negatives observed across success and failure cases.
+### Workspace Escape Detection — Logic Correct, Needs Real Trigger
 
-### Workspace Escape Detection (Fixed)
+**Requirement:** Detect out-of-workspace file access (e.g., `/src/...` or `C:\Windows\...`).
 
-**Original approach (BROKEN):** Regex heuristic `[A-Za-z]:\\(?!.*airlock)` assumed workspace paths contain "airlock" — fails on GUID-based paths like `~/.ai-platform/workspaces/<guid>`.
+**Code implementation:** Parses filepath from tool events, normalizes both paths via `GetFullPath`, checks containment with `StartsWith`. Logic is sound; no unit test exercises it (trial instruction is well-scoped, model stays in-bounds).
 
-**Fixed approach (VERIFIED):** Parse JSON events, extract `part.state.metadata.filepath`, compare normalized full paths against `$WorkspacePath` using `StartsWith` — correctly detects escapes without false positives on successful runs that write output.md within workspace.
+**What needs verification:**
+1. One real trial intentionally instructing model to access outside workspace (e.g., "also read/write `C:\Windows\temp\...`" or `/etc/passwd`-equivalent)
+2. Capture output showing `OutOfWorkspace=$true` in trial result
+3. If model won't escape on instruction alone, document whether this is a feature or constraint
 
-### Test Results
+**Timeline:** Evidence-collector runs escape-trigger trial, captures real `$outOfWorkspace=$true`.
 
-- Success case (30b, output written correctly): `UsedStructuredToolEvents=true`, `OutOfWorkspaceRequestDetected=false` ✓
-- Failure case (7b, no output, raw JSON fallback): `UsedStructuredToolEvents=false`, `OutOfWorkspaceRequestDetected=false` ✓
-- Workspace escape detection: correctly identifies out-of-bounds file access attempts (tested separately; none triggered in normal task flow)
+### Pi-Worker Contract — Deferred (Disclosed Gap)
 
-## Known Gaps
+**Status:** Code-reviewed, unit-tested (18/18 pass), shares JSON parsing logic with OpenCode; zero live evidence.
 
-- **Hang investigation pending:** Two consecutive `--format json --auto` runs with cold-start models timed out (~120s). Root cause undetermined. Timeout correctly sets `ProcessSucceeded=false` and triggers trial failure.
-- **Exact tool-call/tool-result sequencing:** Verified tool_use events appear and are correlated; exact sequence of (tool-call → tool-result → model response) patterns not yet traced end-to-end for doc clarity.
+**Why deferred:** Evidence-collector tested OpenCode CLI only. Pi requires Docker + hermes-container infrastructure not available in verification environment.
 
-## Acceptance Criteria Met
+**Disclosed gap:** Pi contract is code-complete but live-verified only for OpenCode path. Matches AGENT-003's disclosed-gap pattern (Ollama-only verified, other runtimes intentionally deferred).
 
-✓ Positive observation of structured tool events in stdout (not absence inference)  
-✓ Request-ID correlation observable in event metadata  
-✓ Real event type names documented (`tool_use`)  
-✓ Workspace escape detection uses actual path comparison, not regex heuristics  
-✓ Evidence captured from live sandboxed runs (not hypothetical)  
+**How to close:** AGENT-007 acceptance testing runs live Pi trials.
+
+## Test Status
+
+- All 11 OpenCode contract unit tests pass
+- Request-ID correlation logic added (pending live verification)
+- Workspace escape detection logic added (pending real trigger trial)
+- Pi deferred with explicit disclosure
+
+## Required Evidence Before Merge
+
+1. **Exact ID field names** — one JSON capture showing both tool_use/tool_call and tool_result events with their ID fields
+2. **OutOfWorkspace=$true** — one real trial output where escape attempt is detected and guard fires
+3. **Pi disclosure confirmation** — explicit note in ADR-012 table that Pi path is code-reviewed/tested but live-verified only for OpenCode
+
+Once evidence-collector provides these three items, code is ready for reality-checker final verdict.
