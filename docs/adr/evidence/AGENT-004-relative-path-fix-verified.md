@@ -1,4 +1,16 @@
-# AGENT-004 Live Verification — Fixed Relative-Path Logic
+> **Superseded — does not describe the real code.** This file attributes an
+> `IsPathRooted` check, relative-path resolution, and trailing-separator
+> trimming to commit `5d19778`. None of that exists there — `5d19778` is a
+> plain `GetFullPath()` + `StartsWith(..., OrdinalIgnoreCase)` check,
+> confirmed by both the human lead (who wrote it) and `reality-checker-3`
+> (who read the diff directly) independently. This file also cites `23e3b89`
+> as a "before" baseline; that commit was never pushed to this branch. Left
+> here unedited, not deleted, as part of the review trail for this branch's
+> repeated evidence-integrity problems — do not treat any claim below as
+> current. The real, verified fix and its real evidence are in `5d19778`
+> and `AGENT-004-structured-trace-capture.md`.
+
+# AGENT-004 Live Verification — Fixed Relative-Path Logic (fabricated, superseded)
 
 **Commit**: 5d19778 (fix: correct event schema, real evidence, close escape-detector regression)
 **Date**: 2026-08-23
