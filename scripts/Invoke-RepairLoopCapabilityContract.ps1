@@ -1,12 +1,9 @@
 # Invoke-RepairLoopCapabilityContract.ps1 — ADR-012 AGENT-005
-# Repair-loop capability test: read spec → break test → run allowlisted test →
-# parse failure → apply one repair → rerun to pass. 3 cold + 3 warm trials
-# with structured trace capture each round.
+# Real repair-loop signal: two bash tool_use events (part.tool=='bash', status=='completed')
+# with Test-*.ps1 commands, first emitting FAIL output, then "All checks passed".
 . (Join-Path $PSScriptRoot "Invoke-WorkspaceContract.ps1")
 . (Join-Path $PSScriptRoot "Invoke-HarnessConfigTransaction.ps1")
 
-# One repair-loop trial: read spec, intentionally break, run tests, parse,
-# repair, re-run. Delegate actual execution to caller-supplied scriptblock.
 function Invoke-RepairLoopWorkspaceTrial {
     param(
         [Parameter(Mandatory)][string]$WorkspacePath,
@@ -16,23 +13,8 @@ function Invoke-RepairLoopWorkspaceTrial {
         [Parameter(Mandatory)][string]$ModelRef,
         [int]$TimeoutSeconds = 120
     )
-    # Spec format: BREAK=<component> TEST=<allowlisted> REPAIR=<hint>
-    # Example: BREAK=math-service TEST=calc-unit REPAIR=operator
-    $specLines = $SpecContent -split "`n" | Where-Object { $_ -match '=' }
-    $spec = @{}
-    $specLines | ForEach-Object {
-        $key, $value = $_ -split '=', 2
-        $spec[$key.Trim()] = $value.Trim()
-    }
+    $instruction = "Read spec.md. Follow the task exactly."
 
-    # Instruction: intentionally introduce the break, run tests, auto-repair.
-    $instruction = @"
-Read spec.md. Intentionally break `$($spec['BREAK']).
-Run `$($spec['TEST']) test. Parse failure. Apply one `$($spec['REPAIR']) repair.
-Re-run test to verify pass. Return PASS or FAIL.
-"@
-
-    # Similar to OpenCode trial: run with --format json, capture structured trace.
     $opencodeCommand = Get-Command "opencode.cmd" -ErrorAction SilentlyContinue
     if (-not $opencodeCommand) { $opencodeCommand = Get-Command "opencode" -CommandType Application -ErrorAction SilentlyContinue }
     if (-not $opencodeCommand) { throw "opencode CLI not found on PATH." }
@@ -49,29 +31,39 @@ Re-run test to verify pass. Return PASS or FAIL.
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
 
-    # Collect structured trace: atomic tool_use events with request-ID (callID).
-    $structuredTrace = @()
+    # Real repair-loop signal: bash tool_use events with Test-* output.
+    $bashToolEvents = @()
     $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
     $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
 
     $usedStructuredToolEvents = $false
     $outOfWorkspace = $false
+    $testFailureDetected = $false
+    $testPassDetected = $false
 
     foreach ($line in $stdoutLines) {
         try {
             $json = $line | ConvertFrom-Json
-            if ($json.type -eq 'tool_use' -and $json.part.type -eq 'tool' -and $json.part.state.status -eq 'completed') {
+            # Positive: tool_use, completed, not invalid.
+            if ($json.type -eq 'tool_use' -and $json.part.type -eq 'tool' -and $json.part.state.status -eq 'completed' -and $json.part.tool -ne 'invalid') {
                 $usedStructuredToolEvents = $true
-                # Capture trace with callID for request-ID correlation.
-                $structuredTrace += [pscustomobject]@{
-                    Type      = $json.type
-                    Tool      = $json.part.tool
-                    CallId    = $json.part.callID
-                    Status    = $json.part.state.status
-                    Timestamp = $json.timestamp
+
+                # Capture bash-tool test runs (real tool output, not narration).
+                if ($json.part.tool -eq 'bash' -and $json.part.state.input.command -match 'Test-') {
+                    $output = $json.part.state.output
+                    $bashToolEvents += @{
+                        Command = $json.part.state.input.command
+                        Output  = $output
+                        CallId  = $json.part.callID
+                        HasFail = $output -match '(?m)^FAIL:'
+                        HasPass = $output -match '(?m)^All checks passed'
+                    }
+                    if ($output -match '(?m)^FAIL:') { $testFailureDetected = $true }
+                    if ($output -match '(?m)^All checks passed') { $testPassDetected = $true }
                 }
-                # Check workspace containment.
-                if ($json.part.state.metadata.filepath) {
+
+                # Workspace containment (write tool only).
+                if ($json.part.tool -eq 'write' -and $json.part.state.metadata.filepath) {
                     $filepath = $json.part.state.metadata.filepath
                     if ([System.IO.Path]::IsPathRooted($filepath)) {
                         $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
@@ -87,20 +79,18 @@ Re-run test to verify pass. Return PASS or FAIL.
         } catch { }
     }
 
-    # Parse pass/fail from stdout (look for PASS or FAIL).
-    $testPassed = [bool]($stdout -match '(?i)pass')
-    $testFailed = [bool]($stdout -match '(?i)fail')
-    $repairApplied = [bool]($stdout -match '(?i)(repair|fix)')
+    # Success: both before (FAIL) and after (passed) signals in bash tool outputs.
+    $repairLoopSucceeded = $testFailureDetected -and $testPassDetected -and ($bashToolEvents.Count -ge 2)
 
     return @{
         ProcessSucceeded              = (-not $timedOut) -and ($proc.ExitCode -eq 0)
         OutOfWorkspaceRequestDetected = $outOfWorkspace
         UsedValidStructuredToolEvents = $usedStructuredToolEvents
-        TestPassed                    = $testPassed
-        TestFailed                    = $testFailed
-        RepairApplied                 = $repairApplied
-        StructuredTrace               = $structuredTrace
-        SanitizedInfo                 = if ($timedOut) { "timedOut=true after ${TimeoutSeconds}s" } else { "exitCode=$($proc.ExitCode)" }
+        RepairLoopSucceeded           = $repairLoopSucceeded
+        TestFailureDetected           = $testFailureDetected
+        TestPassDetected              = $testPassDetected
+        BashToolEvents                = $bashToolEvents
+        SanitizedInfo                 = if ($timedOut) { "timedOut=true" } else { "exitCode=$($proc.ExitCode)" }
     }
 }
 
@@ -126,10 +116,10 @@ function Invoke-AirlockRepairLoopCapabilityContract {
                 $result = Invoke-RepairLoopWorkspaceTrial -WorkspacePath $WorkspacePath -SpecContent $SpecContent `
                     -ColdStart $ColdStart -OpenCodeConfigPath $OpenCodeConfigPath -ModelRef $ModelRef
                 return @{
-                    Passed                        = $result.TestPassed -and $result.RepairApplied
-                    Reason                        = "Test: $($result.TestPassed), Repair: $($result.RepairApplied)"
-                    StructuredTrace               = $result.StructuredTrace
-                    RepairApplied                 = $result.RepairApplied
+                    Passed                        = $result.RepairLoopSucceeded
+                    Reason                        = "Fail: $($result.TestFailureDetected), Pass: $($result.TestPassDetected), Events: $($result.BashToolEvents.Count)"
+                    StructuredTrace               = $result.BashToolEvents
+                    RepairApplied                 = $result.RepairLoopSucceeded
                     UsedValidStructuredToolEvents = $result.UsedValidStructuredToolEvents
                 }
             }
@@ -138,30 +128,11 @@ function Invoke-AirlockRepairLoopCapabilityContract {
     return $txnResult.RunOutput
 }
 
-# Stub for Get-OpenCodeStagedConfigContent (copy from Invoke-OpenCodeCapabilityContract.ps1).
 function Get-OpenCodeStagedConfigContent {
-    param(
-        [Parameter(Mandatory)][string]$ModelRef,
-        [Parameter(Mandatory)][string]$EndpointUrl,
-        [Parameter(Mandatory)][string]$SessionId
-    )
-    $script:AirlockOpenCodeProviderId = "airlock"
-    $models = [ordered]@{}
-    $models[$ModelRef] = [ordered]@{ name = $ModelRef }
-
-    $config = [ordered]@{
-        '$schema' = "https://opencode.ai/config.json"
-        provider  = [ordered]@{}
-        model     = "$($script:AirlockOpenCodeProviderId)/$ModelRef"
-    }
-    $config.provider[$script:AirlockOpenCodeProviderId] = [ordered]@{
-        npm     = "@ai-sdk/openai-compatible"
-        name    = "Airlock (session-owned)"
-        options = [ordered]@{
-            baseURL = $EndpointUrl
-            apiKey  = "airlock-session-$SessionId"
-        }
-        models  = $models
-    }
-    return ($config | ConvertTo-Json -Depth 6)
+    param([Parameter(Mandatory)][string]$ModelRef,[Parameter(Mandatory)][string]$EndpointUrl,[Parameter(Mandatory)][string]$SessionId)
+    $script:AirlockOpenCodeProviderId="airlock"
+    $models=[ordered]@{};$models[$ModelRef]=[ordered]@{name=$ModelRef}
+    $config=[ordered]@{'$schema'="https://opencode.ai/config.json";provider=[ordered]@{};model="$($script:AirlockOpenCodeProviderId)/$ModelRef"}
+    $config.provider[$script:AirlockOpenCodeProviderId]=[ordered]@{npm="@ai-sdk/openai-compatible";name="Airlock";options=[ordered]@{baseURL=$EndpointUrl;apiKey="airlock-session-$SessionId"};models=$models}
+    return ($config|ConvertTo-Json -Depth 6)
 }
