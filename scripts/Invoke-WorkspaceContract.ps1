@@ -130,3 +130,54 @@ function Invoke-AirlockWorkspaceContract {
     $transportFit = Resolve-AirlockContractTransportFit -TrialResults $trials
     return [pscustomobject]@{ Passed = $verdict.Passed; Reason = $verdict.Reason; Trials = $trials; TransportReturnedValidToolEvents = $transportFit }
 }
+
+# AGENT-005 repair-loop fixture: read spec → break test → run allowlisted test →
+# parse failure → apply one repair → rerun to pass. Single iteration.
+# $Invoke receives ($WorkspacePath, $SpecContent) and returns structured trace + pass/fail.
+function Invoke-AirlockRepairLoopTrial {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$SpecContent,
+        [Parameter(Mandatory)][scriptblock]$Invoke,
+        [bool]$ColdStart = $true
+    )
+    $trialId = [guid]::NewGuid().ToString('N').Substring(0, 8)
+    $workspacePath = Join-Path $WorkspaceRoot "repair-$trialId"
+    New-Item -Path $workspacePath -ItemType Directory -Force | Out-Null
+    $started = [DateTime]::UtcNow
+    try {
+        Set-Content -Path (Join-Path $workspacePath "spec.md") -Value $SpecContent -Encoding utf8NoBOM
+        $observations = & $Invoke $workspacePath $SpecContent $ColdStart
+        return [pscustomobject]@{
+            TrialId                       = $trialId
+            Passed                        = $observations.Passed
+            Reason                        = $observations.Reason
+            LatencyMs                     = ([DateTime]::UtcNow - $started).TotalMilliseconds
+            StructuredTrace               = $observations.StructuredTrace
+            RepairApplied                 = $observations.RepairApplied
+            ColdStart                     = $ColdStart
+            UsedValidStructuredToolEvents = $observations.UsedValidStructuredToolEvents
+        }
+    } finally {
+        Remove-Item -Path $workspacePath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# AGENT-005 repair-loop contract: 3 cold + 3 warm trials (6 total).
+# Captures structured trace each round for request-ID correlation analysis.
+function Invoke-AirlockRepairLoopContract {
+    param(
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        [Parameter(Mandatory)][string]$SpecContent,
+        [Parameter(Mandatory)][scriptblock]$Invoke
+    )
+    $trials = @()
+    # 3 cold starts (empty cache)
+    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -ColdStart $true) }
+    # 3 warm starts (populated cache)
+    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -ColdStart $false) }
+
+    $passed = @($trials | Where-Object { $_.Passed }).Count
+    $verdict = [pscustomobject]@{ Passed = $passed -eq 6; Reason = "$passed of 6 repair loops passed" }
+    return [pscustomobject]@{ Passed = $verdict.Passed; Reason = $verdict.Reason; Trials = $trials }
+}
