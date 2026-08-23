@@ -8,44 +8,34 @@ function Assert-True {
     else { Write-Host "FAIL: $Message" -ForegroundColor Red; $script:failures++ }
 }
 
-Write-Host "Testing repair-loop detection logic..." -ForegroundColor Cyan
+Write-Host "Testing repair-loop detection logic (calling real function)..." -ForegroundColor Cyan
 
-# Test case 1: Valid before/after repair loop (FAIL then PASS in bash-tool outputs).
-$validLoop = @"
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nFAIL: 2 + 3 = 5`n1 check(s) failed.","metadata":{}}}}
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_2","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nPASS: 2 + 3 = 5`nAll checks passed.","metadata":{}}}}
-"@
+# Test case 1: Valid before/after repair loop (FAIL then PASS).
+$validLoop = @(
+    '{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nFAIL: 2 + 3 = 5\n1 check(s) failed.","metadata":{}}}}'
+    '{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_2","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nPASS: 2 + 3 = 5\nAll checks passed.","metadata":{}}}}'
+)
+$result1 = Resolve-AirlockRepairLoopVerdict -StdoutLines $validLoop
+Assert-True ($result1.RepairLoopSucceeded) "Valid loop: function returns RepairLoopSucceeded=true"
 
-# Simulate the detection logic on valid loop.
-$testFailureDetected = [bool]($validLoop -match '(?m)^FAIL:')
-$testPassDetected = [bool]($validLoop -match '(?m)^All checks passed')
-Assert-True ($testFailureDetected -and $testPassDetected) "Valid repair loop: both FAIL and PASS detected"
+# Test case 2: Only PASS (incomplete loop).
+$passOnly = @('{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nPASS: 2 + 3 = 5\nAll checks passed.","metadata":{}}}}')
+$result2 = Resolve-AirlockRepairLoopVerdict -StdoutLines $passOnly
+Assert-True (-not $result2.RepairLoopSucceeded -and $result2.TestPassDetected -and -not $result2.TestFailureDetected) "Pass-only: RepairLoopSucceeded=false"
 
-# Test case 2: Only PASS without prior FAIL (incomplete loop, model got lucky).
-$passOnly = @"
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nPASS: 2 + 3 = 5`nAll checks passed.","metadata":{}}}}
-"@
-$onlyPassDetected = [bool]($passOnly -match '(?m)^All checks passed')
-$onlyFailDetected = [bool]($passOnly -match '(?m)^FAIL:')
-Assert-True ((-not $onlyFailDetected) -and $onlyPassDetected) "Pass-only case: fails gating (no prior FAIL)"
+# Test case 3: Only FAIL (incomplete loop).
+$failOnly = @('{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nFAIL: 2 + 3 = 5\n1 check(s) failed.","metadata":{}}}}')
+$result3 = Resolve-AirlockRepairLoopVerdict -StdoutLines $failOnly
+Assert-True (-not $result3.RepairLoopSucceeded -and $result3.TestFailureDetected -and -not $result3.TestPassDetected) "Fail-only: RepairLoopSucceeded=false"
 
-# Test case 3: Only FAIL without pass (incomplete loop, model gave up).
-$failOnly = @"
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nFAIL: 2 + 3 = 5`n1 check(s) failed.","metadata":{}}}}
-"@
-$onlyFailInLoop = [bool]($failOnly -match '(?m)^FAIL:')
-$onlyPassInLoop = [bool]($failOnly -match '(?m)^All checks passed')
-Assert-True ($onlyFailInLoop -and (-not $onlyPassInLoop)) "Fail-only case: fails gating (no PASS)"
-
-# Test case 4: Invalid tool filtering (model calls non-existent tool).
-$withInvalid = @"
-{"type":"tool_use","part":{"type":"tool","tool":"invalid","callID":"call_x","state":{"status":"completed","input":{"command":"explore"},"metadata":{}}}}
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nFAIL: 2 + 3 = 5`nFAIL: 10 + (-5) = 5`n2 check(s) failed.","metadata":{}}}}
-{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_2","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...`nPASS: 2 + 3 = 5`nPASS: 10 + (-5) = 5`nAll checks passed.","metadata":{}}}}
-"@
-$hasInvalid = [bool]($withInvalid -match '"tool":"invalid"')
-$hasBashLoop = [bool]($withInvalid -match '"tool":"bash"' -and $withInvalid -match 'FAIL:' -and $withInvalid -match 'All checks passed')
-Assert-True ($hasInvalid -and $hasBashLoop) "Invalid tool present but valid bash loop also detected"
+# Test case 4: Invalid tool filtered, valid bash loop detected.
+$withInvalid = @(
+    '{"type":"tool_use","part":{"type":"tool","tool":"invalid","callID":"call_x","state":{"status":"completed","input":{"command":"explore"},"metadata":{}}}}'
+    '{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_1","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nFAIL: 2 + 3 = 5\n1 check(s) failed.","metadata":{}}}}'
+    '{"type":"tool_use","part":{"type":"tool","tool":"bash","callID":"call_2","state":{"status":"completed","input":{"command":"pwsh -File Test-AddNumbers.ps1"},"output":"Testing Add-Numbers...\nPASS: 2 + 3 = 5\nAll checks passed.","metadata":{}}}}'
+)
+$result4 = Resolve-AirlockRepairLoopVerdict -StdoutLines $withInvalid
+Assert-True ($result4.RepairLoopSucceeded -and $result4.BashToolEvents.Count -eq 2) "Invalid tool filtered: 2 bash events + loop succeeded"
 
 Write-Host ""
 if ($failures -eq 0) {

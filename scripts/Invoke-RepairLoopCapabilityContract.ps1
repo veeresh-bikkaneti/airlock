@@ -4,6 +4,70 @@
 . (Join-Path $PSScriptRoot "Invoke-WorkspaceContract.ps1")
 . (Join-Path $PSScriptRoot "Invoke-HarnessConfigTransaction.ps1")
 
+# Pure function: parse tool_use events, detect repair-loop signals.
+function Resolve-AirlockRepairLoopVerdict {
+    param([Parameter(Mandatory)][string[]]$StdoutLines, [string]$WorkspacePath = "")
+
+    $bashToolEvents = @()
+    $usedStructuredToolEvents = $false
+    $outOfWorkspace = $false
+    $testFailureDetected = $false
+    $testPassDetected = $false
+
+    if ($WorkspacePath) {
+        $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    }
+
+    foreach ($line in $StdoutLines) {
+        try {
+            $json = $line | ConvertFrom-Json
+            # Positive: tool_use, completed, not invalid.
+            if ($json.type -eq 'tool_use' -and $json.part.type -eq 'tool' -and $json.part.state.status -eq 'completed' -and $json.part.tool -ne 'invalid') {
+                $usedStructuredToolEvents = $true
+
+                # Capture bash-tool test runs (real tool output).
+                if ($json.part.tool -eq 'bash' -and $json.part.state.input.command -match 'Test-') {
+                    $output = $json.part.state.output
+                    $bashToolEvents += @{
+                        Command = $json.part.state.input.command
+                        Output  = $output
+                        CallId  = $json.part.callID
+                        HasFail = $output -match '(?m)^FAIL:'
+                        HasPass = $output -match '(?m)^All checks passed'
+                    }
+                    if ($output -match '(?m)^FAIL:') { $testFailureDetected = $true }
+                    if ($output -match '(?m)^All checks passed') { $testPassDetected = $true }
+                }
+
+                # Workspace containment (write tool only).
+                if ($WorkspacePath -and $json.part.tool -eq 'write' -and $json.part.state.metadata.filepath) {
+                    $filepath = $json.part.state.metadata.filepath
+                    if ([System.IO.Path]::IsPathRooted($filepath)) {
+                        $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                    } else {
+                        $normalizedFilepath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($WorkspacePath, $filepath))
+                    }
+                    $normalizedFilepath = $normalizedFilepath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+                    if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $outOfWorkspace = $true
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    $repairLoopSucceeded = $testFailureDetected -and $testPassDetected -and ($bashToolEvents.Count -ge 2)
+
+    return [pscustomobject]@{
+        RepairLoopSucceeded           = $repairLoopSucceeded
+        TestFailureDetected           = $testFailureDetected
+        TestPassDetected              = $testPassDetected
+        BashToolEvents                = $bashToolEvents
+        UsedStructuredToolEvents      = $usedStructuredToolEvents
+        OutOfWorkspaceRequestDetected = $outOfWorkspace
+    }
+}
+
 function Invoke-RepairLoopWorkspaceTrial {
     param(
         [Parameter(Mandatory)][string]$WorkspacePath,
@@ -30,66 +94,19 @@ function Invoke-RepairLoopWorkspaceTrial {
     if ($timedOut) { try { Stop-Process -Id $proc.Id -Force -ErrorAction Stop } catch { } }
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
-
-    # Real repair-loop signal: bash tool_use events with Test-* output.
-    $bashToolEvents = @()
-    $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
     $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
 
-    $usedStructuredToolEvents = $false
-    $outOfWorkspace = $false
-    $testFailureDetected = $false
-    $testPassDetected = $false
-
-    foreach ($line in $stdoutLines) {
-        try {
-            $json = $line | ConvertFrom-Json
-            # Positive: tool_use, completed, not invalid.
-            if ($json.type -eq 'tool_use' -and $json.part.type -eq 'tool' -and $json.part.state.status -eq 'completed' -and $json.part.tool -ne 'invalid') {
-                $usedStructuredToolEvents = $true
-
-                # Capture bash-tool test runs (real tool output, not narration).
-                if ($json.part.tool -eq 'bash' -and $json.part.state.input.command -match 'Test-') {
-                    $output = $json.part.state.output
-                    $bashToolEvents += @{
-                        Command = $json.part.state.input.command
-                        Output  = $output
-                        CallId  = $json.part.callID
-                        HasFail = $output -match '(?m)^FAIL:'
-                        HasPass = $output -match '(?m)^All checks passed'
-                    }
-                    if ($output -match '(?m)^FAIL:') { $testFailureDetected = $true }
-                    if ($output -match '(?m)^All checks passed') { $testPassDetected = $true }
-                }
-
-                # Workspace containment (write tool only).
-                if ($json.part.tool -eq 'write' -and $json.part.state.metadata.filepath) {
-                    $filepath = $json.part.state.metadata.filepath
-                    if ([System.IO.Path]::IsPathRooted($filepath)) {
-                        $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
-                    } else {
-                        $normalizedFilepath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($WorkspacePath, $filepath))
-                    }
-                    $normalizedFilepath = $normalizedFilepath.TrimEnd([System.IO.Path]::DirectorySeparatorChar)
-                    if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $outOfWorkspace = $true
-                    }
-                }
-            }
-        } catch { }
-    }
-
-    # Success: both before (FAIL) and after (passed) signals in bash tool outputs.
-    $repairLoopSucceeded = $testFailureDetected -and $testPassDetected -and ($bashToolEvents.Count -ge 2)
+    # Call pure classification logic.
+    $verdict = Resolve-AirlockRepairLoopVerdict -StdoutLines $stdoutLines -WorkspacePath $WorkspacePath
 
     return @{
         ProcessSucceeded              = (-not $timedOut) -and ($proc.ExitCode -eq 0)
-        OutOfWorkspaceRequestDetected = $outOfWorkspace
-        UsedValidStructuredToolEvents = $usedStructuredToolEvents
-        RepairLoopSucceeded           = $repairLoopSucceeded
-        TestFailureDetected           = $testFailureDetected
-        TestPassDetected              = $testPassDetected
-        BashToolEvents                = $bashToolEvents
+        OutOfWorkspaceRequestDetected = $verdict.OutOfWorkspaceRequestDetected
+        UsedValidStructuredToolEvents = $verdict.UsedStructuredToolEvents
+        RepairLoopSucceeded           = $verdict.RepairLoopSucceeded
+        TestFailureDetected           = $verdict.TestFailureDetected
+        TestPassDetected              = $verdict.TestPassDetected
+        BashToolEvents                = $verdict.BashToolEvents
         SanitizedInfo                 = if ($timedOut) { "timedOut=true" } else { "exitCode=$($proc.ExitCode)" }
     }
 }
