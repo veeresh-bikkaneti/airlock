@@ -128,27 +128,29 @@ function Invoke-OpenCodeWorkspaceTrial {
 
     $stdout = Get-Content (Join-Path $WorkspacePath ".stdout.log") -Raw -ErrorAction SilentlyContinue
 
-    # Check for out-of-workspace access by parsing JSON events' filepath metadata,
-    # not regex heuristics. Under --format json, filepaths are in tool_use events;
-    # compare against actual $WorkspacePath to detect escapes.
+    # Check for out-of-workspace access + positive observation of structured tool events by
+    # parsing JSON events' filepath metadata, not regex heuristics. Under --format json,
+    # filepaths are in tool_use events; compare against actual $WorkspacePath to detect escapes.
     $outOfWorkspace = $false
+    $usedStructuredToolEvents = $false
     $normalizedWorkspacePath = [System.IO.Path]::GetFullPath($WorkspacePath)
     $stdoutLines = @($stdout -split "`n" | Where-Object { $_.Trim() })
     foreach ($line in $stdoutLines) {
         try {
             $json = $line | ConvertFrom-Json
-            if ($json.type -match 'tool' -and $json.part.state.metadata.filepath) {
-                $filepath = $json.part.state.metadata.filepath
-                $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
-                if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
-                    $outOfWorkspace = $true
-                    break
+            if ($json.type -match 'tool') {
+                $usedStructuredToolEvents = $true
+                if ($json.part.state.metadata.filepath) {
+                    $filepath = $json.part.state.metadata.filepath
+                    $normalizedFilepath = [System.IO.Path]::GetFullPath($filepath)
+                    if (-not $normalizedFilepath.StartsWith($normalizedWorkspacePath)) {
+                        $outOfWorkspace = $true
+                        break
+                    }
                 }
             }
         } catch { }
     }
-
-    $usedStructuredToolEvents = -not (Test-AirlockOpenCodeRawToolEventInStdout -Stdout $stdout)
     $toolLoop = [bool]($stdout -match '(?i)(retry|repeating).{0,40}(retry|repeating)')
 
     return @{
