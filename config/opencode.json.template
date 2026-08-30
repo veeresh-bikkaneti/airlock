@@ -5,7 +5,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Ollama (local)",
       "options": {
-        "baseURL": "http://127.0.0.1:12347/v1"
+        "baseURL": "http://127.0.0.1:12345/v1"
       },
       "models": {
         "devstral-small-2:24b": { "name": "Devstral Small 2 (24B)" },
