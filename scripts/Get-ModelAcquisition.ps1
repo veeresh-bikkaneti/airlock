@@ -389,10 +389,11 @@ function Select-BestCuratedModel {
     $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
         $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
         [pscustomobject]@{
-            Name      = $candidate
-            SizeGB    = $sizeGB
-            Fits      = ($AvailableGB -ge ($sizeGB * 1.2))
-            Installed = $InstalledModels -contains $candidate
+            Name              = $candidate
+            SizeGB            = $sizeGB
+            Fits              = ($AvailableGB -ge ($sizeGB * 1.2))
+            Installed         = $InstalledModels -contains $candidate
+            ReliabilityNote   = $ModelsConfig.localModels.$candidate.agenticReliabilityNote
         }
     }
     $candidateSummary = ($candidates | ForEach-Object {
@@ -414,9 +415,10 @@ function Select-BestCuratedModel {
         "largest model that fits with headroom"
     }
     [pscustomobject]@{
-        Model   = if ($winner) { $winner.Name } else { $null }
-        Summary = $candidateSummary
-        Reason  = $reason
+        Model           = if ($winner) { $winner.Name } else { $null }
+        Summary         = $candidateSummary
+        Reason          = $reason
+        ReliabilityNote = if ($winner) { $winner.ReliabilityNote } else { $null }
     }
 }
 
@@ -448,9 +450,12 @@ function Select-BestModel {
                 $Model = $selection.Model
                 $reason = "$($selection.Reason) (ceiling: $([math]::Round($AvailableGB,1)) GB)"
                 Write-Host "  Auto-selected model: $Model (fits $([math]::Round($AvailableGB,1)) GB available)" -ForegroundColor Cyan
-                Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
+                if ($selection.ReliabilityNote) {
+                    Write-Host "  WARNING (agentic reliability): $($selection.ReliabilityNote)" -ForegroundColor Yellow
+                }
+                Write-AuditLog -Action "ModelSelection" -Result $(if ($selection.ReliabilityNote) { "WARNING" } else { "SUCCESS" }) -ModelName $Model `
                     -Message "$($Resources.TotalMemGB) GB RAM, $GpuDesc - selected $Model as the $reason" `
-                    -Detail "Candidates: $candidateSummary"
+                    -Detail "Candidates: $candidateSummary$(if ($selection.ReliabilityNote) { "; Agentic reliability note: $($selection.ReliabilityNote)" })"
             } else {
                 # No curated model fits. Try HuggingFace.
                 Write-Host "  No curated model fits; checking HuggingFace..." -ForegroundColor Yellow
