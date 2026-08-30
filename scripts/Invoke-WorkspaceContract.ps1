@@ -134,11 +134,14 @@ function Invoke-AirlockWorkspaceContract {
 # AGENT-005 repair-loop fixture: read spec → break test → run allowlisted test →
 # parse failure → apply one repair → rerun to pass. Single iteration.
 # $Invoke receives ($WorkspacePath, $SpecContent) and returns structured trace + pass/fail.
+# $FixtureDir's files (the buggy source + its test) are copied into the disposable
+# workspace alongside spec.md - the model has nothing to read/fix otherwise.
 function Invoke-AirlockRepairLoopTrial {
     param(
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [Parameter(Mandatory)][string]$SpecContent,
         [Parameter(Mandatory)][scriptblock]$Invoke,
+        [string]$FixtureDir = "",
         [bool]$ColdStart = $true
     )
     $trialId = [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -146,6 +149,10 @@ function Invoke-AirlockRepairLoopTrial {
     New-Item -Path $workspacePath -ItemType Directory -Force | Out-Null
     $started = [DateTime]::UtcNow
     try {
+        if ($FixtureDir) {
+            Get-ChildItem -Path $FixtureDir -File | Where-Object { $_.Name -ne 'spec.md' } |
+                Copy-Item -Destination $workspacePath
+        }
         Set-Content -Path (Join-Path $workspacePath "spec.md") -Value $SpecContent -Encoding utf8NoBOM
         $observations = & $Invoke $workspacePath $SpecContent $ColdStart
         return [pscustomobject]@{
@@ -169,13 +176,14 @@ function Invoke-AirlockRepairLoopContract {
     param(
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [Parameter(Mandatory)][string]$SpecContent,
-        [Parameter(Mandatory)][scriptblock]$Invoke
+        [Parameter(Mandatory)][scriptblock]$Invoke,
+        [string]$FixtureDir = ""
     )
     $trials = @()
     # 3 cold starts (empty cache)
-    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -ColdStart $true) }
+    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -FixtureDir $FixtureDir -ColdStart $true) }
     # 3 warm starts (populated cache)
-    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -ColdStart $false) }
+    1..3 | ForEach-Object { $trials += (Invoke-AirlockRepairLoopTrial -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke $Invoke -FixtureDir $FixtureDir -ColdStart $false) }
 
     $passed = @($trials | Where-Object { $_.Passed }).Count
     $verdict = [pscustomobject]@{ Passed = $passed -eq 6; Reason = "$passed of 6 repair loops passed" }

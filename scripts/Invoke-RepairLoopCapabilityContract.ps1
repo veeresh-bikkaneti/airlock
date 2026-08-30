@@ -120,7 +120,8 @@ function Invoke-AirlockRepairLoopCapabilityContract {
         [Parameter(Mandatory)][string]$BackupDir,
         [Parameter(Mandatory)][string]$TransactionDir,
         [Parameter(Mandatory)][string]$WorkspaceRoot,
-        [Parameter(Mandatory)][string]$SpecContent
+        [Parameter(Mandatory)][string]$SpecContent,
+        [string]$FixtureDir = ""
     )
     $sessionId = [guid]::NewGuid().ToString()
     $stagedContent = Get-OpenCodeStagedConfigContent -ModelRef $ModelRef -EndpointUrl $EndpointUrl -SessionId $sessionId
@@ -128,7 +129,7 @@ function Invoke-AirlockRepairLoopCapabilityContract {
     $txnResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $OpenCodeConfigPath -StagedContent $stagedContent `
         -LockPath $LockPath -BackupDir $BackupDir -TransactionDir $TransactionDir `
         -Run {
-            Invoke-AirlockRepairLoopContract -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -Invoke {
+            Invoke-AirlockRepairLoopContract -WorkspaceRoot $WorkspaceRoot -SpecContent $SpecContent -FixtureDir $FixtureDir -Invoke {
                 param($WorkspacePath, $SpecContent, $ColdStart)
                 $result = Invoke-RepairLoopWorkspaceTrial -WorkspacePath $WorkspacePath -SpecContent $SpecContent `
                     -ColdStart $ColdStart -OpenCodeConfigPath $OpenCodeConfigPath -ModelRef $ModelRef

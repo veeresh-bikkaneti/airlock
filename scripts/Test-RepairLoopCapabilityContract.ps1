@@ -37,6 +37,22 @@ $withInvalid = @(
 $result4 = Resolve-AirlockRepairLoopVerdict -StdoutLines $withInvalid
 Assert-True ($result4.RepairLoopSucceeded -and $result4.BashToolEvents.Count -eq 2) "Invalid tool filtered: 2 bash events + loop succeeded"
 
+# Test case 5: FixtureDir's files land in the disposable workspace (not just spec.md).
+$fixtureDir = Join-Path ([System.IO.Path]::GetTempPath()) "repair-loop-fixture-test-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+New-Item -Path $fixtureDir -ItemType Directory -Force | Out-Null
+Set-Content -Path (Join-Path $fixtureDir "Add-Numbers.ps1") -Value "function Add-Numbers { param([int]`$a,[int]`$b) return `$a - `$b }"
+try {
+    $seenFiles = $null
+    Invoke-AirlockRepairLoopTrial -WorkspaceRoot ([System.IO.Path]::GetTempPath()) -SpecContent "TASK: test" -FixtureDir $fixtureDir -Invoke {
+        param($WorkspacePath, $SpecContent, $ColdStart)
+        $script:seenFiles = Get-ChildItem -Path $WorkspacePath -Name | Sort-Object
+        return @{ Passed = $true; Reason = "n/a"; StructuredTrace = @(); RepairApplied = $false; UsedValidStructuredToolEvents = $false }
+    } | Out-Null
+    Assert-True (($seenFiles -contains "Add-Numbers.ps1") -and ($seenFiles -contains "spec.md")) "FixtureDir files + spec.md both present in trial workspace"
+} finally {
+    Remove-Item -Path $fixtureDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Write-Host ""
 if ($failures -eq 0) {
     Write-Host "All checks passed." -ForegroundColor Green
