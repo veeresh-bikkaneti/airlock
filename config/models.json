@@ -25,7 +25,8 @@
       "maxOutputTokens": 16384,
       "role": "coding",
       "tags": ["coding", "large", "complex"],
-      "supportsFunctionCalling": true
+      "supportsFunctionCalling": true,
+      "agenticReliabilityNote": "ADR-012 live evidence (2026-08-23/30): reliable for isolated single tool calls, but failed 0/3 and 0/6 on real multi-turn/agentic contract trials (an out-of-workspace write attempt, then a hallucinated tool call ignoring a local file). Treat as inconsistent for agentic coding sessions, not solved."
     },
     "qwen2.5-coder:7b": {
       "size": "~4.7 GB",
@@ -34,7 +35,8 @@
       "maxOutputTokens": 8192,
       "role": "fallback",
       "tags": ["coding", "fast", "lightweight"],
-      "supportsFunctionCalling": true
+      "supportsFunctionCalling": true,
+      "agenticReliabilityNote": "Proven unreliable for tool-calling in agentic sessions (raw JSON/plain-text tool calls instead of structured calls) - see docs/adr/ADR-012-validated-local-agent-bootstrap.md. Prefer a larger model when one fits."
     },
     "qwen3:14b": {
       "size": "~9 GB",

@@ -100,6 +100,30 @@ foreach ($test in $installTests) {
     }
 }
 
+# Test agentic-reliability disclosure (PBI-002/ADR-014): supportsFunctionCalling is an
+# API-capability flag, not a reliability signal - every curated coding model has it set
+# true, including qwen2.5-coder:7b, which is live-proven unreliable at tool-calling.
+# The selector must surface the known-issue note for the models that have one, and stay
+# silent for a model with no disclosed issue.
+Write-Host ""
+Write-Host "Testing agentic-reliability note disclosure..." -ForegroundColor Cyan
+
+$reliabilityTests = @(
+    @{ name = "Only qwen2.5-coder:7b fits -> its known-unreliable note surfaces"; gb = 10; expectNote = $true }
+    @{ name = "devstral-small-2:24b fits and wins -> no note (no known issue disclosed)"; gb = 20; expectNote = $false }
+)
+
+foreach ($test in $reliabilityTests) {
+    $selection = Select-BestCuratedModel -AvailableGB $test.gb -ModelsConfig $modelsConfig
+    $hasNote = [bool]$selection.ReliabilityNote
+    if ($hasNote -ne $test.expectNote) {
+        Write-Host "FAIL: $($test.name) -> model '$($selection.Model)', note present=$hasNote, expected=$($test.expectNote)" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: $($test.name) -> $($selection.Model)" -ForegroundColor Green
+    }
+}
+
 if ($failures -gt 0) { exit 1 }
 Write-Host ""
 Write-Host "All model-selection checks passed" -ForegroundColor Green
