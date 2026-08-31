@@ -25,6 +25,19 @@
       "runtimeArgs": ["--jinja", "--flash-attn", "--n-gpu-layers", "all"],
       "toolSurface": "lean",
       "candidateOnly": true
+    },
+    {
+      "profileId": "xlam-proxy-7b-fc-r",
+      "displayName": "xLAM-7b-fc-r via llama.cpp translation proxy",
+      "runtime": "xlam-proxy",
+      "transportCandidates": ["openai-direct"],
+      "modelRef": "hf.co/Salesforce/xLAM-7b-fc-r-gguf",
+      "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
+      "initialContext": 4096,
+      "minimumFreeVramGiB": 14,
+      "runtimeArgs": [],
+      "toolSurface": "lean",
+      "candidateOnly": true
     }
   ]
 }

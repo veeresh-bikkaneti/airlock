@@ -73,3 +73,21 @@ jobs:
       - name: Run tests
         working-directory: tool-proxy
         run: pytest tests/ -v
+
+  xlam-proxy-tests:
+    name: xlam-proxy tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: xlam-proxy
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Run tests
+        working-directory: xlam-proxy
+        run: pytest tests/ -v

@@ -27,6 +27,7 @@ param(
 . (Join-Path $PSScriptRoot "runtime-adapters" "ollama.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "llamacpp.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "lmstudio.ps1")
+. (Join-Path $PSScriptRoot "runtime-adapters" "xlam-proxy.ps1")
 . (Join-Path $PSScriptRoot "Invoke-OpenCodeCapabilityContract.ps1")
 . (Join-Path $PSScriptRoot "Invoke-PiCapabilityContract.ps1")
 
@@ -41,6 +42,7 @@ function Resolve-SessionEndpointMode {
         'ollama' { return Resolve-OllamaEndpointMode -Harness $Harness }
         'llama-server' { return Resolve-LlamaCppEndpointMode -Harness $Harness }
         'lmstudio' { return Resolve-LMStudioEndpointMode -Harness $Harness }
+        'xlam-proxy' { return Resolve-XlamProxyEndpointMode -Harness $Harness }
         default { return [pscustomobject]@{ TransportCandidates = @(); Reason = "No adapter for runtime '$Runtime' yet." } }
     }
 }
@@ -175,6 +177,28 @@ try {
             $runtimeVersion = "unknown"
             $modelDigest = $inspection.ModelId
             $chatTemplateIdentity = $inspection.ToolKind
+        }
+        'xlam-proxy' {
+            # Same gap as the bare 'llama-server' arm above: modelRef -> local
+            # GGUF path acquisition isn't automated in this pass, so an
+            # instance must already be running (Start-XlamProxyRuntime run
+            # manually first) rather than started here from a bare modelRef.
+            $baseUrl = Get-AirlockXlamProxyBaseUrl -PlatformDir $PlatformDir
+            $inspection = Get-XlamProxyInspection -BaseUrl $baseUrl
+            if (-not $inspection.Reachable) {
+                Write-Host "FAILED: no xlam-proxy instance is running for this profile. Start (§6 Start) is not automated in this pass - run Start-XlamProxyRuntime manually first: $($inspection.Reason)" -ForegroundColor Red
+                exit 1
+            }
+            # This adapter doesn't trust llama-server's own chat-template
+            # rendering at all (it bypasses --jinja entirely - see the design
+            # doc's "why no template-verification step") - the honest
+            # "unknown" sentinel is the same one llama-server/LM Studio use
+            # for "this runtime doesn't have a comparable concept", since the
+            # proxy's correctness comes from its own fixed code, not a
+            # verified template identity.
+            $runtimeVersion = "unknown"
+            $modelDigest = "unknown"
+            $chatTemplateIdentity = "unknown"
         }
         default {
             Write-Host "FAILED: runtime '$($selectedProfile.runtime)' has no adapter yet." -ForegroundColor Red
