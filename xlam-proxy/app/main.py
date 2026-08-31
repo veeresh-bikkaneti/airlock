@@ -146,8 +146,27 @@ def build_xlam_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]
 
 def call_llama_completion(base_url: str, prompt: str) -> str:
     """Call llama.cpp's /completion endpoint with hard-coded temperature=0,
-    n_predict=512 (xLAM's output is a short JSON blob, not token-streamable).
-    Returns the generated text on success.
+    n_predict=1024 (xLAM's output is a short JSON blob, not token-streamable,
+    but a multi-call response with real file-content arguments can run
+    longer than a toy single-call reply - 1024 is 2x headroom over the
+    longest genuine response observed live against the real ADR-012
+    contract's full 10-tool opencode surface). Returns the generated text
+    on success.
+
+    repeat_penalty=1.15 is required, not a tuning nicety: live-verified that
+    greedy decoding (temperature=0) on a real multi-call request - the model
+    correctly planning a read-then-write chain, then having to fabricate a
+    file-content argument it cannot actually know yet - reproducibly
+    collapses into runaway repetitive-token garbage (e.g. endless
+    `\\u1\\u2\\u3...` escape sequences) with no repetition penalty, every
+    time, until it naturally hits EOS or the predict cap; both are
+    independently confirmed on the exact same real captured prompt (varying
+    n_predict alone did not fix it - the model stops on its own well under
+    any reasonable cap, still producing invalid JSON). A mild repeat_penalty
+    breaks the degenerate loop and produces valid, well-reasoned JSON
+    instead. This is a decoding-sampler setting, not part of xLAM's
+    documented native prompt format (unlike the four fixed instruction
+    blocks in build_xlam_prompt), so it is fair to tune independently.
 
     Three-tier error handling:
     - requests.exceptions.RequestException → raise
@@ -157,8 +176,8 @@ def call_llama_completion(base_url: str, prompt: str) -> str:
     try:
         resp = requests.post(
             f"{base_url}/completion",
-            json={"prompt": prompt, "temperature": 0, "n_predict": 512},
-            timeout=60,
+            json={"prompt": prompt, "temperature": 0, "n_predict": 1024, "repeat_penalty": 1.15},
+            timeout=90,
         )
     except requests.exceptions.RequestException as exc:
         raise exc
@@ -286,6 +305,16 @@ async def chat_completions(request: Request) -> Any:
         )
 
     prompt = build_xlam_prompt(messages, tools)
+
+    # Opt-in debug aid, off unless the env var is set: dumps the exact
+    # rendered prompt sent to llama.cpp. Used live this session to capture
+    # a real failing prompt for offline replay against llama-server, since
+    # opencode's actual system prompt/tool surface can't be reconstructed
+    # by hand. Zero cost and no behavior change when unset.
+    if os.environ.get("XLAM_PROXY_DEBUG_PROMPT_DIR"):
+        debug_dir = Path(os.environ["XLAM_PROXY_DEBUG_PROMPT_DIR"])
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / f"prompt-{uuid.uuid4().hex[:8]}.txt").write_text(prompt, encoding="utf-8")
 
     try:
         raw_text = call_llama_completion(base, prompt)

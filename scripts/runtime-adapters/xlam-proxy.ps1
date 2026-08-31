@@ -75,16 +75,28 @@ function Write-XlamProxyAuditLog {
 }
 
 # Orchestrates two processes in order: (1) llama-server on the xLAM GGUF via
-# the existing Start-LlamaCppRuntime (native 4096 context, no explicit -ngl
-# override - let llama.cpp's auto-fit choose GPU layers, confirmed live this
-# proved more reliable than a fixed --n-gpu-layers 99 which OOM'd on this
-# 16GB card), then (2) the Python proxy pointed at llama-server's own
-# just-returned base URL.
+# the existing Start-LlamaCppRuntime, then (2) the Python proxy pointed at
+# llama-server's own just-returned base URL.
+#
+# Context is 6144, not xLAM's native 4096: live-measured against the real
+# ADR-012 opencode contract (real bash/read/write tool schemas, this user's
+# actual global opencode config/plugins - none of that is stripped, since
+# the gate is unchanged per the design doc), the real staged prompt is 5564
+# tokens - it does not fit natively-trained 4096 at all, regardless of model
+# quality. 6144 clears it with ~580 tokens of margin while staying closer to
+# the 4096 native context than a jump to 8192 would (less RoPE
+# extrapolation). No explicit -ngl override - let llama.cpp's auto-fit
+# choose GPU layers; a fixed --n-gpu-layers 99 OOM'd earlier this
+# investigation, which is a GPU-layer-selection finding, not evidence that
+# ctx-size itself needs to stay at 4096 (a live KV-cache measurement at
+# ctx=4096 showed ~485MB overhead beyond the 13.8GB model - doubling to
+# ctx=8192 would still fit this 16GB card's headroom with room to spare;
+# 6144 is the more conservative middle choice, not a hardware constraint).
 function Start-XlamProxyRuntime {
     param(
         [Parameter(Mandatory)][string]$ModelPath,
         [Parameter(Mandatory)][string]$ProxyAppDir,
-        [int]$Context = 4096,
+        [int]$Context = 6144,
         [int]$ProxyPort = 0,
         [string]$LlamaCppBinaryPath = 'llama-server',
         [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
@@ -103,7 +115,42 @@ function Start-XlamProxyRuntime {
 
     # Step 1: bring up llama-server on the xLAM GGUF. No explicit -ngl
     # override in $RuntimeArgs - auto-fit decides GPU layers.
-    $llamaResult = Start-LlamaCppRuntime -ModelPath $ModelPath -Context $Context -RuntimeArgs @('--jinja') `
+    #
+    # --parallel 1: live-verified this build's default auto-parallel (-1)
+    # selects 4 slots (a red herring investigated first - it was NOT the
+    # real cause, see below), and forcing a single slot is the right shape
+    # anyway since this proxy is stateless and serves one request at a time
+    # by design (no server-side session store, full prompt re-derived every
+    # call).
+    #
+    # --override-kv llama.context_length=int:$Context is required to get
+    # past a hard cap: live-verified (via /slots and a direct >4096-token
+    # /completion probe) that this llama-server build caps every slot's
+    # context to the model's own reported training context (4096, from the
+    # GGUF's llama.context_length key) whenever --ctx-size exceeds it -
+    # logged as "the slot context (N) exceeds the training context of the
+    # model (4096) - capping". This cap is unconditional: neither
+    # --parallel 1 alone, nor --rope-scaling/--rope-scale/--yarn-orig-ctx
+    # WITHOUT the override, lifted it in this build.
+    #
+    # --rope-scaling linear --rope-freq-scale 0.6667 (4096/6144) is
+    # required TOO, and is a separate finding from the override above:
+    # override-kv alone bypasses the cap but makes llama.cpp think 6144 IS
+    # the native training context, so it applies zero RoPE interpolation -
+    # pure extrapolation for every position past the model's real 4096.
+    # Live-verified against a captured real 5564-token opencode request
+    # (10-tool full surface) that override-kv alone produces a genuinely
+    # correct plan (right tool, right first argument) that then collapses
+    # into repetitive-token garbage and invalid JSON - a real quality
+    # failure, not a parsing bug. Adding explicit linear frequency scaling
+    # (still combined with the same override, since the cap check happens
+    # regardless of rope settings) restores coherent, valid-JSON output on
+    # the identical captured prompt. The toy single-tool probe also still
+    # returns the correct result at the full 6144 context with this
+    # combination.
+    $llamaResult = Start-LlamaCppRuntime -ModelPath $ModelPath -Context $Context `
+        -RuntimeArgs @('--jinja', '--parallel', '1', '--override-kv', "llama.context_length=int:$Context", `
+            '--rope-scaling', 'linear', '--rope-freq-scale', '0.6667') `
         -PlatformDir $PlatformDir -HealthTimeoutSec $LlamaCppHealthTimeoutSec -BinaryPath $LlamaCppBinaryPath
     if (-not $llamaResult.Started) {
         Write-XlamProxyAuditLog -LogFile $LogFile -Action "XlamProxyStart" -Result "FAILED" -Message "Underlying llama-server failed to start" -Detail $llamaResult.Reason

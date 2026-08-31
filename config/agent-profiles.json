@@ -33,7 +33,7 @@
       "transportCandidates": ["openai-direct"],
       "modelRef": "hf.co/Salesforce/xLAM-7b-fc-r-gguf",
       "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
-      "initialContext": 4096,
+      "initialContext": 6144,
       "minimumFreeVramGiB": 14,
       "runtimeArgs": [],
       "toolSurface": "lean",

@@ -118,12 +118,28 @@ duplicated).
   one OpenAI-compatible route.
 - `Start-XlamProxyRuntime` — orchestrates two processes in order:
   1. Calls the existing `Start-LlamaCppRuntime` (from `llamacpp.ps1`) to bring
-     up `llama-server` on the xLAM GGUF with `--ctx-size 4096` (native context;
-     do not request more — this session confirmed requesting 8192 against a
-     4096-trained model both overflows training context and OOMs the KV cache
-     on this 16GB card) and no explicit `-ngl` override (let llama.cpp's
-     auto-fit choose GPU layers — an explicit `-ngl 99` was tried and OOM'd this
-     session; auto-fit succeeded on the first retry).
+     up `llama-server` on the xLAM GGUF with `--ctx-size 6144` and no explicit
+     `-ngl` override (let llama.cpp's auto-fit choose GPU layers — an explicit
+     `-ngl 99` was tried and OOM'd this session; auto-fit succeeded on the
+     first retry).
+
+     **Correction (implementation session, live-verified):** the original
+     claim above — "do not request more [than 4096]... overflows training
+     context and OOMs the KV cache" — conflated two separate variables. The
+     OOM was reproduced only in combination with the `-ngl 99` override, not
+     from `--ctx-size` alone. Live-measured KV-cache overhead at `--ctx-size
+     4096` was ~485MB beyond the 13.8GB model (14310MB used total on a
+     15.7GB-free 16GB card) — comfortably supports doubling to 8192 on VRAM
+     grounds alone. The real reason to move off 4096 at all: the actual
+     ADR-012 capability contract (real opencode, this user's real global
+     config/plugins, real `bash`/`read`/`write` tool schemas — the gate is
+     unchanged, nothing stripped) stages a 5564-token prompt, which does not
+     fit in xLAM's native 4096 training context at all, independent of model
+     quality (llama-server returns a hard `exceed_context_size_error`, not a
+     model-quality failure). `6144` was chosen over `8192` to minimize RoPE
+     extrapolation past the model's trained length while still clearing 5564
+     tokens with ~580 tokens of margin — a conservative middle choice, not a
+     hardware ceiling.
   2. Launches the Python proxy (`uvicorn app.main:app`) pointed at the
      llama-server base URL just returned, polls its own `/health`.
   3. Records `state/xlam-proxy-instance.json`: proxy PID, start-time ticks,
@@ -162,7 +178,7 @@ heuristic anyway.
   "transportCandidates": ["openai-direct"],
   "modelRef": "hf.co/Salesforce/xLAM-7b-fc-r-gguf",
   "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
-  "initialContext": 4096,
+  "initialContext": 6144,
   "minimumFreeVramGiB": 14,
   "runtimeArgs": [],
   "toolSurface": "lean",
@@ -170,9 +186,9 @@ heuristic anyway.
 }
 ```
 
-`initialContext: 4096` matches the model's real training context (confirmed
-live this session — see ADR-013's context). `minimumFreeVramGiB: 14` leaves
-~2GB headroom above the 13.8GB model size for KV cache, matching the auto-fit
+`initialContext: 6144` — see §2's correction above for why this is 6144, not
+xLAM's native 4096 training context. `minimumFreeVramGiB: 14` leaves ~2GB
+headroom above the 13.8GB model size for KV cache, matching the auto-fit
 behavior already observed working. `runtimeArgs` left empty deliberately —
 GPU-layer selection is handled by `Start-LlamaCppRuntime`'s auto-fit, not
 surfaced as a profile-level override, unless a future finding shows auto-fit
