@@ -78,6 +78,17 @@ def test_build_xlam_prompt_single_user_turn():
     assert "user: list files in /tmp" in prompt
 
 
+def test_build_xlam_prompt_ends_with_trailing_newline():
+    """Regression test: a prompt ending exactly at "[END OF QUERY]" with no
+    trailing newline made xLAM immediately emit EOS with zero content on a
+    real post-tool-failure prompt, live-verified reproducible every time;
+    the identical prompt with only a trailing newline appended produced the
+    correct recovery. build_xlam_prompt must always end with "\n".
+    """
+    prompt = build_xlam_prompt([{"role": "user", "content": "hi"}], [])
+    assert prompt.endswith("[END OF QUERY]\n")
+
+
 def test_build_xlam_prompt_tool_flattening():
     """Verify tools are flattened: "properties"/"type":"object" wrapper removed,
     "required" field inlined into each arg's dict.
@@ -149,8 +160,22 @@ def test_build_xlam_prompt_system_message_skipped():
     assert "user: hi" in query_block
 
 
-def test_build_xlam_prompt_assistant_tool_calls_serialized():
-    """Verify assistant turn with tool_calls is re-serialized as xLAM JSON."""
+def test_build_xlam_prompt_multi_turn_folds_as_single_narrated_turn():
+    """Verify history folds as one person's continuous narration, not a
+    "user:"/"assistant:" labeled dialogue transcript.
+
+    Live-verified this matters, not just style: xLAM's chat_template_caps
+    report supports_tools=False/supports_tool_calls=False - it has no
+    native multi-turn dialogue-role concept. A role-labeled transcript
+    (the shape this file originally used, mirroring tool-proxy's own
+    normalize_messages) reads to xLAM as an already-concluded conversation:
+    reproducible on a real captured post-tool-failure prompt, the model
+    immediately emitted EOS with zero content, every time, at every
+    temperature 0-0.5 - even though a correct recovery demonstrably existed
+    in its output distribution. Folding the identical information as one
+    continuous narration ("I called X with Y. It returned: Z.") instead of
+    labeled turns immediately produced the correct recovery.
+    """
     prompt = build_xlam_prompt(
         [
             {"role": "user", "content": "list files in /tmp"},
@@ -165,35 +190,6 @@ def test_build_xlam_prompt_assistant_tool_calls_serialized():
                     }
                 ],
             },
-        ],
-        [],
-    )
-    query_start = prompt.find("[BEGIN OF QUERY]")
-    query_end = prompt.find("[END OF QUERY]")
-    query_block = prompt[query_start:query_end]
-
-    # Should contain the re-serialized tool call
-    assert "assistant:" in query_block
-    # The serialized call should have name and arguments
-    assert '"name": "list_files"' in query_block or "'name': 'list_files'" in query_block
-
-
-def test_build_xlam_prompt_tool_result_attributed_to_call_id():
-    """Verify tool results are correctly labeled with the tool name and call_id."""
-    prompt = build_xlam_prompt(
-        [
-            {"role": "user", "content": "list files in /tmp"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "id": "call_1",
-                        "type": "function",
-                        "function": {"name": "list_files", "arguments": "{}"},
-                    }
-                ],
-            },
             {"role": "tool", "tool_call_id": "call_1", "content": "file1.txt, file2.txt"},
         ],
         [],
@@ -202,9 +198,48 @@ def test_build_xlam_prompt_tool_result_attributed_to_call_id():
     query_end = prompt.find("[END OF QUERY]")
     query_block = prompt[query_start:query_end]
 
-    # Tool result should be labeled with the name and call_id
-    assert "tool result for list_files (call_1):" in query_block
-    assert "file1.txt, file2.txt" in query_block
+    # No dialogue-role labels anywhere past the first line - this is the
+    # specific regression that must never come back.
+    assert "assistant:" not in query_block
+    assert "tool result for" not in query_block
+
+    # The call and its result fold into one narrated sentence, attributed
+    # to the right call via tool_call_id.
+    assert "I called list_files with" in query_block
+    assert '"path": "/tmp"' in query_block
+    assert "It returned: file1.txt, file2.txt" in query_block
+    # A forward-looking closer follows any tool activity, generic enough
+    # to make sense after either a failure or a success.
+    assert "Continue completing the original task." in query_block
+
+
+def test_build_xlam_prompt_tool_result_attributed_to_call_id():
+    """Verify a tool result is paired with the specific call that produced
+    it (by tool_call_id), not just the most recent call, when multiple
+    calls are in flight.
+    """
+    prompt = build_xlam_prompt(
+        [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": "call_1", "type": "function", "function": {"name": "read", "arguments": "{}"}},
+                    {"id": "call_2", "type": "function", "function": {"name": "write", "arguments": "{}"}},
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_2", "content": "write failed"},
+            {"role": "tool", "tool_call_id": "call_1", "content": "read succeeded"},
+        ],
+        [],
+    )
+    query_start = prompt.find("[BEGIN OF QUERY]")
+    query_end = prompt.find("[END OF QUERY]")
+    query_block = prompt[query_start:query_end]
+
+    assert "I called write with {}. It returned: write failed" in query_block
+    assert "I called read with {}. It returned: read succeeded" in query_block
 
 
 # --- parse_xlam_response tests ---

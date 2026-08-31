@@ -93,9 +93,27 @@ def build_xlam_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]
         "",
     ]
 
-    # Fold conversation: walk messages in order, building the query block
+    # Fold conversation into a single narrated user turn, not a role-labeled
+    # multi-turn dialogue transcript. Live-verified this matters, not just a
+    # style choice: xLAM's chat_template_caps report supports_tools=False,
+    # supports_tool_calls=False - it has no native concept of multi-turn
+    # dialogue roles at all, only a single-query function-calling format.
+    # A "user:"/"assistant:" per-turn transcript (the shape tool-proxy's own
+    # normalize_messages uses, which this file originally mirrored) reads to
+    # xLAM as an already-concluded conversation - live-verified on a real
+    # captured post-tool-failure prompt that this shape makes the model
+    # immediately emit EOS with zero content, every time, at every
+    # temperature 0-0.5, even though a correct recovery demonstrably exists
+    # in its output distribution (confirmed via a forced-generation probe).
+    # Folding the same information as one person's continuous narration -
+    # "I called X with Y. It returned: Z." - immediately produces the
+    # correct recovery instead. call_names still attributes each tool
+    # result to the call that produced it, same idea as tool-proxy's
+    # normalize_messages, just rendered as prose instead of a labeled line.
     call_names: dict[str, str] = {}  # tool_call_id -> function_name for attribution
-    query_lines = []
+    pending_calls: dict[str, dict[str, Any]] = {}  # tool_call_id -> {"name", "arguments"}
+    first_user_content: str | None = None
+    narrative_lines: list[str] = []
 
     for m in messages:
         role = m.get("role")
@@ -103,11 +121,13 @@ def build_xlam_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]
             # Skip system messages - already covered by fixed task instruction
             continue
         elif role == "user":
-            query_lines.append(f"user: {m.get('content', '')}")
+            content = m.get("content", "")
+            if first_user_content is None:
+                first_user_content = content
+            elif content:
+                narrative_lines.append(content)
         elif role == "assistant":
             if m.get("tool_calls"):
-                # Re-serialize tool_calls as xLAM-shaped JSON
-                calls = []
                 for tc in m.get("tool_calls", []):
                     if not isinstance(tc, dict):
                         continue
@@ -123,25 +143,44 @@ def build_xlam_prompt(messages: list[dict[str, Any]], tools: list[dict[str, Any]
                             arguments = args_str if isinstance(args_str, dict) else {}
                     except json.JSONDecodeError:
                         arguments = {}
-                    calls.append({"name": name, "arguments": arguments})
                     call_id = tc.get("id")
-                    if call_id:
+                    if call_id and name:
                         call_names[call_id] = name
-                if calls:
-                    query_lines.append(f"assistant: {json.dumps({'tool_calls': calls})}")
+                        pending_calls[call_id] = {"name": name, "arguments": arguments}
+                    elif name:
+                        # No id to attribute a later result to - narrate the
+                        # call now, result (if any) narrates unattributed.
+                        narrative_lines.append(f"I called {name} with {json.dumps(arguments)}.")
             elif m.get("content"):
-                query_lines.append(f"assistant: {m['content']}")
+                narrative_lines.append(m["content"])
         elif role == "tool":
             call_id = m.get("tool_call_id")
-            name = call_names.get(call_id, "") if call_id else ""
-            label = f"{name} ({call_id})" if name else (call_id or "unknown call")
-            query_lines.append(f"tool result for {label}: {m.get('content', '')}")
+            info = pending_calls.pop(call_id, None) if call_id else None
+            content = m.get("content", "")
+            if info:
+                narrative_lines.append(f"I called {info['name']} with {json.dumps(info['arguments'])}. It returned: {content}")
+            else:
+                name = call_names.get(call_id, "") if call_id else ""
+                label = name if name else (call_id or "the tool")
+                narrative_lines.append(f"Running {label} returned: {content}")
+
+    query_lines = [f"user: {first_user_content or ''}"]
+    if narrative_lines:
+        query_lines.append("")
+        query_lines.extend(narrative_lines)
+        query_lines.append("")
+        query_lines.append("Continue completing the original task.")
 
     lines.append("[BEGIN OF QUERY]")
     lines.extend(query_lines)
     lines.append("[END OF QUERY]")
 
-    return "\n".join(lines)
+    # Trailing newline after [END OF QUERY] is required, not cosmetic:
+    # live-verified that a prompt ending exactly at "[END OF QUERY]" with no
+    # trailing newline makes xLAM immediately emit EOS with zero content on
+    # a real post-tool-failure prompt, every time - identical prompt with
+    # only a trailing "\n" added produces the correct recovery instead.
+    return "\n".join(lines) + "\n"
 
 
 def call_llama_completion(base_url: str, prompt: str) -> str:
