@@ -60,6 +60,22 @@ try {
         ($registry | ConvertTo-Json -Depth 10) | Set-Content -Path $Path -Encoding utf8
     }
 
+    function New-ValidPiCertificate {
+        param([string]$Path)
+        $dir = Split-Path -Parent $Path
+        if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
+        $cert = [ordered]@{
+            schemaVersion = 1
+            sessionId     = [guid]::NewGuid().ToString()
+            profileId     = 'llamacpp-qwen38-ud-q3-k-xl'
+            model         = 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'
+            harness       = 'pi-worker'
+            provenAt      = [DateTime]::UtcNow.ToString('o')
+            expiresAt     = [DateTime]::UtcNow.AddMinutes(30).ToString('o')
+        }
+        ($cert | ConvertTo-Json) | Set-Content -Path $Path -Encoding utf8
+    }
+
     # --- Manifest not found ---
     $missingManifestPath = Join-Path $workDir "does-not-exist.json"
     & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $missingManifestPath -PlatformDir $platformDir | Out-Null
@@ -95,6 +111,7 @@ try {
     # --- Valid manifest + fresh passing registry entry + -WhatIf: zero mutation ---
     $whatIfPlatform = Join-Path $workDir "platform-whatif"
     New-PassingRegistry -Path (Join-Path $whatIfPlatform "state" "capability-registry.json")
+    New-ValidPiCertificate -Path (Join-Path $whatIfPlatform "state" "active-agent.json")
     & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $validManifestPath -PlatformDir $whatIfPlatform -WhatIf | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "-WhatIf on a schema-valid manifest with a passing evidence key exits 0"
     Assert-True (-not (Test-Path (Join-Path $whatIfPlatform "jobs" $jobId))) "-WhatIf creates no job directory at all - no worktree, no audit log, no result"
@@ -121,6 +138,7 @@ try {
     New-ManifestFile -Path $realManifestPath -Overrides @{ repo = [ordered]@{ path = $realRepoPath; ref = "main" } }
     $realPlatform = Join-Path $workDir "platform-real"
     New-PassingRegistry -Path (Join-Path $realPlatform "state" "capability-registry.json")
+    New-ValidPiCertificate -Path (Join-Path $realPlatform "state" "active-agent.json")
     & pwsh -NoProfile -File $JobScript -JobId $jobId -ManifestPath $realManifestPath -PlatformDir $realPlatform 2>&1 | Out-Null
     Assert-True (Test-Path (Join-Path $realPlatform "jobs" $jobId "worktree" "README.md")) "a real (non-WhatIf) first run against a real repo actually creates the worktree - not blocked by the audit log's own directory creation"
 

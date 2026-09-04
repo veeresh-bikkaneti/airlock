@@ -14,6 +14,7 @@ param(
     [switch]$ForceVerify,
     [switch]$NoCache,
     [switch]$WhatIf,
+    [switch]$DownloadConfirmed,
     [string]$WorkspaceRoot,
     [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
     [string]$ProfileCataloguePath
@@ -27,6 +28,7 @@ param(
 . (Join-Path $PSScriptRoot "runtime-adapters" "ollama.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "llamacpp.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "lmstudio.ps1")
+. (Join-Path $PSScriptRoot "Get-HuggingFaceGguf.ps1")
 . (Join-Path $PSScriptRoot "Invoke-OpenCodeCapabilityContract.ps1")
 . (Join-Path $PSScriptRoot "Invoke-PiCapabilityContract.ps1")
 
@@ -88,6 +90,13 @@ if ($WhatIf) {
     Write-Host "WHATIF: would check capability registry at $RegistryPath (ForceVerify=$ForceVerify, NoCache=$NoCache)" -ForegroundColor Cyan
     Write-Host "WHATIF: would run the $Harness workspace contract in $WorkspaceRoot if no fresh capability entry exists" -ForegroundColor Cyan
     Write-Host "WHATIF: would publish $CertificatePath only on a passing contract" -ForegroundColor Cyan
+    if ($selectedProfile.runtime -eq 'llama-server') {
+        Write-Host "WHATIF: would enforce VRAM gate vs $($selectedProfile.minimumFreeVramGiB) GiB and start llama-server with HealthTimeoutSec=300 if no healthy snapshot for this GGUF" -ForegroundColor Cyan
+        $ggufDest = Get-AirlockGgufDestPath -ModelRef $selectedProfile.modelRef -PlatformDir $PlatformDir
+        if ((Test-Path $ggufDest) -and -not (Test-AirlockGgufEvidenceMatch -ByteLength ([long](Get-Item $ggufDest).Length))) {
+            Write-Host "WHATIF: GGUF at $ggufDest is not $script:AirlockGgufEvidenceBytes bytes - would ForceVerify (do not inherit the 3/3)" -ForegroundColor Yellow
+        }
+    }
     Write-Host "WHATIF: no process started, no model pulled, no state written, no harness invoked, no global config changed." -ForegroundColor Green
     exit 0
 }
@@ -124,6 +133,8 @@ try {
     $runtimeVersion = $null
     $modelDigest = $null
     $chatTemplateIdentity = "n/a"
+    $gguf = $null
+    $ollamaLivePassThisRun = $false
 
     switch ($selectedProfile.runtime) {
         'ollama' {
@@ -143,20 +154,49 @@ try {
             $chatTemplateIdentity = $inspection.Template ?? "n/a"
         }
         'llama-server' {
-            $baseUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $PlatformDir
-            if (-not $baseUrl) {
-                Write-Host "FAILED: no llama-server instance is running for this profile. Start (§6 Start) is not automated in this pass - run Start-LlamaCppRuntime manually first." -ForegroundColor Red
+            $runtimeArgs = @($selectedProfile.runtimeArgs)
+            $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
+            $freeVramGiB = Get-AirlockFreeVramGiB
+            $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
+            if (-not $vramGate.Allowed) {
+                Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
                 exit 1
+            }
+
+            $gguf = Get-AirlockHuggingFaceGguf -ModelRef $selectedProfile.modelRef -PlatformDir $PlatformDir -UserConfirmed:$DownloadConfirmed
+            if (-not $gguf.Ready) {
+                Write-Host "FAILED: $($gguf.Reason)" -ForegroundColor Red
+                exit 1
+            }
+            if ($gguf.ForceVerify) { $ForceVerify = $true }
+
+            $baseUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $PlatformDir
+            $needStart = $true
+            if ($baseUrl) {
+                $snapFile = Join-Path $PlatformDir "state" "llamacpp-instance.json"
+                $snapPath = $null
+                if (Test-Path $snapFile) {
+                    try { $snapPath = (Get-Content $snapFile -Raw | ConvertFrom-Json).modelPath } catch { $snapPath = $null }
+                }
+                if ($snapPath -eq $gguf.Path -and (Test-LlamaCppPort -BaseUrl $baseUrl)) {
+                    $needStart = $false
+                }
+            }
+            if ($needStart) {
+                Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
+                $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context ([int]$selectedProfile.initialContext) `
+                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir
+                if (-not $started.Started) {
+                    Write-Host "FAILED: $($started.Reason)" -ForegroundColor Red
+                    exit 1
+                }
+                $baseUrl = $started.BaseUrl
             }
             $inspection = Get-LlamaCppInspection -BaseUrl $baseUrl
             if (-not $inspection.Reachable -or $inspection.TemplateVerdict -ne 'Pass') {
                 Write-Host "FAILED: llama-server template verification failed: $($inspection.Reason)" -ForegroundColor Red
                 exit 1
             }
-            # llama-server documents no version endpoint this adapter reads, and no
-            # separate artifact-digest surface exists yet - template identity is
-            # the closest proven identity signal, used honestly rather than
-            # fabricating a version/digest that was never actually observed.
             $runtimeVersion = "unknown"
             $modelDigest = $inspection.TemplateIdentity
             $chatTemplateIdentity = $inspection.TemplateIdentity
@@ -207,7 +247,7 @@ try {
         }
         $endpointUrl = "$endpointBase/v1"
         $evidenceKey = Get-AirlockCapabilityEvidenceKey -ContractVersion "1" -ProfileId $selectedProfile.profileId `
-            -ModelRef $selectedProfile.modelRef -ModelDigest $modelDigest -ArtifactHash $modelDigest `
+            -ModelRef $selectedProfile.modelRef -ModelDigest $modelDigest -ArtifactHash $(if ($gguf -and $gguf.Sha256) { $gguf.Sha256 } else { $modelDigest }) `
             -Runtime $selectedProfile.runtime -RuntimeVersion $runtimeVersion -EndpointMode $next.Transport -EndpointIdentity $endpointUrl `
             -RuntimeConfigHash "n/a" -ChatTemplateIdentity $chatTemplateIdentity -EffectiveContext "$Context" `
             -KvCacheMode "default" -Harness $Harness -HarnessVersion "n/a" -HarnessConfigHash "n/a" `
@@ -242,6 +282,7 @@ try {
             }
             $contractPassed = $contractResult.Passed
             $transportReturnedValidToolEvents = $contractResult.TransportReturnedValidToolEvents
+            if ($contractPassed -and $selectedProfile.runtime -eq 'ollama') { $ollamaLivePassThisRun = $true }
             Set-AirlockCapabilityEntry -EvidenceKey $evidenceKey -RegistryPath $RegistryPath `
                 -Verdict $(if ($contractPassed) { 'pass' } else { 'fail' }) `
                 -EntryData ([pscustomobject]@{ profileId = $selectedProfile.profileId; modelDigest = $modelDigest; transport = $next.Transport; endpoint = $endpointUrl; harness = $Harness; transportReturnedValidToolEvents = $transportReturnedValidToolEvents }) `
@@ -291,7 +332,23 @@ try {
                 provenAt              = [DateTime]::UtcNow.ToString('o')
                 expiresAt             = [DateTime]::UtcNow.AddMinutes(5).ToString('o')
                 fitState              = $fitState
+                provenance            = if ($gguf) {
+                    [pscustomobject]@{
+                        ggufBytes            = $gguf.Bytes
+                        ggufSha256           = $gguf.Sha256
+                        matchedEvidenceBytes = $gguf.MatchedEvidenceBytes
+                    }
+                } else { $null }
             }
+        }
+    }
+
+    if ($selectedProfile.runtime -eq 'ollama') {
+        $ollamaGate = Resolve-AirlockOllamaCodingCertificate -LiveContractPassedThisRun $ollamaLivePassThisRun
+        if (-not $ollamaGate.Allow) {
+            $publishedCertificate = $null
+            $failureReasons += $ollamaGate.Reason
+            Write-Host "REFUSED: $($ollamaGate.Reason)" -ForegroundColor Yellow
         }
     }
 
