@@ -21,6 +21,10 @@ $cases = @(
     @{ gb = 20; expect = "devstral-small-2:24b" }
     @{ gb = 10; expect = "qwen2.5-coder:7b" }
     @{ gb = 3;  expect = "qwen2.5-coder:7b" }
+    # ThinkPad P16 Gen 2 RTX 5000 Ada ~15 GB free: 24b (15GB) needs 18GB with
+    # 20% headroom; 30b needs 21.6GB. Chat door therefore lands on 7b — which
+    # is why ai-agent-start exists (ADR-016). This is the author's idle GPU.
+    @{ gb = 15; expect = "qwen2.5-coder:7b" }
 )
 
 $failures = 0
@@ -56,6 +60,15 @@ $sizingTests = @(
         name   = "8GB GPU free, 8GB RAM free (should return 8, same value either way)"
         resources = @{ FreeMemGB = 8; GpuTotalGB = 8; GpuFreeGB = 8 }
         expect = 8
+    }
+    @{
+        # Lenovo ThinkPad P16 Gen 2 (21FA002BUS): i9-13950HX + RTX 5000 Ada 16GB.
+        # ADR-005 measured 87.7 GB RAM free and 15 GB VRAM free on this machine.
+        # Win32_VideoController.AdapterRAM is empty/0 on the Ada card (UInt32 overflow);
+        # sizing must use nvidia-smi VRAM, never CIM AdapterRAM or system RAM.
+        name   = "ThinkPad P16 Gen 2 RTX 5000 Ada: 15GB VRAM free, 87.7GB RAM free -> VRAM ceiling 15"
+        resources = @{ FreeMemGB = 87.7; GpuTotalGB = 16.0; GpuFreeGB = 15.0 }
+        expect = 15.0
     }
 )
 
@@ -111,6 +124,7 @@ Write-Host "Testing agentic-reliability note disclosure..." -ForegroundColor Cya
 $reliabilityTests = @(
     @{ name = "Only qwen2.5-coder:7b fits -> its known-unreliable note surfaces"; gb = 10; expectNote = $true }
     @{ name = "devstral-small-2:24b fits and wins -> no note (no known issue disclosed)"; gb = 20; expectNote = $false }
+    @{ name = "ThinkPad P16 Gen 2 idle 15GB VRAM -> 7b wins and its unreliability note surfaces"; gb = 15; expectNote = $true }
 )
 
 foreach ($test in $reliabilityTests) {
@@ -122,6 +136,67 @@ foreach ($test in $reliabilityTests) {
     } else {
         Write-Host "PASS: $($test.name) -> $($selection.Model)" -ForegroundColor Green
     }
+}
+
+# Live probe: only pin ThinkPad P16 Gen 2 constants when nvidia-smi reports
+# that GPU. GitHub windows-latest has no NVIDIA device, so this is skip-not-fail
+# there. Idle free VRAM moves around; total VRAM, CPU threads, and "ceiling is
+# VRAM not RAM" do not.
+Write-Host ""
+Write-Host "Testing live host snapshot (ThinkPad P16 Gen 2 / RTX 5000 Ada)..." -ForegroundColor Cyan
+$nvidiaName = $null
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    try {
+        $nvidiaName = (& nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Select-Object -First 1)
+    } catch { $nvidiaName = $null }
+}
+if ($nvidiaName -match 'RTX 5000 Ada') {
+    $live = Test-ResourceAvailability
+    $ceiling = Get-ModelSizingCeilingGB -Resources $live
+    if ($live.GpuTotalGB -ne 16) {
+        Write-Host "FAIL: live GpuTotalGB is $($live.GpuTotalGB), expected 16 (16376 MiB rounded)" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: live GpuTotalGB is 16 (nvidia-smi, not CIM AdapterRAM)" -ForegroundColor Green
+    }
+    $freeOk = ($live.GpuFreeGB -ne 'N/A') -and ([double]$live.GpuFreeGB -ge 0) -and ([double]$live.GpuFreeGB -le [double]$live.GpuTotalGB)
+    if (-not $freeOk) {
+        Write-Host "FAIL: live GpuFreeGB is $($live.GpuFreeGB), expected 0..16" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: live GpuFreeGB is $($live.GpuFreeGB) (idle value is not a constant)" -ForegroundColor Green
+    }
+    if ($ceiling -ne $live.GpuFreeGB) {
+        Write-Host "FAIL: live sizing ceiling is $ceiling, expected VRAM $($live.GpuFreeGB) not RAM $($live.FreeMemGB)" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: live sizing ceiling is $ceiling GB VRAM (RAM $($live.FreeMemGB) GB is ignored)" -ForegroundColor Green
+    }
+    if ($live.CpuCores -ne 32) {
+        Write-Host "FAIL: live CpuCores is $($live.CpuCores), expected 32 (i9-13950HX threads)" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: live CpuCores is 32 (i9-13950HX)" -ForegroundColor Green
+    }
+    $chatPick = Select-BestCuratedModel -AvailableGB $ceiling -ModelsConfig $modelsConfig
+    if ([double]$ceiling -lt 18 -and $chatPick.Model -ne 'qwen2.5-coder:7b') {
+        Write-Host "FAIL: live chat pick is '$($chatPick.Model)', expected qwen2.5-coder:7b below 18 GB VRAM" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: live chat pick is $($chatPick.Model)" -ForegroundColor Green
+    }
+    . (Join-Path $ScriptDir "agent-profile-helpers.ps1")
+    $freeGiB = Get-AirlockFreeVramGiB
+    $gate = Resolve-AirlockVramStartGate -FreeVramGiB $freeGiB -MinimumFreeVramGiB 14 -RequiresGpuLayersAll $true
+    $expectAllow = ($null -ne $freeGiB) -and ($freeGiB -ge 14)
+    if ($gate.Allowed -ne $expectAllow) {
+        Write-Host "FAIL: Unsloth start gate Allowed=$($gate.Allowed) at $([math]::Round([double]$freeGiB, 2)) GiB free; expected $expectAllow" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: Unsloth 14 GiB start gate Allowed=$($gate.Allowed) at $([math]::Round([double]$freeGiB, 2)) GiB free" -ForegroundColor Green
+    }
+} else {
+    Write-Host "SKIP: nvidia-smi did not report RTX 5000 Ada (got '$nvidiaName') - live host snapshot not asserted." -ForegroundColor Yellow
 }
 
 if ($failures -gt 0) { exit 1 }

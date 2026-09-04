@@ -194,3 +194,13 @@ function Resolve-AirlockCertificateValidity {
     }
     return [pscustomobject]@{ Valid = $true; Reason = "valid"; Detail = "Certificate is valid and compatible." }
 }
+
+# AIR-016 D1: ai-switch (Ollama model change) invalidates the coding certificate.
+function Clear-AirlockActiveAgentCertificate {
+    param([Parameter(Mandatory)][string]$CertificatePath)
+    if (Test-Path $CertificatePath) {
+        Remove-Item -Path $CertificatePath -Force
+        return [pscustomobject]@{ Cleared = $true; Reason = "Deleted $CertificatePath" }
+    }
+    return [pscustomobject]@{ Cleared = $false; Reason = "No certificate at $CertificatePath" }
+}

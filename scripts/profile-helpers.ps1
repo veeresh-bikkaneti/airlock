@@ -7,6 +7,7 @@ $Script:PlatformDir = "$env:USERPROFILE\.ai-platform"
 # ADR-006 task router - pure cascade lives in its own file so it stays unit-testable
 # (Test-TaskRoute.ps1) without dragging in this file's env/file I/O.
 . (Join-Path $PSScriptRoot "Get-TaskRoute.ps1")
+. (Join-Path $PSScriptRoot "agent-state-helpers.ps1")
 
 # Wrapper for the real 'ollama' binary. Prevents direct use of 'ollama serve' which would bypass the platform's safety checks.
 function global:ollama {
@@ -22,6 +23,24 @@ function global:ollama {
 # Shortcut to launch the platform startup script with any arguments you provide.
 function global:ai-start {
     & "$env:USERPROFILE\.ai-platform\scripts\Start-AI.ps1" @args
+}
+
+# AIR-016 coding door. Default profile is Unsloth llama-server; explicit
+# -Profile is required for any other catalogue entry (Start-AgentSession
+# still never auto-selects). Chat stays on ai-start.
+function global:ai-agent-start {
+    param(
+        [string]$Profile = 'llamacpp-qwen38-ud-q3-k-xl',
+        [switch]$WhatIf,
+        [switch]$ForceVerify,
+        [switch]$NoCache,
+        [switch]$DownloadConfirmed
+    )
+    $session = Join-Path $PSScriptRoot "Start-AgentSession.ps1"
+    if (-not (Test-Path $session)) {
+        $session = "$env:USERPROFILE\.ai-platform\scripts\Start-AgentSession.ps1"
+    }
+    & $session -Profile $Profile -Harness 'pi-worker' -WhatIf:$WhatIf -ForceVerify:$ForceVerify -NoCache:$NoCache -DownloadConfirmed:$DownloadConfirmed
 }
 
 # Shortcut to gracefully stop the platform and clean up state.
@@ -147,6 +166,8 @@ function global:ai-switch {
                 detail       = ""
             }
             ($entry | ConvertTo-Json -Compress) | Add-Content -Path $logFile -Encoding utf8
+            Clear-AirlockActiveAgentCertificate -CertificatePath "$env:USERPROFILE\.ai-platform\state\active-agent.json" | Out-Null
+            Write-Host "Invalidated coding certificate (ai-agent-start required before the next agentic session)." -ForegroundColor Yellow
         } else {
             Write-Host "Model '$Model' not found on Ollama." -ForegroundColor Red
             Write-Host "Available models:" -ForegroundColor Gray
@@ -158,61 +179,47 @@ function global:ai-switch {
     }
 }
 
-# Launch the 'aider' tool configured to talk to the current Ollama model.
+# Launch aider against a proven coding certificate (AIR-016 D1). Chat
+# provider state from ai-start is not enough.
 function global:ai-code {
     param([string]$Model)
 
-    $file = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
-    if (-not (Test-Path $file)) {
-        Write-Host "No active session. Run ai-start first." -ForegroundColor Red
-        return
+    $certPath = "$env:USERPROFILE\.ai-platform\state\active-agent.json"
+    $certificate = $null
+    if (Test-Path $certPath) {
+        try { $certificate = Get-Content $certPath -Raw | ConvertFrom-Json } catch { $certificate = $null }
     }
-    $data = Get-Content $file -Raw | ConvertFrom-Json
-    $targetModel = if ($Model) { $Model } else { $data.model }
-
-    try {
-        $installed = & ollama list 2>$null
-    } catch {
-        Write-Host "Cannot run 'ollama list' — is Ollama installed and on PATH?" -ForegroundColor Red
-        return
-    }
-    if (-not ($installed -match [regex]::Escape($targetModel))) {
-        Write-Host "Model '$targetModel' not found in 'ollama list'." -ForegroundColor Red
-        Write-Host "Available models:" -ForegroundColor Gray
-        $installed | Select-Object -Skip 1 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+    $compatible = if ($certificate -and $certificate.harness) { @([string]$certificate.harness) } else { @('pi-worker') }
+    $validity = Resolve-AirlockCertificateValidity -Certificate $certificate -Now ([DateTime]::UtcNow) -CompatibleHarnesses $compatible
+    if (-not $validity.Valid) {
+        Write-Host "No valid coding certificate ($($validity.Reason)). Run ai-agent-start first." -ForegroundColor Red
+        Write-Host "  $($validity.Detail)" -ForegroundColor Yellow
         return
     }
 
-    # $data.endpoint may be the raw Ollama endpoint, or — if ai-memory-on is active — the
-    # memory-service RAG proxy, which only implements /health, /v1/chat/completions, and
-    # /v1/memory/*, not /v1/models. Probe whichever route the target actually has.
-    $memPortFile = "$env:USERPROFILE\.ai-platform\.memory-port.json"
-    $isMemoryProxy = $false
-    if (Test-Path $memPortFile) {
-        $memPort = (Get-Content $memPortFile -Raw | ConvertFrom-Json).port
-        $isMemoryProxy = ([uri]$data.endpoint).Port -eq $memPort
+    $targetModel = if ($Model) { $Model } else { $certificate.model }
+    $endpoint = $certificate.transport.endpoint
+    if (-not $endpoint) {
+        Write-Host "Certificate is missing transport.endpoint. Run ai-agent-start again." -ForegroundColor Red
+        return
     }
-    $probeUrl = if ($isMemoryProxy) { ($data.endpoint -replace '/v1/?$', '') + "/health" } else { $data.endpoint.TrimEnd('/') + "/models" }
+
     try {
         $c = [System.Net.Http.HttpClient]::new()
         $c.Timeout = [TimeSpan]::FromSeconds(5)
-        $ok = $c.GetAsync($probeUrl).Result.IsSuccessStatusCode
+        $ok = $c.GetAsync($endpoint.TrimEnd('/') + "/models").Result.IsSuccessStatusCode
     } catch { $ok = $false }
     if (-not $ok) {
-        Write-Host "Endpoint $($data.endpoint) is not responding. Run ai-start or ai-health first." -ForegroundColor Red
+        Write-Host "Certified endpoint $endpoint is not responding. Run ai-agent-start." -ForegroundColor Red
         return
     }
 
-    # --openai-api-base is not enough on its own: LiteLLM (what aider uses under the hood)
-    # silently prefers OPENAI_API_BASE/OPENAI_BASE_URL env vars over CLI flags whenever
-    # they're already set to something else - documented the hard way in this repo's own
-    # docs/08-Agent-CLI-Setup-Guide.md. Force them to match so the flag can't lose.
-    $env:OPENAI_API_BASE = $data.endpoint
-    $env:OPENAI_BASE_URL = $data.endpoint
+    $env:OPENAI_API_BASE = $endpoint
+    $env:OPENAI_BASE_URL = $endpoint
     $env:OPENAI_API_KEY  = "ollama"
 
-    Write-Host "Launching aider — model: $targetModel  endpoint: $($data.endpoint)" -ForegroundColor Green
-    aider --model "openai/$targetModel" --openai-api-base $data.endpoint --openai-api-key "ollama"
+    Write-Host "Launching aider — model: $targetModel  endpoint: $endpoint (from active-agent.json)" -ForegroundColor Green
+    aider --model "openai/$targetModel" --openai-api-base $endpoint --openai-api-key "ollama"
 }
 
 # Convenience wrappers to start/stop the Hermes container (cloud-enabled assistant).

@@ -2,6 +2,17 @@
 
 All notable changes to Airlock are recorded here, newest first. This file exists so anyone updating the platform can see what changed and why, in plain language — not just a commit list.
 
+## AIR-016: `ai-agent-start` is the coding door — 2026-09-04
+
+The Unsloth + llama-server + Pi 3/3 is now a command, not a scratchpad ritual. This is **not** a new GPU 3/3.
+
+- `ai-agent-start` defaults to `llamacpp-qwen38-ud-q3-k-xl` + `pi-worker`. `ai-start` is still chat (Ollama-by-VRAM).
+- `huggingface-gguf` acquire for llama-server only (mapper, skip on 13,146,393,504 bytes, mismatch forces a live contract). Does not `ollama create`.
+- `Start-AgentSession` starts `llama-server` when there is no healthy snapshot. Health timeout default is 300s. VRAM floor 14 GiB before start.
+- Certificate is still the verdict. Ollama profiles do not get a coding certificate without a live pass this run.
+- `ai-code` and the Pi worker refuse without an unexpired `active-agent.json`. `ai-switch` invalidates it. Pi's `models.json` lists the Unsloth id.
+- Unit-tested by `scripts/Test-AgentStart.ps1`. No GPU in CI.
+
 ## Landed on main: ADR-014 / 015 / 016 — 2026-09-04
 
 Merged the portable agent contract and the proven Unsloth path.

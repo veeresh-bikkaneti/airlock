@@ -1,7 +1,7 @@
 # ADR-016: `ai-agent-start` is the coding door; Unsloth GGUF + llama-server is how it boots
 
 ## Status
-Proposed for implementation on `feature/adr-016-ai-agent-start`.
+Implemented on `feature/adr-016-ai-agent-start`.
 Depends on AIR-015 ([#41](https://github.com/veeresh-bikkaneti/airlock/pull/41)): Pi wiring, earned `candidateOnly: false`, schema that accepts that boolean.
 
 Does not rewrite AIR-014 contract files (`AGENTS.md`, `CLAUDE.md`, README tool-calling copy) except to replace "passing path is on another branch" with this profile once both PRs exist.

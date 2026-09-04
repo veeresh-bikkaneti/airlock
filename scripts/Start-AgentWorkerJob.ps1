@@ -105,6 +105,19 @@ if (-not $evidenceEntry.FromCache -or $evidenceEntry.Entry.verdict -ne 'pass') {
 }
 Write-JobAuditLog -Action "EvidenceKeyCheck" -Result "SUCCESS" -Message "profileEvidenceKey matches a fresh passing capability verdict"
 
+$CertificatePath = Join-Path $PlatformDir "state" "active-agent.json"
+$certificate = $null
+if (Test-Path $CertificatePath) {
+    try { $certificate = Get-Content $CertificatePath -Raw | ConvertFrom-Json } catch { $certificate = $null }
+}
+$certValidity = Resolve-AirlockCertificateValidity -Certificate $certificate -Now ([DateTime]::UtcNow) -CompatibleHarnesses @('pi-worker')
+if (-not $certValidity.Valid) {
+    Write-JobAuditLog -Action "CertificateCheck" -Result "FAILED" -Message "no valid Pi-compatible agent certificate" -Detail $certValidity.Detail
+    Write-Host "FAILED: no valid Pi-compatible agent certificate ($($certValidity.Reason)). Run ai-agent-start. $($certValidity.Detail)" -ForegroundColor Red
+    exit 1
+}
+Write-JobAuditLog -Action "CertificateCheck" -Result "SUCCESS" -Message "active-agent.json is valid for pi-worker"
+
 $networkPolicy = Resolve-AirlockNetworkPolicy -Network $manifest.network
 $mergePolicy = Resolve-AirlockJobOutputPolicy -AllowMerge ([bool]$manifest.output.allowMerge) -AllowPush ([bool]$manifest.output.allowPush) -Action 'Merge'
 $pushPolicy = Resolve-AirlockJobOutputPolicy -AllowMerge ([bool]$manifest.output.allowMerge) -AllowPush ([bool]$manifest.output.allowPush) -Action 'Push'

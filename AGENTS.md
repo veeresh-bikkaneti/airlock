@@ -63,7 +63,7 @@ Airlock is a hardened **single-instance local AI platform for Windows**.
 `llamacpp-qwen38-ud-q3-k-xl` (Unsloth Qwen3.8-27B UD-Q3_K_XL) via llama-server + Pi harness: **3/3 real tool events** (ADR-013 / AIR-015). Profile is in `config/agent-profiles.json` with `candidateOnly: false`. That flag is **not** a certificate.
 
 - `ai-start` still selects Ollama by VRAM. Chat, not coding.
-- `ai-agent-start` is specified (ADR-016) and **not implemented yet**. Do not pretend there is a one-command coding door.
+- `ai-agent-start` is the coding door (ADR-016): default profile `llamacpp-qwen38-ud-q3-k-xl`, harness `pi-worker`. It starts llama-server, acquires the GGUF, runs the Pi contract, and publishes `active-agent.json` only on pass. `candidateOnly: false` is still **not** a certificate.
 - Do not re-verify this profile on Ollama.
 
 ## Model flags are not verdicts
@@ -71,7 +71,7 @@ Airlock is a hardened **single-instance local AI platform for Windows**.
 - `supportsFunctionCalling` in `config/models.json` is a **seed**, not a verdict.
 - Ollama's "Tools" badge is editorial.
 - `ai-start` selects by VRAM / install, not agent eligibility (**AGENT-001** open).
-- `ai-agent-start` / `ai-opencode` do not exist yet (**AGENT-002** open).
+- `ai-agent-start` exists (**AGENT-002** / ADR-016). `ai-opencode` is still not a verified gate (AIR-017).
 
 ## Orchestration
 

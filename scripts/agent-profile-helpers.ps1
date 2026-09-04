@@ -131,3 +131,38 @@ function Resolve-AirlockNextTransport {
     }
     return [pscustomobject]@{ Transport = $null; Done = $true; Verdict = 'Fail'; PassedTransport = $null; Reason = "Every candidate in profile order was tried and none passed." }
 }
+
+# AIR-016 D9: cheap VRAM gate before llama-server start. Full residency
+# measurement stays FIT-ADAPTERS-001. $FreeVramGiB is $null when nvidia-smi
+# is missing (Get-AirlockFreeVramGiB); that is not the same as 0.
+function Resolve-AirlockVramStartGate {
+    param(
+        [AllowNull()]$FreeVramGiB,
+        [Parameter(Mandatory)][double]$MinimumFreeVramGiB,
+        [bool]$RequiresGpuLayersAll = $false
+    )
+    if ($null -eq $FreeVramGiB) {
+        if ($RequiresGpuLayersAll) {
+            return [pscustomobject]@{ Allowed = $false; Reason = "nvidia-smi is missing or unparsable; this profile requires GPU layers all. Refusing to start." }
+        }
+        return [pscustomobject]@{ Allowed = $false; Reason = "cannot measure free VRAM (nvidia-smi unavailable). Refusing to start." }
+    }
+    $free = [double]$FreeVramGiB
+    if ($free -lt $MinimumFreeVramGiB) {
+        return [pscustomobject]@{ Allowed = $false; Reason = "free VRAM $([math]::Round($free, 2)) GiB is below the profile floor of $MinimumFreeVramGiB GiB." }
+    }
+    return [pscustomobject]@{ Allowed = $true; Reason = "VRAM gate passed ($([math]::Round($free, 2)) GiB free >= $MinimumFreeVramGiB GiB)." }
+}
+
+# AIR-016 D7: Ollama coding certificates require a live pass in THIS run.
+# A cached capability hit or candidateOnly flag is not enough.
+function Resolve-AirlockOllamaCodingCertificate {
+    param([Parameter(Mandatory)][bool]$LiveContractPassedThisRun)
+    if ($LiveContractPassedThisRun) {
+        return [pscustomobject]@{ Allow = $true; Reason = "A live capability contract passed in this run." }
+    }
+    return [pscustomobject]@{
+        Allow  = $false
+        Reason = "Ollama has no passing agentic verdict on this hardware (qwen2.5-coder:7b, qwen3-coder:30b 0/6, devstral-small-2:24b). Use ai-start for chat, ai-agent-start for coding. A cached pass is not a certificate."
+    }
+}

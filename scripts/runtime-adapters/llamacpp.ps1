@@ -143,7 +143,7 @@ function Start-LlamaCppRuntime {
         [int]$Port = 0,
         [string]$BinaryPath = 'llama-server',
         [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
-        [int]$HealthTimeoutSec = 30
+        [int]$HealthTimeoutSec = 300
     )
     $LogDir = Join-Path $PlatformDir "logs"
     $StateDir = Join-Path $PlatformDir "state"

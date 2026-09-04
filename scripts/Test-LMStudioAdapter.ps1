@@ -104,7 +104,14 @@ try {
     # (same technique as Test-ToolProxyLifecycle.ps1's New-DummyProcess) so
     # the actual Stop-Process/Remove-Item branch is exercised, not just its
     # refusal branches.
-    $dummy = Start-Process -FilePath "powershell" -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 120") -PassThru -WindowStyle Hidden
+    $dummyExe = if (Get-Command powershell -ErrorAction SilentlyContinue) { 'powershell' } else { 'pwsh' }
+    $dummyParams = @{
+        FilePath     = $dummyExe
+        ArgumentList = @("-NoProfile", "-Command", "Start-Sleep -Seconds 120")
+        PassThru     = $true
+    }
+    if ($IsWindows) { $dummyParams.WindowStyle = 'Hidden' }
+    $dummy = Start-Process @dummyParams
     Start-Sleep -Milliseconds 300
     try {
         $matchingOwnerRecord = [pscustomobject]@{
