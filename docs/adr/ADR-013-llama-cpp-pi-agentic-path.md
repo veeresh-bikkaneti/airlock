@@ -59,6 +59,7 @@ xLAM-7b via a translation proxy (`feature/adr-013-xlam-proxy-plan`) is a documen
 - The passing path still is not a one-command user door (`ai-agent-start` is AIR-016). A user who only runs `ai-start` still gets Ollama-by-VRAM.
 - llama-server still has no VRAM/residency fit adapter (FIT-ADAPTERS-001). A false-pass on a machine that cannot hold 13GB is possible. Disclosed, not silent.
 - Evidence is hardware-bound. A different GPU must re-run the contract; this merge does not generalize the 3/3.
+- ADR-012's original schema rejected `candidateOnly: false`, which made this promoted profile unloadable (`Test-AirlockProfileSchema` + every `Start-AgentSession`). Schema now accepts both booleans: `true` = unproven, `false` = earned by a live contract. The flag is still not a certificate.
 
 ## Evidence this ADR binds to
 

@@ -29,13 +29,29 @@ Assert-True ($badSchema.MissingFields -contains 'minimumFreeVramGiB') "the speci
 
 $notCandidateOnly = $catalogue[0] | Select-Object *
 $notCandidateOnly.candidateOnly = $false
-$badVerdict = Test-AirlockProfileSchema -Profile $notCandidateOnly
-Assert-True (-not $badVerdict.Valid) "a profile claiming candidateOnly=false is rejected - the catalogue never contains a passing verdict"
+$earnedVerdict = Test-AirlockProfileSchema -Profile $notCandidateOnly
+Assert-True $earnedVerdict.Valid "candidateOnly=false is schema-valid - a live contract may promote a profile (ADR-013 D2)"
+
+$stillCandidate = $catalogue[0] | Select-Object *
+$stillCandidate.candidateOnly = $true
+$candidateVerdict = Test-AirlockProfileSchema -Profile $stillCandidate
+Assert-True $candidateVerdict.Valid "candidateOnly=true remains schema-valid for unproven profiles"
+
+$qwen = $catalogue | Where-Object { $_.profileId -eq 'llamacpp-qwen38-ud-q3-k-xl' } | Select-Object -First 1
+Assert-True ($null -ne $qwen) "Unsloth llama-server profile is in the catalogue"
+Assert-True ($qwen.candidateOnly -eq $false) "Unsloth profile is promoted (candidateOnly JSON false)"
+Assert-True (Test-AirlockProfileSchema -Profile $qwen).Valid "promoted Unsloth profile still passes schema"
+
+$gemma = $catalogue | Where-Object { $_.profileId -eq 'ollama-gemma4-12b' } | Select-Object -First 1
+Assert-True $gemma.candidateOnly "ollama-gemma4-12b stays candidate-only"
 
 # --- Resolve-AirlockProfileSelection: explicit-selection rule ---
 
 $sel1 = Resolve-AirlockProfileSelection -AvailableProfiles $catalogue -InstalledProfileIds @('ollama-gemma4-12b')
 Assert-True ($null -eq $sel1.Selected) "an installed-but-unrequested profile is never auto-selected"
+
+$selPromoted = Resolve-AirlockProfileSelection -AvailableProfiles $catalogue -InstalledProfileIds @('llamacpp-qwen38-ud-q3-k-xl')
+Assert-True ($null -eq $selPromoted.Selected) "a promoted (candidateOnly=false) profile is still never auto-selected — explicit -Profile is required"
 
 $sel2 = Resolve-AirlockProfileSelection -RequestedProfileId 'ollama-gemma4-12b' -AvailableProfiles $catalogue
 Assert-True ($sel2.Selected.profileId -eq 'ollama-gemma4-12b') "an explicitly requested, catalogued profile is selected"

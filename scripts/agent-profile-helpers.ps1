@@ -18,17 +18,24 @@ function Get-AirlockProfileCatalogue {
     return $catalogue.profiles
 }
 
-# §5.1: "This is source-controlled policy. It contains candidates, not
-# passing verdicts." Validates shape only - a schema-valid profile is still
-# candidateOnly until a real contract passes (§7).
+# §5.1: "This is source-controlled policy." Validates shape only.
+# ADR-012 originally forbade candidateOnly=false so a human could not
+# declare a passing verdict by flipping a JSON flag. ADR-013 D2 then
+# earned false for llamacpp-qwen38-ud-q3-k-xl via a live 3/3 Pi contract.
+# Rejecting false made that proven profile fail schema, so every
+# Start-AgentSession (which validates the whole catalogue) exited 1 and
+# CI Test-AgentProfileHelpers.ps1 failed. Both JSON booleans are valid:
+# true = unproven candidate, false = a live contract earned promotion.
+# The flag is still not a certificate — Start-AgentSession publishes
+# active-agent.json only after a harness pass (AIR-016).
 function Test-AirlockProfileSchema {
     param([Parameter(Mandatory)]$Profile)
     $missing = @($RequiredProfileFields | Where-Object { -not ($Profile.PSObject.Properties.Name -contains $_) })
     if ($missing.Count -gt 0) {
         return [pscustomobject]@{ Valid = $false; MissingFields = $missing }
     }
-    if (-not $Profile.candidateOnly) {
-        return [pscustomobject]@{ Valid = $false; MissingFields = @(); Error = "candidateOnly must be true - a profile file entry is never itself a passing verdict." }
+    if ($Profile.candidateOnly -isnot [bool]) {
+        return [pscustomobject]@{ Valid = $false; MissingFields = @(); Error = "candidateOnly must be a JSON boolean (true=unproven, false=earned by a live contract)." }
     }
     return [pscustomobject]@{ Valid = $true; MissingFields = @() }
 }
