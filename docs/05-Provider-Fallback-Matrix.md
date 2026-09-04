@@ -52,7 +52,7 @@ This governs how a *model* is discovered/acquired, distinct from the provider fa
 
 ## Agentic coding (tool loops)
 
-Ollama and vLLM are fine for chat/completion. They have **no passing agentic verdict** (real bash/read/write multi-turn loops) on the evidence bound by ADR-014. A Tools badge or `supportsFunctionCalling: true` is not that verdict. Do not default an agentic harness at Ollama or vLLM on this branch. The one live 3/3 pass (Unsloth Qwen3.8-27B + llama-server + Pi) lives on `feature/adr-013-pi-harness-verification` and is not enabled here.
+Ollama and vLLM are fine for chat/completion. They have **no passing agentic verdict** (real bash/read/write multi-turn loops) on the evidence bound by ADR-014. A Tools badge or `supportsFunctionCalling: true` is not that verdict. Do not default an agentic harness at Ollama or vLLM. The live 3/3 pass (Unsloth Qwen3.8-27B + llama-server + Pi, `llamacpp-qwen38-ud-q3-k-xl`) is on `main` (ADR-013). `ai-agent-start` is ADR-016 and not implemented yet.
 
 ---
 

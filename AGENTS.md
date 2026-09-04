@@ -58,12 +58,13 @@ Airlock is a hardened **single-instance local AI platform for Windows**.
 - **vLLM** has zero live agentic verdict and is not marked local-limited yet (T087).
 - Do **not** default users who need bash/read/write loops to Ollama or vLLM.
 
-## Passing path (not on main / this branch)
+## Passing path (on `main`)
 
-`llamacpp-qwen38-ud-q3-k-xl` (Unsloth Qwen3.8-27B UD-Q3_K_XL) via llama-server + Pi harness: **3/3 real tool events**. Lives on `feature/adr-013-pi-harness-verification` (landing as AIR-015 on `feature/adr-015-pi-unsloth-agentic-path`).
+`llamacpp-qwen38-ud-q3-k-xl` (Unsloth Qwen3.8-27B UD-Q3_K_XL) via llama-server + Pi harness: **3/3 real tool events** (ADR-013 / AIR-015). Profile is in `config/agent-profiles.json` with `candidateOnly: false`. That flag is **not** a certificate.
 
-- Do not pretend it is enabled here.
-- Do not re-verify it on Ollama.
+- `ai-start` still selects Ollama by VRAM. Chat, not coding.
+- `ai-agent-start` is specified (ADR-016) and **not implemented yet**. Do not pretend there is a one-command coding door.
+- Do not re-verify this profile on Ollama.
 
 ## Model flags are not verdicts
 

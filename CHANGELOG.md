@@ -2,6 +2,17 @@
 
 All notable changes to Airlock are recorded here, newest first. This file exists so anyone updating the platform can see what changed and why, in plain language — not just a commit list.
 
+## Landed on main: ADR-014 / 015 / 016 — 2026-09-04
+
+Merged the portable agent contract and the proven Unsloth path.
+
+- **#40 / ADR-014** — `AGENTS.md` is the portable contract (Grok, Copilot, Gemini, Antigravity, Cursor, Codex, OpenCode). Thin adapters only. Known-failed Ollama ledger. README/08 no longer sell a Tools badge as the agentic fix.
+- **#41 / ADR-013+015** — `llamacpp-qwen38-ud-q3-k-xl` on `main` with `candidateOnly: false`, Pi AGENT-PI-01 quoting, hermes CMD/CRLF fixes, 3/3 live evidence. Schema accepts an earned `false`; the flag is not a certificate.
+- **#42 / ADR-016** — spec only: `ai-agent-start` is the coding door (GGUF acquire, auto `llama-server`, Pi contract). Not implemented yet.
+- **Not merged:** xLAM proxy (#39, dead end), `feature/adr-013-pi-harness-verification` (superseded by #41; its CLAUDE.md overlay was rejected), spec-kit constitution (Claude/Ruflo lock-in).
+
+`ai-start` is still Ollama-by-VRAM. Do not read that as coding-ready.
+
 ## ADR-014: agent operating contract — the repo tells the truth — 2026-09-04
 
 The files a coding agent reads first (`CLAUDE.md`, `AGENTS.md`) described a Ruflo/claude-flow swarm product (`npm run build && npm test`, Agent Booster, Darwin/Flywheel/MetaHarness). This repository is Airlock. User-facing tool-calling copy still sold the 2026-08-20 "pick a Tools-badged Ollama model; `qwen3-coder:30b` passed 3/3" line as the fix. That 3/3 was a single-call probe. Later live evidence (`docs/adr/evidence/AGENT-005-repair-loop-live-evidence.md`) is **0/6** on the repair-loop contract; `config/models.json` already called it "not solved."
