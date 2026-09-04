@@ -43,4 +43,13 @@ echo "Profile:   ${AIRLOCK_PROFILE_ID:-unknown}"
 echo "Model:     ${AIRLOCK_MODEL:-devstral-small-2:24b}"
 echo ""
 
+# A caller that passes its own command (e.g. the ADR-012 §7.3 capability
+# contract's `pi --provider ... --print ...` trial invocation) gets that
+# command run as-is - only a bare `docker run <image>` / `docker compose run`
+# with no trailing command (real interactive sessions via run-hermes.ps1)
+# falls back to this container's own default interactive invocation.
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 exec pi --provider ollama-local --model "${AIRLOCK_MODEL:-devstral-small-2:24b}"
