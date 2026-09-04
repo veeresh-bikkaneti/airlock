@@ -64,6 +64,7 @@ Airlock is a hardened **single-instance local AI platform for Windows**.
 
 - `ai-start` still selects Ollama by VRAM. Chat, not coding.
 - `ai-agent-start` is the coding door (ADR-016): default profile `llamacpp-qwen38-ud-q3-k-xl`, harness `pi-worker`. It starts llama-server, acquires the GGUF, runs the Pi contract, and publishes `active-agent.json` only on pass. `candidateOnly: false` is still **not** a certificate.
+- Unsloth Dynamic 3.0 ladder (ADR-018): on this 16 GB Ada card, **UD-Q3_K_XL is the coding quant**. `UD-Q4_K_XL` (17.6 GB) spills. A smaller step-down (`UD-IQ3_XXS`, `UD-Q2_K_XL`) is candidate-only and does not inherit the 3/3.
 - Do not re-verify this profile on Ollama.
 
 ## Model flags are not verdicts

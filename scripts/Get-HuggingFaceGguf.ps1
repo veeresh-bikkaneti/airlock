@@ -8,7 +8,91 @@
 $script:AirlockGgufEvidenceBytes = [long]13146393504
 
 $script:AirlockGgufFileMap = @{
-    'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL' = 'Qwen3.8-27B-UD-Q3_K_XL.gguf'
+    'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'  = 'Qwen3.8-27B-UD-Q3_K_XL.gguf'
+    'unsloth/Qwen3.8-27B-GGUF:UD-IQ3_XXS'  = 'Qwen3.8-27B-UD-IQ3_XXS.gguf'
+    'unsloth/Qwen3.8-27B-GGUF:UD-Q2_K_XL'  = 'Qwen3.8-27B-UD-Q2_K_XL.gguf'
+    'unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS'  = 'Qwen3.8-27B-UD-IQ2_XXS.gguf'
+    'unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL'  = 'Qwen3.8-27B-UD-Q4_K_XL.gguf'
+}
+
+# Unsloth Dynamic 3.0 ladder for Qwen3.8-27B. FileGb is the HF advertised
+# size. CodingDefault is the only row that may inherit the 3/3, and only
+# when the on-disk byte length matches AirlockGgufEvidenceBytes.
+# See docs/adr/ADR-018-unsloth-quantization-strategy.md.
+function Get-AirlockUnslothQuantLadder {
+    return @(
+        [pscustomobject]@{ Quant = 'UD-IQ2_XXS'; FileGb = 7.27; MinimumFreeVramGiB = 9;  CodingDefault = $false; Role = 'last-resort-12gb' }
+        [pscustomobject]@{ Quant = 'UD-Q2_K_XL'; FileGb = 9.83; MinimumFreeVramGiB = 11; CodingDefault = $false; Role = 'step-down' }
+        [pscustomobject]@{ Quant = 'UD-IQ3_XXS'; FileGb = 10.9; MinimumFreeVramGiB = 12; CodingDefault = $false; Role = 'step-down-kv' }
+        [pscustomobject]@{ Quant = 'UD-Q3_K_XL'; FileGb = 13.1; MinimumFreeVramGiB = 14; CodingDefault = $true;  Role = 'coding-default' }
+        [pscustomobject]@{ Quant = 'UD-IQ4_XS';  FileGb = 14.3; MinimumFreeVramGiB = 16; CodingDefault = $false; Role = 'spill-on-16gb' }
+        [pscustomobject]@{ Quant = 'UD-Q4_K_XL'; FileGb = 17.6; MinimumFreeVramGiB = 20; CodingDefault = $false; Role = '24gb-quality' }
+    )
+}
+
+function ConvertTo-AirlockUnslothModelRef {
+    param([Parameter(Mandatory)][string]$Quant)
+    return "unsloth/Qwen3.8-27B-GGUF:$Quant"
+}
+
+# Pure: pick a Unsloth Dynamic 3.0 quant for a measured GPU. Does not
+# change ai-agent-start's default profile. Step-downs never inherit 3/3.
+function Resolve-AirlockUnslothQuantStrategy {
+    param(
+        [AllowNull()]$GpuTotalGb,
+        [AllowNull()]$FreeVramGiB
+    )
+    if ($null -eq $GpuTotalGb -or $null -eq $FreeVramGiB) {
+        return [pscustomobject]@{
+            Action               = 'Refuse'
+            Quant                = $null
+            ModelRef             = $null
+            InheritEvidence      = $false
+            MinimumFreeVramGiB   = 14
+            Reason               = 'cannot measure GPU/VRAM. Refusing a Unsloth quant pick.'
+        }
+    }
+    $total = [double]$GpuTotalGb
+    $free = [double]$FreeVramGiB
+    $q3 = ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q3_K_XL'
+    if ($total -ge 16 -and $free -ge 14) {
+        return [pscustomobject]@{
+            Action               = 'UseDefault'
+            Quant                = 'UD-Q3_K_XL'
+            ModelRef             = $q3
+            InheritEvidence      = $true
+            MinimumFreeVramGiB   = 14
+            Reason               = "RTX-class ${total} GB, $free GiB free: coding default UD-Q3_K_XL (14 GiB floor, 3/3). Q4_K_XL is 17.6 GB and spills on 16 GB."
+        }
+    }
+    if ($free -ge 12) {
+        return [pscustomobject]@{
+            Action               = 'StepDown'
+            Quant                = 'UD-IQ3_XXS'
+            ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-IQ3_XXS')
+            InheritEvidence      = $false
+            MinimumFreeVramGiB   = 12
+            Reason               = "$free GiB free is below the Q3_K_XL 14 GiB floor. Step down to UD-IQ3_XXS (more KV). candidateOnly; live contract required."
+        }
+    }
+    if ($free -ge 11) {
+        return [pscustomobject]@{
+            Action               = 'StepDown'
+            Quant                = 'UD-Q2_K_XL'
+            ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q2_K_XL')
+            InheritEvidence      = $false
+            MinimumFreeVramGiB   = 11
+            Reason               = "$free GiB free: UD-Q2_K_XL step-down. Quality cost is real. candidateOnly; live contract required."
+        }
+    }
+    return [pscustomobject]@{
+        Action               = 'Refuse'
+        Quant                = $null
+        ModelRef             = $null
+        InheritEvidence      = $false
+        MinimumFreeVramGiB   = 14
+        Reason               = "$free GiB free is below the Unsloth coding floor. Do not load 1-bit. Use ai-start for chat."
+    }
 }
 
 function ConvertTo-AirlockGgufFileName {

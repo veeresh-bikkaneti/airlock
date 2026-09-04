@@ -1,10 +1,12 @@
 # ADR-016: `ai-agent-start` is the coding door; Unsloth GGUF + llama-server is how it boots
 
 ## Status
-Implemented on `feature/adr-016-ai-agent-start`.
-Depends on AIR-015 ([#41](https://github.com/veeresh-bikkaneti/airlock/pull/41)): Pi wiring, earned `candidateOnly: false`, schema that accepts that boolean.
+Accepted. Implemented on `main` via [#43](https://github.com/veeresh-bikkaneti/airlock/pull/43)
+(`feat(adr-016): implement ai-agent-start as the Unsloth coding door`).
+Depends on AIR-015 ([#41](https://github.com/veeresh-bikkaneti/airlock/pull/41)).
 
-Does not rewrite AIR-014 contract files (`AGENTS.md`, `CLAUDE.md`, README tool-calling copy) except to replace "passing path is on another branch" with this profile once both PRs exist.
+Unit tests pass. Live `ai-agent-start` on the author ThinkPad is still open
+([PENDING.md](PENDING.md)).
 
 ## Context
 
@@ -62,4 +64,7 @@ xLAM proxy stays a dead end (ADR-013 D5). opencode `--auto` ~282K skill dump is 
 
 ## Next
 
-Implement on `feature/adr-016-ai-agent-start` per `docs/superpowers/specs/2026-09-04-ai-agent-start-design.md`. After AIR-014 and AIR-015 merge, point `AGENTS.md` at this profile as present.
+See [PENDING.md](PENDING.md). Immediate leftover for this ADR: live
+`ai-agent-start` on the ThinkPad (13 GB load + Pi Docker). Quant
+step-downs are [ADR-018](ADR-018-unsloth-quantization-strategy.md) and
+do not change D2.
