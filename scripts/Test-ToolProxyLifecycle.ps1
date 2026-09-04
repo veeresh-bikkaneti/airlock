@@ -29,7 +29,14 @@ function New-DummyProcess {
     } else {
         "`$null = 'unrelated-process fake-proxy-under-test'; Start-Sleep -Seconds 120"
     }
-    $proc = Start-Process -FilePath "powershell" -ArgumentList @("-NoProfile", "-Command", $cmd) -PassThru -WindowStyle Hidden
+    $exe = if (Get-Command powershell -ErrorAction SilentlyContinue) { 'powershell' } else { 'pwsh' }
+    $startParams = @{
+        FilePath     = $exe
+        ArgumentList = @("-NoProfile", "-Command", $cmd)
+        PassThru     = $true
+    }
+    if ($IsWindows) { $startParams.WindowStyle = 'Hidden' }
+    $proc = Start-Process @startParams
     Start-Sleep -Milliseconds 300  # let Win32_Process see the command line
     return $proc
 }

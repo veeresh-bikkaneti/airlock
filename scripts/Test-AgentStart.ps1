@@ -115,6 +115,10 @@ if ($cmdVram) {
     Assert-True (-not $low.Allowed) "D9: free VRAM below 14 GiB refuses to start"
     $ok = Resolve-AirlockVramStartGate -FreeVramGiB 16 -MinimumFreeVramGiB 14 -RequiresGpuLayersAll $true
     Assert-True $ok.Allowed "D9: free VRAM at/above 14 GiB is allowed"
+    $thinkpadIdle = Resolve-AirlockVramStartGate -FreeVramGiB 15 -MinimumFreeVramGiB 14 -RequiresGpuLayersAll $true
+    Assert-True $thinkpadIdle.Allowed "D9: ThinkPad P16 Gen 2 idle ~15 GiB free on RTX 5000 Ada passes the 14 GiB Unsloth floor"
+    $thinkpadLoaded = Resolve-AirlockVramStartGate -FreeVramGiB ([double]2051 / 1024) -MinimumFreeVramGiB 14 -RequiresGpuLayersAll $true
+    Assert-True (-not $thinkpadLoaded.Allowed) "D9: same GPU with Unsloth resident (~2.0 GiB free, ADR-013) refuses a second start"
     $missing = Resolve-AirlockVramStartGate -FreeVramGiB $null -MinimumFreeVramGiB 14 -RequiresGpuLayersAll $true
     Assert-True (-not $missing.Allowed) "D9: nvidia-smi missing + GPU layers all refuses to start"
 }
