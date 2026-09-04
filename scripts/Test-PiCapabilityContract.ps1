@@ -34,6 +34,12 @@ $args2 = Get-PiContainerRunArgs -ModelRef "m2" -EndpointUrl "http://127.0.0.1:99
 Assert-True ($args2 -contains "OLLAMA_HOST=host.docker.internal:9999") "a different certificate endpoint port changes the derived OLLAMA_HOST, not a fixed/default port"
 Assert-True ($args2 -contains "hermes-container-hermes-agent") "ImageName defaults to the compose-built image name when not overridden"
 
+# --- ConvertTo-AirlockCmdLineArg: AGENT-PI-01 regression, a multi-word arg must survive as ONE argv entry ---
+
+Assert-True ((ConvertTo-AirlockCmdLineArg "Read seed.md. Create output.md.") -eq '"Read seed.md. Create output.md."') "a multi-word instruction is quoted as a single command-line argument, not left to be word-split"
+Assert-True ((ConvertTo-AirlockCmdLineArg "noSpaces") -eq "noSpaces") "an argument with no whitespace/quotes is left unquoted"
+Assert-True ((ConvertTo-AirlockCmdLineArg 'has "quotes"') -eq '"has \"quotes\""') "embedded double quotes are backslash-escaped before the wrapping quotes"
+
 # --- Resolve-AirlockPiTrialObservations: Linux-container path detection (not Windows drive letters) ---
 
 $clean = Resolve-AirlockPiTrialObservations -ExitCode 0 -Stdout "Reading /workspace/seed.md`nWriting /workspace/output.md`nDONE"
