@@ -14,6 +14,8 @@ This artifact bundle defines a **local-first** AI platform for Windows 11 with P
 - `08-Agent-CLI-Setup-Guide.md` — beginner-friendly, tested step-by-step setup for every agent CLI (Pi.dev, opencode, jcode, Codex, Claude Code, aider, Copilot CLI, Gemini CLI).
 - `COMPONENTS.md` — beginner-friendly component overview: what each file/folder does and why it exists.
 - [`tools/airlock-manual/index.html`](../tools/airlock-manual/index.html) — interactive, illustrated user manual: plain-English definitions, an animated architecture diagram, every command with a snippet and a real use case, and a deep dive into the memory service's RAG pipeline (decision-flow diagrams, a swimlane, and an ER diagram). Open the file directly in a browser — no build step, no server.
+- [`adr/PENDING.md`](adr/PENDING.md) — leftover work after AIR-014/015/016 on `main` (live ThinkPad run, AGENT-001, AIR-017).
+- [`adr/ADR-018-unsloth-quantization-strategy.md`](adr/ADR-018-unsloth-quantization-strategy.md) — Unsloth Dynamic 3.0 quant ladder vs the 16 GB Ada card.
 
 ## Design Principles
 1. Local AI first; cloud only by explicit opt-in.

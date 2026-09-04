@@ -2,6 +2,13 @@
 
 All notable changes to Airlock are recorded here, newest first. This file exists so anyone updating the platform can see what changed and why, in plain language — not just a commit list.
 
+## AIR-018: Unsloth quant ladder + pending-work index — 2026-09-04
+
+- `ai-agent-start` implementation is on `main` ([#43](https://github.com/veeresh-bikkaneti/airlock/pull/43)).
+- [ADR-018](docs/adr/ADR-018-unsloth-quantization-strategy.md): Unsloth Dynamic 3.0 strategy for this 16 GB Ada card. Coding default stays `UD-Q3_K_XL`. `UD-Q4_K_XL` (17.6 GB) spills here and does not inherit the 3/3. Step-down `UD-IQ3_XXS` / `UD-Q2_K_XL` are candidate-only.
+- `Resolve-AirlockUnslothQuantStrategy` in `scripts/Get-HuggingFaceGguf.ps1` is pure; tested in `Test-AgentStart.ps1`. Does not change `ai-agent-start`'s default profile.
+- [PENDING.md](docs/adr/PENDING.md) is the leftover list (live ThinkPad run, AGENT-001, AIR-017, FIT-ADAPTERS-001). spec-kit and xLAM stay unmerged.
+
 ## AIR-016: `ai-agent-start` is the coding door — 2026-09-04
 
 The Unsloth + llama-server + Pi 3/3 is now a command, not a scratchpad ritual. This is **not** a new GPU 3/3.
@@ -19,7 +26,8 @@ Merged the portable agent contract and the proven Unsloth path.
 
 - **#40 / ADR-014** — `AGENTS.md` is the portable contract (Grok, Copilot, Gemini, Antigravity, Cursor, Codex, OpenCode). Thin adapters only. Known-failed Ollama ledger. README/08 no longer sell a Tools badge as the agentic fix.
 - **#41 / ADR-013+015** — `llamacpp-qwen38-ud-q3-k-xl` on `main` with `candidateOnly: false`, Pi AGENT-PI-01 quoting, hermes CMD/CRLF fixes, 3/3 live evidence. Schema accepts an earned `false`; the flag is not a certificate.
-- **#42 / ADR-016** — spec only: `ai-agent-start` is the coding door (GGUF acquire, auto `llama-server`, Pi contract). Not implemented yet.
+- **#42 / ADR-016** — spec: `ai-agent-start` is the coding door.
+- **#43 / ADR-016** — implementation: GGUF acquire, llama-server start, cert on live pass.
 - **Not merged:** xLAM proxy (#39, dead end), `feature/adr-013-pi-harness-verification` (superseded by #41; its CLAUDE.md overlay was rejected), spec-kit constitution (Claude/Ruflo lock-in).
 
 `ai-start` is still Ollama-by-VRAM. Do not read that as coding-ready.

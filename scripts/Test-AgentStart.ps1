@@ -53,6 +53,39 @@ if (Test-Path $ggufHelper) {
 
     $download = Resolve-AirlockGgufAcquisition -DestExists $false -DestLength 0 -UserConfirmed $true
     Assert-True ($download.Action -eq 'Download') "dest missing with recorded yes -> Download"
+
+    $iq3 = ConvertTo-AirlockGgufFileName -ModelRef 'unsloth/Qwen3.8-27B-GGUF:UD-IQ3_XXS'
+    Assert-True ($iq3 -eq 'Qwen3.8-27B-UD-IQ3_XXS.gguf') "ADR-018: mapper UD-IQ3_XXS -> Qwen3.8-27B-UD-IQ3_XXS.gguf"
+    $q4 = ConvertTo-AirlockGgufFileName -ModelRef 'unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL'
+    Assert-True ($q4 -eq 'Qwen3.8-27B-UD-Q4_K_XL.gguf') "ADR-018: mapper UD-Q4_K_XL -> Qwen3.8-27B-UD-Q4_K_XL.gguf"
+
+    $ladder = Get-AirlockUnslothQuantLadder
+    $q3row = $ladder | Where-Object { $_.Quant -eq 'UD-Q3_K_XL' } | Select-Object -First 1
+    Assert-True ($q3row.CodingDefault -eq $true) "ADR-018: UD-Q3_K_XL is the only coding-default row"
+    $defaults = @($ladder | Where-Object { $_.CodingDefault })
+    Assert-True ($defaults.Count -eq 1) "ADR-018: exactly one coding-default quant"
+
+    $adaIdle = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 15
+    Assert-True ($adaIdle.Action -eq 'UseDefault') "ADR-018: ThinkPad idle 15 GiB -> UseDefault"
+    Assert-True ($adaIdle.Quant -eq 'UD-Q3_K_XL') "ADR-018: ThinkPad idle stays UD-Q3_K_XL"
+    Assert-True ($adaIdle.InheritEvidence -eq $true) "ADR-018: Q3_K_XL may inherit the 3/3"
+
+    $adaTight = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 13
+    Assert-True ($adaTight.Action -eq 'StepDown') "ADR-018: 13 GiB free steps down"
+    Assert-True ($adaTight.Quant -eq 'UD-IQ3_XXS') "ADR-018: 13 GiB free -> UD-IQ3_XXS"
+    Assert-True ($adaTight.InheritEvidence -eq $false) "ADR-018: step-down never inherits the 3/3"
+
+    $ada2bit = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 11.2
+    Assert-True ($ada2bit.Quant -eq 'UD-Q2_K_XL') "ADR-018: ~11 GiB free -> UD-Q2_K_XL"
+
+    $adaLow = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 8
+    Assert-True ($adaLow.Action -eq 'Refuse') "ADR-018: 8 GiB free refuses (no 1-bit coding path)"
+
+    $card24 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 24 -FreeVramGiB 22
+    Assert-True ($card24.Quant -eq 'UD-Q3_K_XL') "ADR-018: 24 GB card still defaults to proven Q3_K_XL, not unverified Q4"
+
+    $missing = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null
+    Assert-True ($missing.Action -eq 'Refuse') "ADR-018: missing nvidia-smi refuses a quant pick"
 } else {
     Assert-True $false "T2: ConvertTo-AirlockGgufFileName unavailable"
     Assert-True $false "T3: skip-download branch unavailable"

@@ -1,8 +1,10 @@
 # ADR-014: Agent operating contract — the repo tells the truth about local agentic coding
 
 ## Status
-Accepted for implementation on `feature/adr-014-agent-operating-contract`.
-Implements the AIR-014 slice of the 2026-09-04 program (014 operating contract → 015 Pi/Unsloth path → 016 coding-ready entry points → 017 harness debt). This ADR does not implement 015–017.
+Accepted. Landed on `main` via [#40](https://github.com/veeresh-bikkaneti/airlock/pull/40).
+AIR-015 and AIR-016 have also landed ([#41](https://github.com/veeresh-bikkaneti/airlock/pull/41),
+[#43](https://github.com/veeresh-bikkaneti/airlock/pull/43)). Remaining program work is
+[PENDING.md](PENDING.md) (AGENT-001, AIR-017, live `ai-agent-start`).
 
 ## Context
 

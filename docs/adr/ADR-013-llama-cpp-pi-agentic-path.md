@@ -1,9 +1,9 @@
 # ADR-013: llama.cpp + Pi is the agentic path; Ollama is not a verified agentic runtime
 
 ## Status
-Accepted for implementation on `feature/adr-015-pi-unsloth-agentic-path`.
-Lands the live-verified AIR-015 slice. Does not rewrite `CLAUDE.md` (AIR-014 owns that file).
-Does not add `ai-agent-start` (AIR-016). Does not mark vLLM `local-limited` in scripts (AIR-017 / T087).
+Accepted. Landed on `main` via [#41](https://github.com/veeresh-bikkaneti/airlock/pull/41).
+`ai-agent-start` is AIR-016 ([#43](https://github.com/veeresh-bikkaneti/airlock/pull/43)).
+vLLM `local-limited` remains AIR-017 / T087.
 
 ## Context
 
@@ -70,4 +70,6 @@ xLAM-7b via a translation proxy (`feature/adr-013-xlam-proxy-plan`) is a documen
 
 ## Next
 
-AIR-016 makes `ai-agent-start` the only coding door and refuses to publish a certificate for Ollama profiles that have not passed the contract. After AIR-014 and AIR-015 are both merged, update `CLAUDE.md`'s "passing path not on this branch" sentence to name this profile as present.
+AIR-016 landed on `main` ([#43](https://github.com/veeresh-bikkaneti/airlock/pull/43)).
+Remaining: live `ai-agent-start` on the ThinkPad, AGENT-001, AIR-017 / T087.
+See [PENDING.md](PENDING.md). Quant ladder is [ADR-018](ADR-018-unsloth-quantization-strategy.md).
