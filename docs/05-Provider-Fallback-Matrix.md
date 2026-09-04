@@ -50,6 +50,10 @@ This governs how a *model* is discovered/acquired, distinct from the provider fa
 - Direct providers remain available when a broker is not desired.
 - Azure OpenAI is often enterprise-specific and should remain explicitly configured.
 
+## Agentic coding (tool loops)
+
+Ollama and vLLM are fine for chat/completion. They have **no passing agentic verdict** (real bash/read/write multi-turn loops) on the evidence bound by ADR-014. A Tools badge or `supportsFunctionCalling: true` is not that verdict. Do not default an agentic harness at Ollama or vLLM on this branch. The one live 3/3 pass (Unsloth Qwen3.8-27B + llama-server + Pi) lives on `feature/adr-013-pi-harness-verification` and is not enabled here.
+
 ---
 
 ## Local Backend Selection (Ollama vs vLLM)
