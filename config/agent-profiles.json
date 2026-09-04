@@ -22,9 +22,9 @@
       "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
       "initialContext": 8192,
       "minimumFreeVramGiB": 14,
-      "runtimeArgs": ["--jinja", "--flash-attn", "--n-gpu-layers", "all"],
+      "runtimeArgs": ["--jinja", "--flash-attn", "on", "--n-gpu-layers", "all", "--reasoning-effort", "low"],
       "toolSurface": "lean",
-      "candidateOnly": true
+      "candidateOnly": false
     }
   ]
 }
