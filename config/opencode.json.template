@@ -16,5 +16,5 @@
       }
     }
   },
-  "model": "ollama/devstral-small-2:24b"
+  "model": "ollama/qwen3-coder:30b"
 }
