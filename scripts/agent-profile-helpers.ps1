@@ -132,9 +132,27 @@ function Resolve-AirlockNextTransport {
     return [pscustomobject]@{ Transport = $null; Done = $true; Verdict = 'Fail'; PassedTransport = $null; Reason = "Every candidate in profile order was tried and none passed." }
 }
 
+# A healthy already-running llama-server instance serving the exact
+# requested GGUF needs no new process, so it must never be blocked by the
+# VRAM start-gate below (that gate only makes sense when something new is
+# about to start). Pure/mockable: takes already-resolved values instead of
+# touching the snapshot file or the port itself.
+function Resolve-AirlockLlamaCppNeedsStart {
+    param(
+        [AllowNull()][string]$SnapshotModelPath,
+        [Parameter(Mandatory)][string]$RequestedModelPath,
+        [Parameter(Mandatory)][bool]$PortReachable
+    )
+    return -not ($SnapshotModelPath -eq $RequestedModelPath -and $PortReachable)
+}
+
 # AIR-016 D9: cheap VRAM gate before llama-server start. Full residency
 # measurement stays FIT-ADAPTERS-001. $FreeVramGiB is $null when nvidia-smi
-# is missing (Get-AirlockFreeVramGiB); that is not the same as 0.
+# is missing (Get-AirlockFreeVramGiB); that is not the same as 0. Only ever
+# call this when Resolve-AirlockLlamaCppNeedsStart says a new process is
+# actually about to start - reusing an already-running instance needs zero
+# new VRAM, so gating on it exits genuinely healthy sessions (e.g. a cert
+# renewal after -PassTtlMinutes 5 expiry with the same model already loaded).
 function Resolve-AirlockVramStartGate {
     param(
         [AllowNull()]$FreeVramGiB,

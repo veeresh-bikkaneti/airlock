@@ -99,6 +99,34 @@ Assert-True ($t5.Done -and $t5.PassedTransport -eq 'ollama-openai-direct') "a di
 $t6 = Resolve-AirlockNextTransport -TransportCandidatesInOrder $order -AttemptedResults @{ 'ollama-native' = 'Fail'; 'ollama-openai-direct' = 'Fail'; 'ollama-openai-proxy' = 'Fail' }
 Assert-True ($t6.Done -and $t6.Verdict -eq 'Fail') "every candidate tried and failed -> overall Fail, nothing left to try"
 
+# --- Resolve-AirlockLlamaCppNeedsStart: reuse an already-running, healthy
+# instance instead of always starting a new one - and, by extension, never
+# subject that reuse path to the VRAM start-gate (regression for the bug
+# where the gate ran unconditionally before this reuse check in
+# Start-AgentSession.ps1: a cert renewal after -PassTtlMinutes 5 expiry, with
+# the same 27B model already resident, was refused for "free VRAM 2.29 GiB
+# below the 14 GiB floor" even though reuse needed zero new VRAM). ---
+
+$reuse = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath 'C:\models\qwen38.gguf' -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $true
+Assert-True (-not $reuse) "same model path + reachable port -> no start needed (reuse)"
+
+$diffModel = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath 'C:\models\other.gguf' -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $true
+Assert-True $diffModel "a different model path on the running instance -> start needed"
+
+$portDown = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath 'C:\models\qwen38.gguf' -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $false
+Assert-True $portDown "same model path but the port isn't reachable -> start needed"
+
+$noSnapshot = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath $null -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $false
+Assert-True $noSnapshot "no prior snapshot at all -> start needed"
+
+# The regression itself: reuse must be decidable, and thus satisfiable,
+# entirely without ever calling Resolve-AirlockVramStartGate. A caller that
+# checks $needStart first (as Start-AgentSession.ps1 now does) never reaches
+# the VRAM gate on this path, so a free-VRAM value far below any profile's
+# floor cannot block it.
+$needStartForRenewal = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath 'C:\models\qwen38.gguf' -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $true
+Assert-True (-not $needStartForRenewal) "cert-renewal-style reuse (same model, healthy port) needs no start, so the caller must skip the VRAM gate entirely"
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures agent-profile-helpers check(s) FAILED" -ForegroundColor Red
