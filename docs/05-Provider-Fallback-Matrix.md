@@ -52,7 +52,29 @@ This governs how a *model* is discovered/acquired, distinct from the provider fa
 
 ## Agentic coding (tool loops)
 
-Ollama and vLLM are fine for chat/completion. They have **no passing agentic verdict** (real bash/read/write multi-turn loops) on the evidence bound by ADR-014. A Tools badge or `supportsFunctionCalling: true` is not that verdict. Do not default an agentic harness at Ollama or vLLM. The live 3/3 pass (Unsloth Qwen3.8-27B + llama-server + Pi, `llamacpp-qwen38-ud-q3-k-xl`) is on `main` (ADR-013). `ai-agent-start` is the coding door (ADR-016).
+Ollama and vLLM are fine for chat/completion. Neither has a passing agentic verdict (real bash/read/write multi-turn loops) on the evidence bound by ADR-014, and the two gaps aren't the same size:
+
+- **Ollama** has been tried, repeatedly, and failed at the wire level. Every agentic-mode candidate served through it either narrates a tool call as plain text instead of emitting structured `tool_calls`, or clears an isolated single call and then falls apart in a real multi-turn/repair loop (`qwen3-coder:30b`: 3/3 solo, 0/6 agentic). See AGENTS.md's "Known-failed local tool-calling candidates" and `docs/adr/ADR-012-validated-local-agent-bootstrap.md`.
+- **vLLM** has no live verdict at all, not agentic, not even a basic chat trial, on this hardware. It's also not marked `local-limited` in the scripts that gate agent mode (`Get-BackendCapability.ps1`, `Start-VLLM.ps1`, `config/agent-profiles.json`); closing that is open item AIR-017 / T087 in `docs/adr/PENDING.md`.
+
+A `supportsFunctionCalling: true` flag in `config/models.json` or Ollama's "Tools" badge is not a verdict. It's a claim nobody here has checked. Do not default an agentic harness at either backend.
+
+The one path with a real pass: Unsloth Qwen3.8-27B (UD-Q3_K_XL) served through `llama-server`, driven by the Pi (pi.dev) harness, 3/3 real tool events, re-verified live on 2026-09-05 (`docs/adr/ADR-013-llama-cpp-pi-agentic-path.md`, `docs/adr/evidence/ADR-013-unsloth-pi-live-verification.md`). `ai-agent-start` is the coding door (ADR-016), not `ai-start`.
+
+### Why keep Ollama and vLLM around, then
+
+Failing the agentic bar means don't hand either backend a shell. It doesn't mean rip them out. Ollama is still the platform's actual default: `ai-start` boots it for every normal chat session, and it's the only backend that works out of the box on any Windows machine with no GPU or Docker required. Pulling it to close a coding-mode gap would break the base product over a problem that only shows up once you're asking it to run tools. vLLM was added on purpose as an opt-in throughput option for concurrent/batch inference (ADR-003); it was never pitched as a tool-calling backend, so an unverified agentic path isn't a regression, just ground nobody's covered yet.
+
+Net: both stay as chat/completion backends, agentic work keeps routing through the Pi harness path, and the gap stays written down instead of quietly assumed away.
+
+### Docker's actual footprint here
+
+Docker isn't a platform-wide dependency. Two things use it, both opt-in:
+
+1. **The vLLM backend itself.** Choosing `vllm` as `preferredLocalProvider` runs `docker run vllm/vllm-openai` as container `ai-platform-vllm` (`scripts/Start-VLLM.ps1`). Stay on Ollama and you never touch Docker for chat.
+2. **Pi harness capability trials.** `ai-agent-start`'s tool-calling verification runs inside a sandboxed container (`hermes-container-hermes-agent`, `scripts/Invoke-PiCapabilityContract.ps1`) so a live trial can't reach the host filesystem outside its mount.
+
+Nothing else in the repo shells out to `docker`.
 
 ---
 
