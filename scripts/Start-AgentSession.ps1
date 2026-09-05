@@ -154,15 +154,6 @@ try {
             $chatTemplateIdentity = $inspection.Template ?? "n/a"
         }
         'llama-server' {
-            $runtimeArgs = @($selectedProfile.runtimeArgs)
-            $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
-            $freeVramGiB = Get-AirlockFreeVramGiB
-            $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
-            if (-not $vramGate.Allowed) {
-                Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
-                exit 1
-            }
-
             $gguf = Get-AirlockHuggingFaceGguf -ModelRef $selectedProfile.modelRef -PlatformDir $PlatformDir -UserConfirmed:$DownloadConfirmed
             if (-not $gguf.Ready) {
                 Write-Host "FAILED: $($gguf.Reason)" -ForegroundColor Red
@@ -171,18 +162,32 @@ try {
             if ($gguf.ForceVerify) { $ForceVerify = $true }
 
             $baseUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $PlatformDir
-            $needStart = $true
+            $snapPath = $null
+            $portReachable = $false
             if ($baseUrl) {
                 $snapFile = Join-Path $PlatformDir "state" "llamacpp-instance.json"
-                $snapPath = $null
                 if (Test-Path $snapFile) {
                     try { $snapPath = (Get-Content $snapFile -Raw | ConvertFrom-Json).modelPath } catch { $snapPath = $null }
                 }
-                if ($snapPath -eq $gguf.Path -and (Test-LlamaCppPort -BaseUrl $baseUrl)) {
-                    $needStart = $false
-                }
+                $portReachable = Test-LlamaCppPort -BaseUrl $baseUrl
             }
+            $needStart = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath $snapPath -RequestedModelPath $gguf.Path -PortReachable $portReachable
+
+            # VRAM gate only matters when a new process is actually about to
+            # start - a healthy already-running instance serving this exact
+            # GGUF (the $needStart=$false case above) needs zero new VRAM, so
+            # it must never be blocked by the model already resident leaving
+            # little free (e.g. a cert renewal after -PassTtlMinutes 5 expiry).
             if ($needStart) {
+                $runtimeArgs = @($selectedProfile.runtimeArgs)
+                $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
+                $freeVramGiB = Get-AirlockFreeVramGiB
+                $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
+                if (-not $vramGate.Allowed) {
+                    Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
+                    exit 1
+                }
+
                 Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
                 $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context ([int]$selectedProfile.initialContext) `
                     -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir
