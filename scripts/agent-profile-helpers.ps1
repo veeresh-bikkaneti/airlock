@@ -143,7 +143,7 @@ function Resolve-AirlockLlamaCppNeedsStart {
         [Parameter(Mandatory)][string]$RequestedModelPath,
         [Parameter(Mandatory)][bool]$PortReachable
     )
-    -not ($SnapshotModelPath -eq $RequestedModelPath -and $PortReachable)
+    return -not ($SnapshotModelPath -eq $RequestedModelPath -and $PortReachable)
 }
 
 # AIR-016 D9: cheap VRAM gate before llama-server start. Full residency
