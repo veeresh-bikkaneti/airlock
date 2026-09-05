@@ -176,6 +176,16 @@ ollama pull deepseek-r1:14b
 | **Complex / Production** | qwen3-coder:30b | 18 GB | 24 GB | Slow ⚡⚡⚡ |
 | **Reasoning / Math** | deepseek-r1:14b | 9 GB | 16 GB | Medium ⚡⚡ |
 
+Sizes above are real; treat "recommended" as chat/connection sizing only. All
+three coding rows (`qwen2.5-coder:7b`, `devstral-small-2:24b`, `qwen3-coder:30b`)
+are on AGENTS.md's known-failed list for agentic tool-calling — they narrate
+tool intent as text or fail multi-turn loops (0/6 for `qwen3-coder:30b`; see
+`docs/adr/ADR-012-validated-local-agent-bootstrap.md` and
+`docs/adr/evidence/`). No Ollama-served model has a passing agentic verdict on
+this hardware. For real bash/read/write tool-calling, use `ai-agent-start`
+(ADR-016), not `ai-start` — its default profile is
+`llamacpp-qwen38-ud-q3-k-xl`, the one path with a live 3/3 pass.
+
 ### Model Registry
 
 Edit `config/models.json` to add custom models:
