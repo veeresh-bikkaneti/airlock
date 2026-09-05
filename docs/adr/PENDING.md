@@ -15,7 +15,7 @@ checkbox here as a certificate.
 
 ## Open (do next, in this order)
 
-1. **Live `ai-agent-start` on the author ThinkPad** (P16 Gen 2, RTX 5000 Ada 16GB). Unit tests passed. The 13 GB load + Pi Docker contract has not been run through the new door on hardware. That is the remaining AIR-016 acceptance gate.
+1. ~~**Live `ai-agent-start` on the author ThinkPad**~~ — **CLOSED 2026-09-05.** Ran `Start-AgentSession.ps1 -Profile llamacpp-qwen38-ud-q3-k-xl -Harness pi-worker -DownloadConfirmed -ForceVerify` on the bound hardware (LENOVO 21FA002BUS, RTX 5000 Ada 16376 MiB match confirmed). Exit 0, `SUCCESS: Contract passed - certificate atomically replaced`. Certificate fresh (10s old), GGUF byte-match (13,146,393,504 bytes), `transportReturnedValidToolEvents: true`, verdict pass — `-ForceVerify` bypassed cache, so this is a genuine live trial, not a replay. Verification-only run, no repo commits.
 2. **AGENT-001** — `ai-start` still ranks Ollama `models.json` by VRAM. Chat default on this GPU is `qwen2.5-coder:7b` (known-failed). Do not silently make it coding-ready. Tracked in [ADR-012](ADR-012-validated-local-agent-bootstrap.md).
 3. **FIT-ADAPTERS-001** — ADR-016 D9 is the cheap VRAM floor. Full llama-server residency (layers all vs CPU spill) is still unmeasured.
 4. **AIR-017 / T087** — opencode `--auto` ~282K skill dump; vLLM has zero live agentic verdict and is not marked `local-limited` in scripts. Not a gate for Unsloth + Pi.
