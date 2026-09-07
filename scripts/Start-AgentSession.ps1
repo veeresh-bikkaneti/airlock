@@ -154,6 +154,27 @@ try {
             $chatTemplateIdentity = $inspection.Template ?? "n/a"
         }
         'llama-server' {
+            # PENDING.md item 8: fail fast on hardware mismatch, before any
+            # multi-GB GGUF download, and say what (if anything) in the
+            # catalogue would actually fit this machine - instead of the
+            # generic VRAM-gate message that only fires deep in the flow
+            # after acquisition. Get-AirlockFreeVramGiB is the same portable
+            # nvidia-smi read the VRAM start gate uses - works on any
+            # machine with an NVIDIA GPU, returns $null (not 0) when none
+            # is found.
+            $catalogueForFit = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
+            $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB (Get-AirlockFreeVramGiB)
+            $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
+            if (-not $selfFit) {
+                $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
+                    ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
+                } else {
+                    "none in the catalogue fit this machine's detected VRAM"
+                }
+                Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
+                exit 1
+            }
+
             $gguf = Get-AirlockHuggingFaceGguf -ModelRef $selectedProfile.modelRef -PlatformDir $PlatformDir -UserConfirmed:$DownloadConfirmed
             if (-not $gguf.Ready) {
                 Write-Host "FAILED: $($gguf.Reason)" -ForegroundColor Red

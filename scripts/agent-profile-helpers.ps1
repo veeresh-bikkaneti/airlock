@@ -172,6 +172,50 @@ function Resolve-AirlockVramStartGate {
     return [pscustomobject]@{ Allowed = $true; Reason = "VRAM gate passed ($([math]::Round($free, 2)) GiB free >= $MinimumFreeVramGiB GiB)." }
 }
 
+# PENDING.md item 8: portable capability detection for the coding path. The
+# chat path (Get-ModelAcquisition.ps1's Test-ResourceAvailability) already
+# reads RAM+CPU+GPU on any machine; this deliberately reuses only the GPU
+# read (via the already-portable Get-AirlockFreeVramGiB, same nvidia-smi call
+# the VRAM start gate already uses) rather than importing the chat path's
+# heavier RAM/CPU detection - the live benchmark in
+# .ideas/ram-offload-feasibility.md (2026-09-07) proved system RAM cannot
+# substitute for VRAM on this runtime (partial GPU+CPU offload collapses
+# generation to 1-3 t/s), matching ADR-005's existing "GPU fit, not RAM fit,
+# determines usability" rationale for the chat path - so RAM was never a
+# missing input here, just an already-answered question.
+#
+# This is a fast pre-flight check, not a replacement for the VRAM start gate
+# (Resolve-AirlockVramStartGate) that still runs immediately before a real
+# process start - this only tells the caller, before any GGUF download,
+# whether the requested profile fits THIS machine and what would fit instead.
+function Resolve-AirlockPortableFitState {
+    param(
+        [Parameter(Mandatory)][object[]]$AvailableProfiles,
+        [AllowNull()]$FreeVramGiB
+    )
+    $eligible = @()
+    $ineligible = @()
+    foreach ($p in $AvailableProfiles) {
+        if ($p.runtime -ne 'llama-server') { continue }  # only the VRAM-gated coding runtime is in scope
+        $floor = [double]$p.minimumFreeVramGiB
+        if ($null -ne $FreeVramGiB -and [double]$FreeVramGiB -ge $floor) {
+            $eligible += [pscustomobject]@{ ProfileId = $p.profileId; FloorGiB = $floor }
+        } else {
+            $reason = if ($null -eq $FreeVramGiB) {
+                "no NVIDIA GPU detected (nvidia-smi unavailable or unparsable)"
+            } else {
+                "free VRAM $([math]::Round([double]$FreeVramGiB, 2)) GiB is below this profile's floor of $floor GiB"
+            }
+            $ineligible += [pscustomobject]@{ ProfileId = $p.profileId; FloorGiB = $floor; Reason = $reason }
+        }
+    }
+    return [pscustomobject]@{
+        EligibleProfiles   = $eligible
+        IneligibleProfiles = $ineligible
+        AnyEligible        = ($eligible.Count -gt 0)
+    }
+}
+
 # AIR-016 D7: Ollama coding certificates require a live pass in THIS run.
 # A cached capability hit or candidateOnly flag is not enough.
 function Resolve-AirlockOllamaCodingCertificate {

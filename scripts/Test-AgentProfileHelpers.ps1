@@ -127,6 +127,26 @@ Assert-True $noSnapshot "no prior snapshot at all -> start needed"
 $needStartForRenewal = Resolve-AirlockLlamaCppNeedsStart -SnapshotModelPath 'C:\models\qwen38.gguf' -RequestedModelPath 'C:\models\qwen38.gguf' -PortReachable $true
 Assert-True (-not $needStartForRenewal) "cert-renewal-style reuse (same model, healthy port) needs no start, so the caller must skip the VRAM gate entirely"
 
+# --- Resolve-AirlockPortableFitState (PENDING.md item 8) ---
+
+$fitCatalogue = @(
+    [pscustomobject]@{ profileId = 'ollama-gemma4-12b'; runtime = 'ollama'; minimumFreeVramGiB = 10 },
+    [pscustomobject]@{ profileId = 'llamacpp-qwen38-ud-q3-k-xl'; runtime = 'llama-server'; minimumFreeVramGiB = 14 }
+)
+
+$fitEnoughVram = Resolve-AirlockPortableFitState -AvailableProfiles $fitCatalogue -FreeVramGiB 15.5
+Assert-True ($fitEnoughVram.EligibleProfiles.ProfileId -contains 'llamacpp-qwen38-ud-q3-k-xl') "enough free VRAM -> the llama-server profile is eligible"
+Assert-True $fitEnoughVram.AnyEligible "AnyEligible is true when at least one profile fits"
+Assert-True (-not ($fitEnoughVram.IneligibleProfiles.ProfileId -contains 'ollama-gemma4-12b')) "non-llama-server (ollama) profiles are out of scope for this check entirely - never listed either way"
+
+$fitLowVramState = Resolve-AirlockPortableFitState -AvailableProfiles $fitCatalogue -FreeVramGiB 8.0
+Assert-True (-not $fitLowVramState.AnyEligible) "free VRAM below every llama-server profile's floor -> nothing eligible"
+Assert-True ($fitLowVramState.IneligibleProfiles[0].Reason -match "below this profile's floor") "the reason names the actual shortfall, not a generic failure"
+
+$fitNoGpu = Resolve-AirlockPortableFitState -AvailableProfiles $fitCatalogue -FreeVramGiB $null
+Assert-True (-not $fitNoGpu.AnyEligible) "no NVIDIA GPU detected (null free VRAM) -> nothing eligible"
+Assert-True ($fitNoGpu.IneligibleProfiles[0].Reason -match "no NVIDIA GPU detected") "the reason distinguishes 'no GPU' from 'GPU too small' - different remediation"
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures agent-profile-helpers check(s) FAILED" -ForegroundColor Red
