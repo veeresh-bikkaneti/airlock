@@ -22,6 +22,7 @@ checkbox here as a certificate.
 5. **ADR-018 follow-up** — `UD-Q4_K_XL` (17.6 GB) needs a 24 GB card and a new 3/3. Do not inherit the Q3_K_XL certificate. Helper exists; no coding profile yet.
 6. **Linux port Phase 1** — spec at `docs/superpowers/specs/2026-08-19-linux-port-design.md`. Unverified on Ubuntu.
 7. **HF import job death** — `docs/06-Model-Acquisition-Backlog.md` story 4c. Chat path only.
+8. **Portable capability detection for the coding path** — core requirement, not yet met. The chat path (`Get-ModelAcquisition.ps1`'s `Test-ResourceAvailability` / `Get-ModelSizingCeilingGB`) already reads RAM+CPU+GPU and sizes by whichever is present on *any* machine. The coding path (`ai-agent-start`) does not: `Resolve-AirlockProfileSelection` requires an explicit `-Profile` (by design, ADR-012 §7.1 — never auto-select), `minimumFreeVramGiB` is a fixed VRAM-only floor per profile, and the 3/3 Pi certificate is evidence bound to one machine (see "Hardware this evidence is bound to" below) — it does not re-verify or re-select on a different PC. Reuse the chat path's detection functions as the read step; a new machine still needs its own live Pi contract pass before any profile is trusted there. Related: item 3 (FIT-ADAPTERS-001), item 5 (quant ladder wiring), `docs/superpowers/specs/2026-08-19-linux-port-design.md`.
 
 ## Do not merge / do not retry
 
