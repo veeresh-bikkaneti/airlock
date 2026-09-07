@@ -216,6 +216,56 @@ function Resolve-AirlockPortableFitState {
     }
 }
 
+# PENDING.md item 9: memory routing for the coding path. I/O wrapper - is
+# memory-service running and healthy right now? Mirrors the read pattern
+# ai-memory-status (profile-helpers.ps1) already uses (.memory-port.json +
+# /health), kept minimal/focused here rather than dot-sourcing all of
+# profile-helpers.ps1 (which defines a large set of global: interactive-shell
+# functions) just for one health check. GetAwaiter().GetResult() (not
+# .Result) - see llamacpp.ps1's Test-LlamaCppPort comment for why: on this
+# host's PowerShell/.NET combo, .Result on a Faulted Task (this endpoint may
+# genuinely be down) silently returns $null instead of throwing.
+function Get-AirlockMemoryServiceHealth {
+    param([Parameter(Mandatory)][string]$PlatformDir)
+    $file = Join-Path $PlatformDir ".memory-port.json"
+    if (-not (Test-Path $file)) { return [pscustomobject]@{ Healthy = $false; Port = 0 } }
+    try {
+        $state = Get-Content $file -Raw | ConvertFrom-Json
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(5)
+        $healthy = $c.GetAsync("http://127.0.0.1:$($state.port)/health").GetAwaiter().GetResult().IsSuccessStatusCode
+        return [pscustomobject]@{ Healthy = $healthy; Port = [int]$state.port }
+    } catch {
+        return [pscustomobject]@{ Healthy = $false; Port = 0 }
+    }
+}
+
+# Pure decision: given whether memory-service is healthy and its port,
+# choose which base URL a coding session should actually use. The same
+# result feeds BOTH the live Pi capability trial and the published
+# certificate's transport.endpoint (same $baseUrl variable in
+# Start-AgentSession.ps1) - the certificate must reflect exactly the
+# endpoint that will actually be used, never test one and publish another
+# (matches this repo's evidence-must-match-reality pattern - GGUF byte-match,
+# capability evidence key, etc). Pure passthrough today, no RAG for
+# llama.cpp yet - see memory-service/app/main.py's /coding/v1/chat/completions
+# route. No trailing "/v1" here - every runtime's base URL in this codebase
+# gets "/v1" appended once, downstream, uniformly (Start-AgentSession.ps1's
+# $endpointUrl = "$endpointBase/v1"); matching that convention is what makes
+# Get-PiContainerRunArgs's path-preserving fix actually land on the real
+# FastAPI route instead of a mismatched one - found live, the hard way.
+function Resolve-AirlockCodingMemoryRoute {
+    param(
+        [Parameter(Mandatory)][string]$LlamaCppBaseUrl,
+        [Parameter(Mandatory)][bool]$MemoryServiceHealthy,
+        [int]$MemoryServicePort = 0
+    )
+    if ($MemoryServiceHealthy -and $MemoryServicePort -gt 0) {
+        return [pscustomobject]@{ BaseUrl = "http://127.0.0.1:$MemoryServicePort/coding"; Routed = $true }
+    }
+    return [pscustomobject]@{ BaseUrl = $LlamaCppBaseUrl; Routed = $false }
+}
+
 # AIR-016 D7: Ollama coding certificates require a live pass in THIS run.
 # A cached capability hit or candidateOnly flag is not enough.
 function Resolve-AirlockOllamaCodingCertificate {

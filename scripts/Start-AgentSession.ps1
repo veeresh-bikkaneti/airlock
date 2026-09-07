@@ -154,27 +154,6 @@ try {
             $chatTemplateIdentity = $inspection.Template ?? "n/a"
         }
         'llama-server' {
-            # PENDING.md item 8: fail fast on hardware mismatch, before any
-            # multi-GB GGUF download, and say what (if anything) in the
-            # catalogue would actually fit this machine - instead of the
-            # generic VRAM-gate message that only fires deep in the flow
-            # after acquisition. Get-AirlockFreeVramGiB is the same portable
-            # nvidia-smi read the VRAM start gate uses - works on any
-            # machine with an NVIDIA GPU, returns $null (not 0) when none
-            # is found.
-            $catalogueForFit = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
-            $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB (Get-AirlockFreeVramGiB)
-            $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
-            if (-not $selfFit) {
-                $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
-                    ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
-                } else {
-                    "none in the catalogue fit this machine's detected VRAM"
-                }
-                Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
-                exit 1
-            }
-
             $gguf = Get-AirlockHuggingFaceGguf -ModelRef $selectedProfile.modelRef -PlatformDir $PlatformDir -UserConfirmed:$DownloadConfirmed
             if (-not $gguf.Ready) {
                 Write-Host "FAILED: $($gguf.Reason)" -ForegroundColor Red
@@ -200,9 +179,34 @@ try {
             # it must never be blocked by the model already resident leaving
             # little free (e.g. a cert renewal after -PassTtlMinutes 5 expiry).
             if ($needStart) {
+                # PENDING.md item 8: fail fast on hardware mismatch before
+                # actually starting a process, and say what (if anything) in
+                # the catalogue would fit - instead of the generic VRAM-gate
+                # message below. Deliberately INSIDE $needStart, same as the
+                # VRAM gate right after it: measuring free VRAM only matters
+                # when a new process is actually about to start. Checking it
+                # unconditionally (found live, this session) false-fails a
+                # cert-renewal-style reuse, because the ALREADY-RUNNING
+                # instance being reused is itself the thing holding the VRAM
+                # that the check would otherwise call "not enough" - the same
+                # ordering bug PR #49 already fixed once for the VRAM gate
+                # itself, reintroduced here by a later, separate change.
+                $catalogueForFit = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
+                $freeVramGiB = Get-AirlockFreeVramGiB
+                $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
+                $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
+                if (-not $selfFit) {
+                    $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
+                        ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
+                    } else {
+                        "none in the catalogue fit this machine's detected VRAM"
+                    }
+                    Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
+                    exit 1
+                }
+
                 $runtimeArgs = @($selectedProfile.runtimeArgs)
                 $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
-                $freeVramGiB = Get-AirlockFreeVramGiB
                 $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
                 if (-not $vramGate.Allowed) {
                     Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
@@ -223,6 +227,27 @@ try {
                 Write-Host "FAILED: llama-server template verification failed: $($inspection.Reason)" -ForegroundColor Red
                 exit 1
             }
+
+            # PENDING.md item 9: route through memory-service when it's
+            # running, so the published certificate (and the live Pi trial
+            # that proves it) both reflect what a real coding session will
+            # actually use - swapped only now, after the direct-to-
+            # llama-server inspection above already ran (that check must hit
+            # llama-server's own /props directly, never through the proxy).
+            # Fully optional: if memory-service isn't running, $baseUrl is
+            # unchanged and behavior is identical to before this existed.
+            $memoryHealth = Get-AirlockMemoryServiceHealth -PlatformDir $PlatformDir
+            if ($memoryHealth.Healthy) {
+                $codingPortState = [pscustomobject]@{
+                    started = [DateTime]::UtcNow.ToString("o")
+                    port    = ([uri]$baseUrl).Port
+                    model   = $selectedProfile.modelRef
+                }
+                $codingPortState | ConvertTo-Json | Set-Content (Join-Path $PlatformDir ".active-port-coding.json") -Encoding utf8NoBOM
+            }
+            $memoryRoute = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl $baseUrl -MemoryServiceHealthy $memoryHealth.Healthy -MemoryServicePort $memoryHealth.Port
+            $baseUrl = $memoryRoute.BaseUrl
+
             $runtimeVersion = "unknown"
             $modelDigest = $inspection.TemplateIdentity
             $chatTemplateIdentity = $inspection.TemplateIdentity

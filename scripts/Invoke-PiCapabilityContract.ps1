@@ -27,13 +27,24 @@ function Get-PiContainerRunArgs {
         [Parameter(Mandatory)][string]$Instruction,
         [string]$ImageName = "hermes-container-hermes-agent"
     )
-    $port = ([uri]$EndpointUrl).Port
+    $uri = [uri]$EndpointUrl
+    $port = $uri.Port
+    # Was hardcoded "/v1" here regardless of $EndpointUrl's actual path -
+    # harmless as long as every caller's endpoint literally ended in "/v1"
+    # (always true, until memory-routing (PENDING.md item 9) needed a
+    # distinct /v1/coding sub-path). Silently dropping the path meant that
+    # routing decision never reached the container at all - found live, not
+    # by inspection, when a memory-routed request landed on the wrong
+    # endpoint. Now derived from the real path so it stays "/v1" for every
+    # existing direct caller and becomes "/v1/coding" only when routed.
+    $path = $uri.AbsolutePath.TrimEnd('/')
+    if (-not $path) { $path = '/v1' }
     return @(
         "run", "--rm",
         "-v", "${WorkspacePath}:/workspace",
         "-e", "OLLAMA_HOST=host.docker.internal:$port",
         "-e", "OPENAI_API_KEY=ollama",
-        "-e", "OPENAI_BASE_URL=http://host.docker.internal:$port/v1",
+        "-e", "OPENAI_BASE_URL=http://host.docker.internal:${port}${path}",
         "-e", "AIRLOCK_MODEL=$ModelRef",
         "--add-host", "host.docker.internal:host-gateway",
         $ImageName,
