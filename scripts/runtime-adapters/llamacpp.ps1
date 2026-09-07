@@ -92,10 +92,18 @@ function Get-AirlockFreeLoopbackPort {
 
 function Test-LlamaCppPort {
     param([Parameter(Mandatory)][string]$BaseUrl)
+    # GetAwaiter().GetResult() is used instead of .Result: on this host's
+    # PowerShell 7.6.5 / .NET 10 combination, .Result on a Faulted Task
+    # (e.g. connection refused) silently returns $null with no exception
+    # and no $Error entry, instead of throwing - so the catch below never
+    # fires and this function returns $null instead of $false, which then
+    # fails strict bool parameter binding on the caller's -PortReachable.
+    # GetAwaiter().GetResult() throws a catchable MethodInvocationException
+    # in that same faulted case.
     try {
         $c = [System.Net.Http.HttpClient]::new()
         $c.Timeout = [TimeSpan]::FromSeconds(5)
-        return $c.GetAsync("$BaseUrl/health").Result.IsSuccessStatusCode
+        return $c.GetAsync("$BaseUrl/health").GetAwaiter().GetResult().IsSuccessStatusCode
     } catch { return $false }
 }
 
