@@ -147,6 +147,19 @@ $fitNoGpu = Resolve-AirlockPortableFitState -AvailableProfiles $fitCatalogue -Fr
 Assert-True (-not $fitNoGpu.AnyEligible) "no NVIDIA GPU detected (null free VRAM) -> nothing eligible"
 Assert-True ($fitNoGpu.IneligibleProfiles[0].Reason -match "no NVIDIA GPU detected") "the reason distinguishes 'no GPU' from 'GPU too small' - different remediation"
 
+# --- Resolve-AirlockCodingMemoryRoute (PENDING.md item 9) ---
+
+$routeUnhealthy = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl 'http://127.0.0.1:63750' -MemoryServiceHealthy $false
+Assert-True (-not $routeUnhealthy.Routed) "memory-service not healthy -> not routed"
+Assert-True ($routeUnhealthy.BaseUrl -eq 'http://127.0.0.1:63750') "memory-service not healthy -> falls back to the direct llama.cpp base URL unchanged"
+
+$routeHealthyNoPort = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl 'http://127.0.0.1:63750' -MemoryServiceHealthy $true -MemoryServicePort 0
+Assert-True (-not $routeHealthyNoPort.Routed) "healthy flag alone without a real port is not enough to route - avoids building a URL on port 0"
+
+$routeHealthy = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl 'http://127.0.0.1:63750' -MemoryServiceHealthy $true -MemoryServicePort 8420
+Assert-True $routeHealthy.Routed "memory-service healthy with a real port -> routed"
+Assert-True ($routeHealthy.BaseUrl -eq 'http://127.0.0.1:8420/coding') "routed URL points at memory-service's dedicated /coding path (becomes /coding/v1/chat/completions downstream, matching this codebase's uniform +/v1 convention), not the shared /v1/chat/completions route"
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures agent-profile-helpers check(s) FAILED" -ForegroundColor Red

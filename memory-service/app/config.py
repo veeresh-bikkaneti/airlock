@@ -27,6 +27,14 @@ CHECKPOINT_DB = DATA_DIR / "checkpoints.sqlite"
 ACTIVE_PORT_FILE = PLATFORM_DIR / ".active-port.json"
 PROVIDER_POLICY_FILE = PLATFORM_DIR / "config" / "policies" / "provider-policy.json"
 
+# Deliberately separate from ACTIVE_PORT_FILE, not a shared/overwritten path:
+# ACTIVE_PORT_FILE is the chat path's (ai-start's) own state, read by
+# Stop-AI.ps1 to know what to stop. Coding sessions (ai-agent-start) run a
+# different backend (llama.cpp) on a dynamic port and must never overwrite
+# that file - a coding session could otherwise get the chat backend killed
+# by a chat-path stop, or vice versa. See docs/adr/PENDING.md item 9.
+ACTIVE_PORT_FILE_CODING = PLATFORM_DIR / ".active-port-coding.json"
+
 EMBED_MODEL = "nomic-embed-text"
 
 # ADR-007: repo-root config/memory-service.json declares retrieval governance

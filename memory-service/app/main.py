@@ -19,13 +19,22 @@ os.environ["LANGSMITH_TRACING_V2"] = "false"
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .audit import write_audit_log
 from .checkpointer import get_checkpointer
 from .graph import build_graph
 from .memory_store import MemoryStore
-from .proxy import DEFAULT_PROJECT_ID, DEFAULT_SESSION_ID, active_provider, call_backend_chat
+from .proxy import (
+    DEFAULT_PROJECT_ID,
+    DEFAULT_SESSION_ID,
+    active_provider,
+    call_backend_chat,
+    call_coding_backend_chat,
+    coding_backend_base_url,
+    stream_coding_backend_chat,
+)
 
 app = FastAPI(title="Airlock Memory Service")
 _store = MemoryStore()
@@ -166,3 +175,46 @@ async def chat_completions(request: Request):
     raw = holder["raw"]
     raw["airlockMemory"] = {"augmented": bool(final_state.get("augmented", False))}
     return raw
+
+
+@app.post("/coding/v1/chat/completions")
+async def coding_chat_completions(request: Request):
+    """Separate route (not a shared file/header on /v1/chat/completions) so
+    a coding session (ai-agent-start, llama.cpp) can never collide with or
+    be confused for a concurrent chat session (ai-start, Ollama/vLLM) - each
+    has its own state file and its own endpoint path.
+
+    Pure passthrough, no retrieve/persist: MemoryStore.remember()/recall()
+    embed on both write and read via Ollama's /api/embeddings, which
+    llama.cpp's OpenAI-compatible server doesn't serve. Wiring real
+    recall/remember for coding sessions needs its own embeddings-source
+    decision (e.g. keep a small Ollama instance alive just for embeddings)
+    - tracked as docs/adr/PENDING.md item 9, not attempted here. This route
+    still gives a coding session real value today: a stable, observable
+    endpoint that's ready to gain memory once that decision is made, without
+    the actual coding traffic ever touching the shared chat state.
+    """
+    body = await request.json()
+    messages = body.get("messages", [])
+    extra = {k: v for k, v in body.items() if k != "messages"}
+
+    if not coding_backend_base_url():
+        raise HTTPException(
+            status_code=503,
+            detail="No coding backend registered - ai-agent-start has not published a llama.cpp endpoint for this session.",
+        )
+
+    if body.get("stream"):
+        # Raw SSE passthrough - no airlockMemory annotation possible
+        # mid-stream (would require rewriting the final chunk, not worth it
+        # for a route that never augments anyway).
+        return StreamingResponse(
+            stream_coding_backend_chat(messages, extra), media_type="text/event-stream"
+        )
+
+    result = call_coding_backend_chat(messages, extra)
+    result["airlockMemory"] = {
+        "augmented": False,
+        "reason": "coding backend (llama.cpp) has no Ollama-compatible embeddings route yet - pure passthrough, no recall/remember. See docs/adr/PENDING.md item 9.",
+    }
+    return result

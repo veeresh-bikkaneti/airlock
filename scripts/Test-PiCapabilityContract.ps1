@@ -34,6 +34,18 @@ $args2 = Get-PiContainerRunArgs -ModelRef "m2" -EndpointUrl "http://127.0.0.1:99
 Assert-True ($args2 -contains "OLLAMA_HOST=host.docker.internal:9999") "a different certificate endpoint port changes the derived OLLAMA_HOST, not a fixed/default port"
 Assert-True ($args2 -contains "hermes-container-hermes-agent") "ImageName defaults to the compose-built image name when not overridden"
 
+# PENDING.md item 9 regression: OPENAI_BASE_URL used to hardcode "/v1"
+# regardless of $EndpointUrl's actual path, silently dropping anything else
+# (found live: a memory-routed /coding endpoint landed on the wrong route
+# because the path never reached the container). Every existing caller's
+# endpoint always literally ended in "/v1" so this went unnoticed until a
+# non-"/v1" path existed.
+$argsCoding = Get-PiContainerRunArgs -ModelRef "m3" -EndpointUrl "http://127.0.0.1:8420/coding/v1" -WorkspacePath "C:\ws3" -Instruction "x"
+Assert-True ($argsCoding -contains "OPENAI_BASE_URL=http://host.docker.internal:8420/coding/v1") "a non-default path (memory-service's /coding route) survives into OPENAI_BASE_URL instead of being silently dropped"
+
+$argsNoPath = Get-PiContainerRunArgs -ModelRef "m4" -EndpointUrl "http://127.0.0.1:7777" -WorkspacePath "C:\ws4" -Instruction "x"
+Assert-True ($argsNoPath -contains "OPENAI_BASE_URL=http://host.docker.internal:7777/v1") "an endpoint URL with no path at all still falls back to /v1, not an empty path"
+
 # --- ConvertTo-AirlockCmdLineArg: AGENT-PI-01 regression, a multi-word arg must survive as ONE argv entry ---
 
 Assert-True ((ConvertTo-AirlockCmdLineArg "Read seed.md. Create output.md.") -eq '"Read seed.md. Create output.md."') "a multi-word instruction is quoted as a single command-line argument, not left to be word-split"
