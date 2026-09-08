@@ -24,6 +24,8 @@ from pydantic import BaseModel
 
 from .audit import write_audit_log
 from .checkpointer import get_checkpointer
+from .config import CHROMA_DIR_CODING
+from .embeddings import LlamaCppEmbeddingFunction, embedding_backend_url
 from .graph import build_graph
 from .memory_store import MemoryStore
 from .proxy import (
@@ -38,6 +40,11 @@ from .proxy import (
 
 app = FastAPI(title="Airlock Memory Service")
 _store = MemoryStore()
+# PENDING item 9: separate store, separate embedding model, separate Chroma
+# dir from _store above - see CHROMA_DIR_CODING's docstring (config.py).
+_coding_store = MemoryStore(
+    embedding_function=LlamaCppEmbeddingFunction(), persist_dir=CHROMA_DIR_CODING
+)
 _checkpointer = get_checkpointer()
 _last_logged_provider: Optional[str] = None
 
@@ -100,6 +107,24 @@ def remember(req: RememberRequest):
             detail="Memory degraded: backend is vLLM, embeddings require Ollama.",
         )
     doc_id = _store.remember(req.project_id, req.text, req.metadata)
+    return RememberResponse(id=doc_id)
+
+
+@app.post("/coding/v1/memory/remember", response_model=RememberResponse)
+def coding_remember(req: RememberRequest):
+    """PENDING item 9: same shape as /v1/memory/remember, but persists into
+    the coding-path's own store (separate embedding model, separate Chroma
+    dir - see _coding_store above). Nothing calls this automatically today
+    (same is true of the chat path's /v1/memory/remember - persistence is
+    always an explicit call, never silently triggered every turn); this
+    exists so a coding session has somewhere real to persist to once
+    something (a harness, a hook, a manual call) decides to."""
+    if not embedding_backend_url():
+        raise HTTPException(
+            status_code=503,
+            detail="No embedding backend registered - ai-agent-start has not published a llama.cpp embedding endpoint for this session.",
+        )
+    doc_id = _coding_store.remember(req.project_id, req.text, req.metadata)
     return RememberResponse(id=doc_id)
 
 
@@ -177,6 +202,38 @@ async def chat_completions(request: Request):
     return raw
 
 
+def _last_user_content(messages: list[dict]) -> Optional[str]:
+    for msg in reversed(messages):
+        if msg.get("role") == "user" and msg.get("content"):
+            return msg["content"]
+    return None
+
+
+def _recall_and_inject_coding(project_id: str, messages: list[dict]) -> tuple[list[dict], bool]:
+    """Real recall for the coding path (PENDING item 9), using the dedicated
+    embedding llama-server. Runs BEFORE forwarding - unlike persistence,
+    injection doesn't need a complete response, so this works for both the
+    streaming path (what Pi actually uses) and the non-streaming one, unlike
+    the chat path's LangGraph-based retrieve/inject which assumes a
+    buffered response. Degrades to unaugmented (never raises) if no
+    embedding backend is registered or recall itself fails - an optional
+    enhancement must never block the coding turn from completing."""
+    if not embedding_backend_url():
+        return messages, False
+    last_user = _last_user_content(messages)
+    if not last_user:
+        return messages, False
+    try:
+        hits = _coding_store.recall(project_id, last_user)
+    except Exception:
+        return messages, False
+    if not hits:
+        return messages, False
+    context = "\n".join(f"- {h['text']}" for h in hits)
+    injected = [{"role": "system", "content": f"Relevant memory:\n{context}"}] + messages
+    return injected, True
+
+
 @app.post("/coding/v1/chat/completions")
 async def coding_chat_completions(request: Request):
     """Separate route (not a shared file/header on /v1/chat/completions) so
@@ -184,19 +241,16 @@ async def coding_chat_completions(request: Request):
     be confused for a concurrent chat session (ai-start, Ollama/vLLM) - each
     has its own state file and its own endpoint path.
 
-    Pure passthrough, no retrieve/persist: MemoryStore.remember()/recall()
-    embed on both write and read via Ollama's /api/embeddings, which
-    llama.cpp's OpenAI-compatible server doesn't serve. Wiring real
-    recall/remember for coding sessions needs its own embeddings-source
-    decision (e.g. keep a small Ollama instance alive just for embeddings)
-    - tracked as docs/adr/PENDING.md item 9, not attempted here. This route
-    still gives a coding session real value today: a stable, observable
-    endpoint that's ready to gain memory once that decision is made, without
-    the actual coding traffic ever touching the shared chat state.
+    Real recall/inject (PENDING item 9) via the dedicated embedding
+    llama-server, degrading to plain passthrough when that backend isn't
+    registered. Persistence is a separate explicit call
+    (/coding/v1/memory/remember) - nothing auto-persists every turn here,
+    matching the chat path's own always-manual remember() semantics.
     """
     body = await request.json()
     messages = body.get("messages", [])
     extra = {k: v for k, v in body.items() if k != "messages"}
+    project_id = request.headers.get("x-project-id", DEFAULT_PROJECT_ID)
 
     if not coding_backend_base_url():
         raise HTTPException(
@@ -204,17 +258,18 @@ async def coding_chat_completions(request: Request):
             detail="No coding backend registered - ai-agent-start has not published a llama.cpp endpoint for this session.",
         )
 
+    messages, augmented = _recall_and_inject_coding(project_id, messages)
+
     if body.get("stream"):
         # Raw SSE passthrough - no airlockMemory annotation possible
-        # mid-stream (would require rewriting the final chunk, not worth it
-        # for a route that never augments anyway).
+        # mid-stream (would require rewriting the final chunk, not worth it).
+        # Recall/injection above already happened before this point though,
+        # so Pi's actual (always-streaming) traffic IS augmented when hits
+        # exist - only the response-side annotation is streaming-incompatible.
         return StreamingResponse(
             stream_coding_backend_chat(messages, extra), media_type="text/event-stream"
         )
 
     result = call_coding_backend_chat(messages, extra)
-    result["airlockMemory"] = {
-        "augmented": False,
-        "reason": "coding backend (llama.cpp) has no Ollama-compatible embeddings route yet - pure passthrough, no recall/remember. See docs/adr/PENDING.md item 9.",
-    }
+    result["airlockMemory"] = {"augmented": augmented}
     return result

@@ -79,6 +79,16 @@ try {
     Set-Content -Path (Join-Path $stateDir "llamacpp-instance.json") -Value '{"port":38123}' -Encoding utf8NoBOM
     $withSnapshot = Get-AirlockLlamaCppBaseUrl -PlatformDir $workDir
     Assert-True ($withSnapshot -eq "http://127.0.0.1:38123") "with a llamacpp-instance.json snapshot present, the recorded Airlock-selected port is used"
+
+    # PENDING item 9 regression: a second concurrent llama-server instance
+    # (the embedding runtime) reads/writes a DIFFERENT state file, never the
+    # coding model's own llamacpp-instance.json - two instances sharing one
+    # file would have the second one silently clobber the first's record.
+    Set-Content -Path (Join-Path $stateDir "llamacpp-embedding-instance.json") -Value '{"port":38999}' -Encoding utf8NoBOM
+    $embeddingUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $workDir -InstanceStateFileName "llamacpp-embedding-instance.json"
+    Assert-True ($embeddingUrl -eq "http://127.0.0.1:38999") "a distinct -InstanceStateFileName reads its own separate state file"
+    $codingUrlUnaffected = Get-AirlockLlamaCppBaseUrl -PlatformDir $workDir
+    Assert-True ($codingUrlUnaffected -eq "http://127.0.0.1:38123") "the default (coding model) state file is unaffected by the embedding instance file existing alongside it"
 } finally {
     Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -93,6 +103,17 @@ try {
 } finally {
     Remove-Item -Path $stopWorkDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# --- Resolve-AirlockEmbeddingRuntimeNeedsStart (PENDING item 9) ---
+
+$embedNoBaseUrl = Resolve-AirlockEmbeddingRuntimeNeedsStart -BaseUrl $null -PortReachable $false
+Assert-True $embedNoBaseUrl "no recorded embedding instance at all -> start needed"
+
+$embedUnreachable = Resolve-AirlockEmbeddingRuntimeNeedsStart -BaseUrl 'http://127.0.0.1:8765' -PortReachable $false
+Assert-True $embedUnreachable "a recorded instance that isn't actually reachable -> start needed (stale record)"
+
+$embedHealthy = Resolve-AirlockEmbeddingRuntimeNeedsStart -BaseUrl 'http://127.0.0.1:8765' -PortReachable $true
+Assert-True (-not $embedHealthy) "a recorded instance that's reachable -> reuse, no start needed"
 
 if ($failures -gt 0) {
     Write-Host ""
