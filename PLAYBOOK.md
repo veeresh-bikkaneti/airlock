@@ -310,9 +310,13 @@ ai-memory-off
 ai-memory-stop
 ```
 
-### Important: Ollama-Only Constraint
+### Chat path: Ollama-only constraint
 
-Memory service **only works with Ollama** — it needs Ollama's `/api/embeddings` endpoint to generate embeddings for vector storage. If you're using vLLM as your active backend, the memory service degrades to a no-op (logs a warning, retrieval/persist skipped) rather than crashing or falling back to an external embedding API. Switch to Ollama if you need memory features.
+For **chat** (`ai-start`), memory service needs Ollama's `/api/embeddings` endpoint for vector storage. If vLLM is the active backend, memory degrades to a no-op (logs a warning, retrieval/persist skipped) rather than crashing or falling back to an external embedding API. Switch to Ollama if you need chat memory.
+
+### Coding path: real memory, no Ollama needed
+
+`ai-agent-start` (the Pi/llama.cpp coding path, ADR-016) gets its own independent memory, unrelated to the Ollama constraint above (PENDING.md item 9, closed). When `ai-memory-start` is running, `ai-agent-start` auto-starts a second small CPU-only llama-server (EmbeddingGemma-300M, ~172MB) purely for embeddings, and routes coding traffic through `/coding/v1/chat/completions` for real recall/inject. Persist explicitly via `POST /coding/v1/memory/remember`. Fully optional and degrades to plain passthrough if the embedding runtime isn't up — never blocks a coding session.
 
 ---
 
