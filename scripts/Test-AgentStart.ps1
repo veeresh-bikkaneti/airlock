@@ -161,6 +161,9 @@ Assert-True ($helpersText -match 'Resolve-AirlockCertificateValidity') "D1: prof
 Assert-True ($helpersText -match 'Clear-AirlockActiveAgentCertificate') "D1: ai-switch invalidates the certificate"
 $workerText = Get-Content (Join-Path $ScriptDir "Start-AgentWorkerJob.ps1") -Raw
 Assert-True ($workerText -match 'Resolve-AirlockCertificateValidity') "D1: Start-AgentWorkerJob refuses without an unexpired certificate"
+$stopText = Get-Content (Join-Path $ScriptDir "Stop-AI.ps1") -Raw
+Assert-True ($stopText -match 'Stop-LlamaCppIfOwned') "MVP: ai-stop stops llama-server instances this platform started"
+Assert-True ($stopText -match 'llamacpp-embedding-instance.json') "MVP: ai-stop also stops the embedding runtime, not just the 27B"
 
 # --- D6 helper: Clear-AirlockActiveAgentCertificate ---
 . (Join-Path $ScriptDir "agent-state-helpers.ps1")

@@ -116,6 +116,25 @@ if ($ActiveBackend -eq "vllm") {
     }
 }
 
+# Stop llama-server instances this platform started (ADR-016 coding 27B +
+# PENDING item 9 embedding runtime). ai-stop used to only kill Ollama/vLLM,
+# which left the Unsloth model resident on the GPU after a coding session.
+. (Join-Path $PSScriptRoot "runtime-adapters" "llamacpp.ps1")
+foreach ($instanceFile in @("llamacpp-instance.json", "llamacpp-embedding-instance.json")) {
+    try {
+        $stopped = Stop-LlamaCppIfOwned -PlatformDir $PlatformDir -InstanceStateFileName $instanceFile
+        if ($stopped.Stopped) {
+            Write-Host "  Stopped llama-server ($instanceFile)" -ForegroundColor Green
+            Write-AuditLog -Action "LlamaCppStop" -Result "SUCCESS" -Message "Stopped $instanceFile"
+        }
+    } catch {
+        Write-Host "  WARNING: could not stop $instanceFile : $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-AuditLog -Action "LlamaCppStop" -Result "WARNING" -Message "Failed to stop $instanceFile" -Detail $_.Exception.Message
+    }
+}
+$codingPortFile = Join-Path $PlatformDir ".active-port-coding.json"
+if (Test-Path $codingPortFile) { Remove-Item $codingPortFile -Force -ErrorAction SilentlyContinue }
+
 # ------------------------------------------------------------
 # 2️⃣ Clear environment variables – ensures a clean state for next start
 # ------------------------------------------------------------
