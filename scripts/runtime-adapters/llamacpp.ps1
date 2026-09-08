@@ -66,8 +66,18 @@ function Resolve-LlamaCppTemplateVerification {
 # not a well-known default the way Ollama's 11434 or Airlock's 12345 are - so
 # with no recorded instance there is nothing to fall back to.
 function Get-AirlockLlamaCppBaseUrl {
-    param([string]$PlatformDir = "$env:USERPROFILE\.ai-platform")
-    $stateFile = Join-Path $PlatformDir "state" "llamacpp-instance.json"
+    param(
+        [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
+        # PENDING item 9: a second, concurrent llama-server instance (the
+        # embedding runtime) must never read/write the coding model's own
+        # instance file - two llama-server processes writing the same path
+        # would have the second start silently clobber the first's record,
+        # breaking Stop-LlamaCppIfOwned/reuse-detection for whichever
+        # process wrote first. Defaults to the original filename so every
+        # existing caller (the coding model) is unaffected.
+        [string]$InstanceStateFileName = "llamacpp-instance.json"
+    )
+    $stateFile = Join-Path $PlatformDir "state" $InstanceStateFileName
     if (Test-Path $stateFile) {
         try {
             $port = (Get-Content $stateFile -Raw | ConvertFrom-Json).port
@@ -144,14 +154,20 @@ function Write-LlamaCppAuditLog {
 # somehow omitted it, since the ADR mandates it unconditionally.
 function Start-LlamaCppRuntime {
     param(
-        [Parameter(Mandatory)][string]$ModelPath,
-        [Parameter(Mandatory)][int]$Context,
+        # Optional (not Mandatory): PENDING item 9's embedding runtime has no
+        # GGUF file on disk to point at - it uses llama-server's built-in
+        # --embd-gemma-default auto-fetch instead, supplied via $RuntimeArgs.
+        # When empty, -m/--ctx-size are omitted entirely rather than passing
+        # a blank path.
+        [string]$ModelPath = '',
+        [int]$Context = 0,
         [string[]]$RuntimeArgs = @('--jinja'),
         [string]$KvCacheMode = 'default',
         [int]$Port = 0,
         [string]$BinaryPath = 'llama-server',
         [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
-        [int]$HealthTimeoutSec = 300
+        [int]$HealthTimeoutSec = 300,
+        [string]$InstanceStateFileName = "llamacpp-instance.json"
     )
     $LogDir = Join-Path $PlatformDir "logs"
     $StateDir = Join-Path $PlatformDir "state"
@@ -163,7 +179,8 @@ function Start-LlamaCppRuntime {
     $TargetPort = if ($Port -gt 0) { $Port } else { Get-AirlockFreeLoopbackPort }
     $instanceNonce = [guid]::NewGuid().ToString('N')
 
-    $effectiveArgs = @('--host', '127.0.0.1', '--port', "$TargetPort", '-m', $ModelPath, '--ctx-size', "$Context")
+    $effectiveArgs = @('--host', '127.0.0.1', '--port', "$TargetPort")
+    if ($ModelPath) { $effectiveArgs += @('-m', $ModelPath, '--ctx-size', "$Context") }
     if ($RuntimeArgs -notcontains '--jinja') { $effectiveArgs += '--jinja' }
     $effectiveArgs += $RuntimeArgs
 
@@ -202,7 +219,7 @@ function Start-LlamaCppRuntime {
         kvCacheMode         = $KvCacheMode
         startedAt           = [DateTime]::UtcNow.ToString('o')
     }
-    Write-AirlockAtomicJson -Path (Join-Path $StateDir "llamacpp-instance.json") -Data $ownerRecord
+    Write-AirlockAtomicJson -Path (Join-Path $StateDir $InstanceStateFileName) -Data $ownerRecord
 
     Write-LlamaCppAuditLog -LogFile $LogFile -Action "LlamaCppStart" -Result "SUCCESS" -Message "llama-server ready" -Endpoint "$baseUrl/v1" -Detail "nonce=$instanceNonce"
 
@@ -253,8 +270,11 @@ function Get-LlamaCppInspection {
 # session's own Start-LlamaCppRuntime recorded, verified by PID, start
 # time, and instance nonce, never a bare PID from disk.
 function Stop-LlamaCppIfOwned {
-    param([string]$PlatformDir = "$env:USERPROFILE\.ai-platform")
-    $stateFile = Join-Path $PlatformDir "state" "llamacpp-instance.json"
+    param(
+        [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
+        [string]$InstanceStateFileName = "llamacpp-instance.json"
+    )
+    $stateFile = Join-Path $PlatformDir "state" $InstanceStateFileName
     if (-not (Test-Path $stateFile)) {
         return [pscustomobject]@{ Stopped = $false; Reason = "No recorded llama.cpp instance - nothing this session started is on record." }
     }
@@ -280,4 +300,85 @@ function Stop-LlamaCppIfOwned {
     Stop-Process -Id $recorded.ownerPid -Force
     Remove-Item -Path $stateFile -Force -ErrorAction SilentlyContinue
     return [pscustomobject]@{ Stopped = $true; Reason = $decision.Reason }
+}
+
+# PENDING item 9: does the embedding runtime need a fresh start, or is an
+# already-running instance on record and actually reachable? Same shape as
+# Resolve-AirlockLlamaCppNeedsStart, minus the model-path comparison - the
+# embedding runtime always serves the same fixed EmbeddingGemma model, so
+# "reachable" is the whole reuse condition. Pure/mockable.
+function Resolve-AirlockEmbeddingRuntimeNeedsStart {
+    param(
+        [AllowNull()][string]$BaseUrl,
+        [Parameter(Mandatory)][bool]$PortReachable
+    )
+    return -not ($BaseUrl -and $PortReachable)
+}
+
+# I/O wrapper: fetch the fixed embedding model (EmbeddingGemma-300M,
+# ~172MB Q4_0) into Airlock's own models dir if not already present.
+# Deliberately a plain download, not routed through
+# Get-AirlockHuggingFaceGguf's modelRef parsing - that function assumes
+# Unsloth's "<repo>-GGUF" / "<repo>-<QUANT>.gguf" naming convention, which
+# doesn't hold for ggml-org's embedding repo (quant is baked into the repo
+# name itself; the real file is "embeddinggemma-300M-qat-Q4_0.gguf", not
+# "embeddinggemma-300M-qat-q4_0-q4_0.gguf"). There's also only ever one
+# fixed embedding model here, not a catalogue of choices, so a dedicated
+# fixed-URL fetch is simpler and correct rather than forcing a second
+# naming convention into a function built for the coding model's byte-match
+# evidence tracking (not needed here - this auxiliary model is outside the
+# trust-critical tool-calling certification chain).
+function Get-AirlockEmbeddingGguf {
+    param([string]$PlatformDir = "$env:USERPROFILE\.ai-platform")
+    $dest = Join-Path (Join-Path $PlatformDir "models") "embeddinggemma-300M-qat-Q4_0.gguf"
+    if (Test-Path $dest) {
+        return [pscustomobject]@{ Ready = $true; Path = $dest }
+    }
+    $dir = Split-Path $dest
+    if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
+    $url = "https://huggingface.co/ggml-org/embeddinggemma-300M-qat-q4_0-GGUF/resolve/main/embeddinggemma-300M-qat-Q4_0.gguf"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+        return [pscustomobject]@{ Ready = $true; Path = $dest }
+    } catch {
+        Remove-Item -Path $dest -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ Ready = $false; Path = $dest; Reason = "Failed to download embedding model: $($_.Exception.Message)" }
+    }
+}
+
+# I/O wrapper: start (or reuse) the dedicated embedding llama-server real
+# memory needs for the coding path (PENDING item 9). Forced CPU-only
+# (--n-gpu-layers 0). Uses an explicit -m <path>, NOT llama-server's
+# --embd-gemma-default convenience flag - found live, the hard way: that
+# flag silently ignores --port and always binds its own fixed port (8011),
+# which made every start "time out" against the port Airlock actually
+# requested and was polling. Embeddings are one-shot forward passes, not
+# autoregressive generation, so the CPU/RAM-offload speed collapse
+# .ideas/ram-offload-feasibility.md found for the 27B coding model does not
+# apply here - confirmed live, ~200ms per request on CPU, VRAM usage flat.
+# Separate instance-state file from the coding model's own
+# llamacpp-instance.json (see Get-AirlockLlamaCppBaseUrl) - two concurrent
+# llama-server processes must never share one state file.
+function Start-AirlockEmbeddingRuntimeIfNeeded {
+    param(
+        [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
+        [int]$HealthTimeoutSec = 120
+    )
+    $instanceFileName = "llamacpp-embedding-instance.json"
+    $baseUrl = Get-AirlockLlamaCppBaseUrl -PlatformDir $PlatformDir -InstanceStateFileName $instanceFileName
+    $portReachable = if ($baseUrl) { Test-LlamaCppPort -BaseUrl $baseUrl } else { $false }
+    $needStart = Resolve-AirlockEmbeddingRuntimeNeedsStart -BaseUrl $baseUrl -PortReachable $portReachable
+    if (-not $needStart) {
+        return [pscustomobject]@{ Started = $true; BaseUrl = $baseUrl; Reused = $true }
+    }
+    $gguf = Get-AirlockEmbeddingGguf -PlatformDir $PlatformDir
+    if (-not $gguf.Ready) {
+        return [pscustomobject]@{ Started = $false; BaseUrl = $null; Reused = $false; Reason = $gguf.Reason }
+    }
+    $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context 2048 -RuntimeArgs @('--embedding', '--n-gpu-layers', '0') `
+        -PlatformDir $PlatformDir -HealthTimeoutSec $HealthTimeoutSec -InstanceStateFileName $instanceFileName
+    if (-not $started.Started) {
+        return [pscustomobject]@{ Started = $false; BaseUrl = $null; Reused = $false; Reason = $started.Reason }
+    }
+    return [pscustomobject]@{ Started = $true; BaseUrl = $started.BaseUrl; Reused = $false }
 }

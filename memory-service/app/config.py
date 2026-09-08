@@ -22,6 +22,13 @@ def _platform_dir() -> Path:
 PLATFORM_DIR = _platform_dir()
 DATA_DIR = PLATFORM_DIR / "memory"
 CHROMA_DIR = DATA_DIR / "chroma"
+# PENDING item 9: a separate Chroma store for coding-path memories, keyed by
+# a different embedding model (EmbeddingGemma-300M via llama.cpp) than the
+# chat path's (nomic-embed-text via Ollama). Chroma binds one embedding
+# function per collection at creation time and the two models have
+# different vector dimensions - sharing CHROMA_DIR would risk a dimension
+# mismatch if a project_id ever collided between chat and coding use.
+CHROMA_DIR_CODING = DATA_DIR / "chroma-coding"
 CHECKPOINT_DB = DATA_DIR / "checkpoints.sqlite"
 
 ACTIVE_PORT_FILE = PLATFORM_DIR / ".active-port.json"
@@ -34,6 +41,13 @@ PROVIDER_POLICY_FILE = PLATFORM_DIR / "config" / "policies" / "provider-policy.j
 # that file - a coding session could otherwise get the chat backend killed
 # by a chat-path stop, or vice versa. See docs/adr/PENDING.md item 9.
 ACTIVE_PORT_FILE_CODING = PLATFORM_DIR / ".active-port-coding.json"
+
+# PENDING item 9: dedicated embedding runtime (a second, separate
+# llama-server process running EmbeddingGemma-300M, --embedding mode) real
+# memory for the coding path needs, since llama.cpp's coding-model server
+# doesn't serve Ollama's /api/embeddings route. Written by
+# Start-AirlockEmbeddingRuntimeIfNeeded (llamacpp.ps1), read here.
+ACTIVE_PORT_FILE_EMBEDDING = PLATFORM_DIR / "state" / "llamacpp-embedding-instance.json"
 
 EMBED_MODEL = "nomic-embed-text"
 

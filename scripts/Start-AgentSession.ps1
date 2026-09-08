@@ -244,6 +244,21 @@ try {
                     model   = $selectedProfile.modelRef
                 }
                 $codingPortState | ConvertTo-Json | Set-Content (Join-Path $PlatformDir ".active-port-coding.json") -Encoding utf8NoBOM
+
+                # Best-effort, non-blocking: real recall/remember (PENDING
+                # item 9) needs the dedicated embedding runtime. If it fails
+                # to start, memory-service's coding route itself degrades to
+                # unaugmented passthrough (embedding_backend_url() returns
+                # None) - never hard-fail the whole coding session over an
+                # optional enhancement.
+                try {
+                    $embeddingRuntime = Start-AirlockEmbeddingRuntimeIfNeeded -PlatformDir $PlatformDir
+                    if (-not $embeddingRuntime.Started) {
+                        Write-Host "WARNING: embedding runtime for real memory did not start ($($embeddingRuntime.Reason)) - coding memory will degrade to unaugmented passthrough." -ForegroundColor Yellow
+                    }
+                } catch {
+                    Write-Host "WARNING: embedding runtime for real memory failed to start ($($_.Exception.Message)) - coding memory will degrade to unaugmented passthrough." -ForegroundColor Yellow
+                }
             }
             $memoryRoute = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl $baseUrl -MemoryServiceHealthy $memoryHealth.Healthy -MemoryServicePort $memoryHealth.Port
             $baseUrl = $memoryRoute.BaseUrl
