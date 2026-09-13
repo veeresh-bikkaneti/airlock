@@ -114,11 +114,10 @@ def remember(req: RememberRequest):
 def coding_remember(req: RememberRequest):
     """PENDING item 9: same shape as /v1/memory/remember, but persists into
     the coding-path's own store (separate embedding model, separate Chroma
-    dir - see _coding_store above). Nothing calls this automatically today
-    (same is true of the chat path's /v1/memory/remember - persistence is
-    always an explicit call, never silently triggered every turn); this
-    exists so a coding session has somewhere real to persist to once
-    something (a harness, a hook, a manual call) decides to."""
+    dir - see _coding_store above). Coding chat turns also auto-persist the
+    last user message (see _persist_coding_turn); this route is the explicit
+    hook for a harness or a manual call that wants to store something else.
+    """
     if not embedding_backend_url():
         raise HTTPException(
             status_code=503,
@@ -209,6 +208,51 @@ def _last_user_content(messages: list[dict]) -> Optional[str]:
     return None
 
 
+# Pi's §7.2 capability-contract instruction. Persisting it would pollute
+# long-term coding memory with the 3/3 trial, which runs through this same
+# route when memory-service is up (Start-AgentSession publishes the cert
+# against /coding/v1). Skip, never store.
+_PI_CONTRACT_MARKERS = (
+    "Read seed.md. Create output.md",
+    "Reply exactly DONE.",
+)
+_MIN_PERSIST_CHARS = 16
+_MAX_PERSIST_CHARS = 4000
+
+
+def _should_persist_coding_text(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip()
+    if len(stripped) < _MIN_PERSIST_CHARS or len(stripped) > _MAX_PERSIST_CHARS:
+        return False
+    if any(marker in stripped for marker in _PI_CONTRACT_MARKERS):
+        return False
+    return True
+
+
+def _persist_coding_turn(project_id: str, messages: list[dict]) -> bool:
+    """Best-effort long-term persist of the last user turn.
+
+    Pi streams, so this MUST run before forwarding — waiting for a complete
+    assistant reply (the chat-path LangGraph pattern) never fires on the
+    coding path. Dedup is MemoryStore.remember's sha256 upsert. Never
+    raises: memory is optional and must not block a tool-calling turn.
+    """
+    if not embedding_backend_url():
+        return False
+    last_user = _last_user_content(messages)
+    if not last_user or not _should_persist_coding_text(last_user):
+        return False
+    try:
+        _coding_store.remember(
+            project_id, last_user.strip(), {"source": "coding-session"}
+        )
+        return True
+    except Exception:
+        return False
+
+
 def _recall_and_inject_coding(project_id: str, messages: list[dict]) -> tuple[list[dict], bool]:
     """Real recall for the coding path (PENDING item 9), using the dedicated
     embedding llama-server. Runs BEFORE forwarding - unlike persistence,
@@ -243,9 +287,12 @@ async def coding_chat_completions(request: Request):
 
     Real recall/inject (PENDING item 9) via the dedicated embedding
     llama-server, degrading to plain passthrough when that backend isn't
-    registered. Persistence is a separate explicit call
-    (/coding/v1/memory/remember) - nothing auto-persists every turn here,
-    matching the chat path's own always-manual remember() semantics.
+    registered. User turns are auto-persisted into the coding Chroma store
+    (best-effort, never blocks the turn) so the next session can recall
+    them — the explicit /coding/v1/memory/remember route still exists for
+    harnesses that want to store something other than the last user message.
+    The Pi 3/3 contract instruction is filtered out so cert trials do not
+    become long-term memories.
     """
     body = await request.json()
     messages = body.get("messages", [])
@@ -259,6 +306,7 @@ async def coding_chat_completions(request: Request):
         )
 
     messages, augmented = _recall_and_inject_coding(project_id, messages)
+    _persist_coding_turn(project_id, body.get("messages", []))
 
     if body.get("stream"):
         # Raw SSE passthrough - no airlockMemory annotation possible
