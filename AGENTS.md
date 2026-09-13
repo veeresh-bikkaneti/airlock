@@ -2,7 +2,7 @@
 
 This file is the **portable operating contract** for every coding agent in this repo: Grok, GitHub Copilot, Google Gemini, Google Antigravity, Cursor, Claude Code, Codex, OpenCode, and anything else that reads `AGENTS.md`.
 
-It is not a swarm playbook. It is not Claude-specific. Read it before looping on tools, models, or npm scripts.
+It is not Claude-specific and it does not require a hierarchical swarm. Read it before looping on tools, models, or npm scripts.
 
 Tool-specific filenames (`CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`) are **thin adapters**. They must point here. Do not grow a second copy of this contract in those files.
 
@@ -75,14 +75,69 @@ Airlock is a hardened **single-instance local AI platform for Windows**. The job
 - `ai-start` selects by VRAM / install, not agent eligibility (**AGENT-001** open).
 - `ai-agent-start` exists (**AGENT-002** / ADR-016). `ai-opencode` is still not a verified gate (AIR-017).
 
+## Pre-implementation discussion gate
+
+Every task must be discussed in the available agent chat room before implementation or mutation. Read-only workspace discovery may happen first. This is a planning and review gate, not a requirement to use a hierarchical swarm.
+
+1. **Framing:** the lead posts the objective, constraints, workspace facts, proposed scope, acceptance criteria, unknowns, and verification plan.
+2. **Independent review:** each available specialist posts recommendations, risks, assumptions, affected areas, test ideas, and a proceed/block recommendation. Specialists must challenge the plan rather than merely agree.
+3. **Challenge:** the lead resolves disagreements and asks about security, dependencies, rollback, scope creep, and test gaps.
+4. **Decision:** the lead records the plan version, owners, read sets, write sets, dependencies, checks, rollback, objections, approvals, and unresolved risks.
+
+No implementation, mutation, migration, deployment, publication, or external side effect may begin until the discussion is approved. If no specialist is available, the lead performs and records the independent-review and challenge passes itself. Any unresolved critical security, data-loss, authorization, or scope objection blocks implementation. New scope, changed assumptions, workspace drift, or failed verification requires a focused re-discussion.
+
+The harness should reject mutating tool calls while the gate is not approved. The agent must report **BLOCKED** rather than bypassing the gate. The reusable contracts are [`docs/agent-prompts/production-cli-lead.xml`](docs/agent-prompts/production-cli-lead.xml) and [`docs/agent-prompts/claude-lead.xml`](docs/agent-prompts/claude-lead.xml).
+
+## Capability-based request routing
+
+The lead must route work by **capability, evidence, and task fit**, never by vendor name, model branding, popularity, or a tool's marketing label. Claude, Grok, Copilot, Gemini, Codex, OpenCode, local models, and future agents are interchangeable implementations of capability slots. The harness should expose an agent registry with each agent's available tools, context limit, write permissions, network permissions, supported modalities, reliability evidence, cost/latency class, and current health.
+
+### Routing procedure
+
+1. **Classify the request:** determine whether it is conversation, repository research, implementation, debugging, testing, documentation, security review, data work, infrastructure, UI, or an external side effect. A task may have multiple tracks.
+2. **Extract requirements:** identify required capabilities, read/write scope, language/runtime, data sensitivity, network needs, verification level, deadline, and whether the work can be parallelized.
+3. **Select by hard constraints first:** exclude agents that lack a required tool, modality, permission, workspace access, safety authorization, or verified runtime support. A `supportsFunctionCalling` flag or vendor label is not sufficient evidence.
+4. **Rank eligible candidates:** prefer the agent with the strongest task-specific evidence, then workspace/tool compatibility, then reliability, then latency/cost. Record the reason and evidence for the selection.
+5. **Assign bounded roles:** choose one lead for integration and one owner per write set. Assign specialists only for independent research, review, or disjoint edits.
+6. **Run the discussion gate:** selected agents discuss the plan before mutation. Agents that cannot participate in the chat room are reviewers at most, not implementation leads, unless the lead records a no-specialist fallback.
+7. **Execute with checkpoints:** require a small, observable first step. After each tool result, reevaluate health, evidence, scope, and whether the selected agent remains fit.
+
+### Capability routing matrix
+
+| Request characteristic | Required capability | Route rule |
+|---|---|---|
+| Read-only repository question | Workspace read/search and synthesis | Use the lowest-cost eligible reader; no implementation agent is needed. |
+| Code change | Workspace read/write, language/runtime competence, tests | Select an implementation lead with verified access to the exact repository and test tools. |
+| Build or test failure | Shell/process control, logs, debugger, runtime access | Select an agent that can reproduce the failure; do not assign a text-only agent to execute it. |
+| Security-sensitive change | Threat modeling, secure coding, relevant scanner or review capability | Require an independent security review before approval and verification. |
+| Large independent investigation | Search/research, structured extraction, or domain expertise | Parallelize read-only subtasks; centralize synthesis and never overlap write sets. |
+| UI, image, audio, or other modality work | The required modality tool and artifact verification | Exclude text-only agents; verify the actual rendered or generated artifact. |
+| External side effect | Authorized connector, exact permission, and approval | Route only to an agent with the specific connector and authorization; otherwise block. |
+| High-risk or irreversible operation | Policy knowledge, authorization, rollback, and human approval | Never infer capability from model identity; require an explicit approval checkpoint. |
+
+### Fallback and anti-struggle rules
+
+- If a tool call fails, classify the failure as **capability**, **permission**, **environment**, **input**, **dependency**, or **transient** before retrying.
+- Do not retry an agent or tool for a capability failure. Route to the next eligible candidate or change the plan.
+- Do not retry a permission failure. Request the missing authorization or report **BLOCKED**.
+- For environment or dependency failures, repair only when that repair is in scope; otherwise escalate to the lead.
+- Allow at most one focused retry after a changed premise or corrected input. After two materially different failures on the same objective, pause implementation and reopen the discussion gate.
+- Never let agents repeatedly narrate intended tool calls without producing tool calls, repeatedly call unavailable tools, or silently substitute a weaker capability.
+- If no eligible agent exists, return a capability gap containing the missing capability, attempted routes, evidence, safe alternatives, and the exact condition needed to proceed.
+- When an agent becomes unhealthy, times out, loses workspace access, exceeds context limits, or produces unverifiable results, checkpoint the work, preserve artifacts, and fail over to an eligible agent. Do not discard the decision record.
+
+### Routing decision record
+
+For every implementation task, record `task_id`, request classification, required capabilities, excluded candidates and reasons, selected lead, specialists, evidence used, permissions, read sets, write sets, fallback candidates, checkpoints, and the next routing condition. This record is part of the discussion approval and must be updated when the route changes.
+
 ## Orchestration
 
-Default is a **single agent doing the work**.
+Default is a **single agent doing the implementation**, preceded by the discussion gate above.
 
 - Ruflo / claude-flow MCP is optional (`autoStart: false` in `.mcp.json`).
-- Do not swarm, `SendMessage`, or `npx @claude-flow` as the default.
-- The user can opt in.
-- Delegation to subagents is fine for parallel research; that is not a Ruflo swarm.
+- Do not require `npx @claude-flow`, hierarchical mesh, or a specific swarm product.
+- Delegation to subagents is allowed for bounded, independent research or disjoint edits with explicit owners and write sets.
+- The lead owns decomposition, permissions, integration, conflict resolution, final verification, and the user-facing response.
 
 ## Docs vs evidence
 
