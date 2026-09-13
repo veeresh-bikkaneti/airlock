@@ -2,7 +2,7 @@
 
 This file is the **portable operating contract** for every coding agent in this repo: Grok, GitHub Copilot, Google Gemini, Google Antigravity, Cursor, Claude Code, Codex, OpenCode, and anything else that reads `AGENTS.md`.
 
-It is not a swarm playbook. It is not Claude-specific. Read it before looping on tools, models, or npm scripts.
+It is not Claude-specific and it does not require a hierarchical swarm. Read it before looping on tools, models, or npm scripts.
 
 Tool-specific filenames (`CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`) are **thin adapters**. They must point here. Do not grow a second copy of this contract in those files.
 
@@ -75,14 +75,27 @@ Airlock is a hardened **single-instance local AI platform for Windows**. The job
 - `ai-start` selects by VRAM / install, not agent eligibility (**AGENT-001** open).
 - `ai-agent-start` exists (**AGENT-002** / ADR-016). `ai-opencode` is still not a verified gate (AIR-017).
 
+## Pre-implementation discussion gate
+
+Every task must be discussed in the available agent chat room before implementation or mutation. Read-only workspace discovery may happen first. This is a planning and review gate, not a requirement to use a hierarchical swarm.
+
+1. **Framing:** the lead posts the objective, constraints, workspace facts, proposed scope, acceptance criteria, unknowns, and verification plan.
+2. **Independent review:** each available specialist posts recommendations, risks, assumptions, affected areas, test ideas, and a proceed/block recommendation. Specialists must challenge the plan rather than merely agree.
+3. **Challenge:** the lead resolves disagreements and asks about security, dependencies, rollback, scope creep, and test gaps.
+4. **Decision:** the lead records the plan version, owners, read sets, write sets, dependencies, checks, rollback, objections, approvals, and unresolved risks.
+
+No implementation, mutation, migration, deployment, publication, or external side effect may begin until the discussion is approved. If no specialist is available, the lead performs and records the independent-review and challenge passes itself. Any unresolved critical security, data-loss, authorization, or scope objection blocks implementation. New scope, changed assumptions, workspace drift, or failed verification requires a focused re-discussion.
+
+The harness should reject mutating tool calls while the gate is not approved. The agent must report **BLOCKED** rather than bypassing the gate. The reusable contracts are [`docs/agent-prompts/production-cli-lead.xml`](docs/agent-prompts/production-cli-lead.xml) and [`docs/agent-prompts/claude-lead.xml`](docs/agent-prompts/claude-lead.xml).
+
 ## Orchestration
 
-Default is a **single agent doing the work**.
+Default is a **single agent doing the implementation**, preceded by the discussion gate above.
 
 - Ruflo / claude-flow MCP is optional (`autoStart: false` in `.mcp.json`).
-- Do not swarm, `SendMessage`, or `npx @claude-flow` as the default.
-- The user can opt in.
-- Delegation to subagents is fine for parallel research; that is not a Ruflo swarm.
+- Do not require `npx @claude-flow`, hierarchical mesh, or a specific swarm product.
+- Delegation to subagents is allowed for bounded, independent research or disjoint edits with explicit owners and write sets.
+- The lead owns decomposition, permissions, integration, conflict resolution, final verification, and the user-facing response.
 
 ## Docs vs evidence
 

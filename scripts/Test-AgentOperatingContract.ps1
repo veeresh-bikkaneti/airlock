@@ -23,6 +23,10 @@ $templatePath = Join-Path (Join-Path $RepoRoot "config") "opencode.json.template
 $templateJson = (Get-Content $templatePath -Raw) | ConvertFrom-Json
 $readme = Get-Content (Join-Path $RepoRoot "README.md") -Raw
 $guide = Get-Content (Join-Path (Join-Path $RepoRoot "docs") "08-Agent-CLI-Setup-Guide.md") -Raw
+$genericPromptPath = Join-Path (Join-Path (Join-Path $RepoRoot "docs") "agent-prompts") "production-cli-lead.xml"
+$claudePromptPath = Join-Path (Join-Path (Join-Path $RepoRoot "docs") "agent-prompts") "claude-lead.xml"
+$genericPrompt = Get-Content $genericPromptPath -Raw
+$claudePrompt = Get-Content $claudePromptPath -Raw
 
 # --- AGENTS.md is the portable contract ---
 
@@ -50,6 +54,11 @@ Assert-True (-not $agents.Contains('Flywheel')) "AGENTS.md does not contain Flyw
 Assert-True (-not $agents.Contains('MetaHarness')) "AGENTS.md does not contain MetaHarness"
 Assert-True (($agents.Contains('structured tool_calls')) -or ($agents.Contains('structured tool'))) "AGENTS.md contains structured tool_calls or structured tool (Ollama is not the verified agentic default)"
 Assert-True ($agents -match 'portable operating contract') "AGENTS.md names itself as the portable operating contract"
+Assert-True ($agents -match 'Pre-implementation discussion gate') "AGENTS.md requires a pre-implementation discussion gate"
+Assert-True ($agents -match 'Framing:') "AGENTS.md defines the framing discussion round"
+Assert-True ($agents -match 'Independent review:') "AGENTS.md defines independent specialist review"
+Assert-True ($agents -match 'No implementation, mutation') "AGENTS.md locks mutation until discussion approval"
+Assert-True ($agents -match 'docs/agent-prompts/claude-lead.xml') "AGENTS.md points to the Claude prompt"
 
 $agentsLower = $agents.ToLowerInvariant()
 $airlockAt = $agentsLower.IndexOf('airlock')
@@ -97,6 +106,17 @@ Assert-True ((-not $mentionsToolsBadge) -or $badgeCaveat) "README.md does not cl
 
 Assert-True (-not $guide.Contains('tells you upfront which models can reliably drive tool calls')) "docs/08-Agent-CLI-Setup-Guide.md does not claim supportsFunctionCalling tells you upfront which models can reliably drive tool calls"
 Assert-True (-not $guide.Contains('ollama/devstral-small-2:24b')) "docs/08-Agent-CLI-Setup-Guide.md does not still name ollama/devstral-small-2:24b as the template default"
+
+# --- Reusable production prompt artifacts ---
+
+Assert-True ($genericPrompt -match '<chat_room_gate required="true">') "production-cli-lead.xml requires the chat-room gate"
+Assert-True ($genericPrompt -match '<execution_loop>') "production-cli-lead.xml defines an execution loop"
+Assert-True ($genericPrompt -match '<tool_calling>') "production-cli-lead.xml defines tool-calling constraints"
+Assert-True ($genericPrompt -match '<workspace_awareness>') "production-cli-lead.xml defines workspace awareness"
+Assert-True ($claudePrompt -match '<mandatory_chat_room_gate>') "claude-lead.xml requires the chat-room gate"
+Assert-True ($claudePrompt -match '<execution_loop>') "claude-lead.xml defines an execution loop"
+Assert-True ($claudePrompt -match '<tool_rules>') "claude-lead.xml defines Claude tool rules"
+Assert-True ($claudePrompt -match 'AGENTS.md') "claude-lead.xml imports the portable repository contract"
 
 if ($failures -gt 0) {
     Write-Host ""
