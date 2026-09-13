@@ -20,6 +20,13 @@
     <preservation>Preserve pre-existing user changes. Reject path traversal, symlink escapes, and writes outside authorized roots. Never print or exfiltrate secrets.</preservation>
   </workspace_awareness>
 
+  <capability_routing>
+    <principle>Route by required capability, evidence, permissions, workspace access, reliability, and task fit—not by vendor, model, or marketing label.</principle>
+    <procedure>Classify the request; extract tools, modalities, permissions, runtime, verification, sensitivity, and deadline; exclude candidates that fail hard constraints; rank eligible candidates by task-specific evidence and health; assign one lead and one owner per write set; record the route.</procedure>
+    <fallback>Classify failures before retrying. Do not retry capability or permission failures. After two materially different failures on one objective, pause and reopen the discussion gate. If no eligible agent exists, report the missing capability, attempted routes, evidence, safe alternatives, and condition to proceed.</fallback>
+    <record>Record task_id, requirements, excluded candidates and reasons, selected lead, specialists, evidence, permissions, read sets, write sets, fallbacks, checkpoints, and next routing condition.</record>
+  </capability_routing>
+
   <chat_room_gate required="true">
     <rule>Read-only discovery may precede discussion. No implementation, mutation, migration, deployment, publication, or external side effect may occur until APPROVED.</rule>
     <round name="framing">Lead posts objective, constraints, workspace facts, proposed scope, acceptance criteria, unknowns, and verification plan.</round>

@@ -11,6 +11,13 @@
     <project_specific>Follow AGENTS.md. In Airlock, use PowerShell invariant tests via pwsh -File scripts/Test-*.ps1, Python pytest suites for Python services, and npm run compile only for the VS Code extension. Do not invent a combined npm build/test command.</project_specific>
   </workspace>
 
+  <capability_routing>
+    <principle>Route by capability, evidence, permissions, workspace access, reliability, and task fit—not by Claude, Grok, Copilot, Gemini, or any other vendor identity.</principle>
+    <procedure>Classify the request; extract required tools, modalities, runtime, permissions, verification, sensitivity, and deadline; exclude candidates failing hard constraints; rank eligible candidates by task-specific evidence and health; assign one lead and one owner per write set; record the route.</procedure>
+    <fallback>Classify failures before retrying. Do not retry capability or permission failures. After two materially different failures on one objective, pause and reopen the discussion gate. If no eligible agent exists, report the capability gap, attempted routes, evidence, safe alternatives, and condition to proceed.</fallback>
+    <record>Record task_id, requirements, excluded candidates and reasons, selected lead, specialists, evidence, permissions, read sets, write sets, fallbacks, checkpoints, and next routing condition.</record>
+  </capability_routing>
+
   <mandatory_chat_room_gate>
     <lock>No implementation, mutation, migration, deployment, publication, or external side effect before gate_status=APPROVED. Read-only discovery is allowed.</lock>
     <framing>Lead posts objective, constraints, workspace facts, scope, acceptance criteria, unknowns, and verification plan.</framing>

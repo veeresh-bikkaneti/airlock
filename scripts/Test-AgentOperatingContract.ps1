@@ -59,6 +59,12 @@ Assert-True ($agents -match 'Framing:') "AGENTS.md defines the framing discussio
 Assert-True ($agents -match 'Independent review:') "AGENTS.md defines independent specialist review"
 Assert-True ($agents -match 'No implementation, mutation') "AGENTS.md locks mutation until discussion approval"
 Assert-True ($agents -match 'docs/agent-prompts/claude-lead.xml') "AGENTS.md points to the Claude prompt"
+Assert-True ($agents -match 'Capability-based request routing') "AGENTS.md defines capability-based request routing"
+Assert-True ($agents -match 'never by vendor name') "AGENTS.md makes routing vendor agnostic"
+Assert-True ($agents -match 'hard constraints first') "AGENTS.md routes by hard capability constraints"
+Assert-True ($agents -match 'Fallback and anti-struggle rules') "AGENTS.md defines fallback and anti-struggle rules"
+Assert-True ($agents -match 'capability gap') "AGENTS.md defines a capability-gap outcome"
+Assert-True ($agents -match 'Routing decision record') "AGENTS.md requires a routing decision record"
 
 $agentsLower = $agents.ToLowerInvariant()
 $airlockAt = $agentsLower.IndexOf('airlock')
