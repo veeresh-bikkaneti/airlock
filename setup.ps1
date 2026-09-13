@@ -21,6 +21,11 @@ foreach ($dir in @($PlatformDir, "$PlatformDir\scripts", "$PlatformDir\config", 
 Copy-Item "$RepoDir\scripts\*.ps1" "$PlatformDir\scripts\" -Force
 Write-Host "  Scripts deployed" -ForegroundColor Green
 
+New-Item -Path "$PlatformDir\scripts\runtime-adapters" -ItemType Directory -Force | Out-Null
+Copy-Item "$RepoDir\scripts\runtime-adapters\*.ps1" "$PlatformDir\scripts\runtime-adapters\" -Force
+Copy-Item "$RepoDir\config\agent-profiles.json" "$PlatformDir\config\agent-profiles.json" -Force
+Write-Host "  Runtime adapters and agent-profiles deployed" -ForegroundColor Green
+
 # Memory service (opt-in): app source always overwritten, repo is the source of truth.
 # The venv is created on first 'ai-memory-start', not here, so setup stays fast/offline.
 if (Test-Path "$RepoDir\memory-service") {

@@ -48,11 +48,16 @@ try {
     Assert-True (-not (Test-Path (Join-Path $platformDir "state" "bootstrap.lock"))) "a profile-resolution failure never leaves a lock file behind (it fails before step 1 acquires one)"
     Assert-True (-not (Test-Path (Join-Path $platformDir "state" "active-agent.json"))) "a profile-resolution failure never creates a certificate"
 
-    # --- No profile requested: never auto-selects, fails cleanly ---
-    & pwsh -NoProfile -File $SessionScript -Harness 'opencode' `
-        -PlatformDir $platformDir -ProfileCataloguePath $cataloguePath | Out-Null
+    # --- No profile requested: sizes THIS machine (WhatIf must not write a lock/cert).
+    # ADR-012 still forbids picking an installed-but-unrequested candidate;
+    # empty -Profile is hardware sizing, not that.
+    $sizedDir = Join-Path $workDir "sized-whatif"
+    $noProfileOut = & pwsh -NoProfile -File $SessionScript -Harness 'pi-worker' `
+        -PlatformDir $sizedDir -ProfileCataloguePath $cataloguePath -WhatIf 2>&1 | Out-String
     $noProfileExit = $LASTEXITCODE
-    Assert-True ($noProfileExit -ne 0) "no -Profile given -> fails rather than auto-selecting any catalogued candidate"
+    Assert-True (-not (Test-Path (Join-Path $sizedDir "state" "bootstrap.lock"))) "no -Profile -WhatIf writes no lock"
+    Assert-True (-not (Test-Path (Join-Path $sizedDir "state" "active-agent.json"))) "no -Profile -WhatIf writes no certificate"
+    Assert-True (($noProfileExit -eq 0 -and $noProfileOut -match 'SIZED') -or ($noProfileOut -match 'FAILED')) "no -Profile sizes this PC or fails closed with no GPU/VRAM"
 
     # --- Cache entry persistence: transportReturnedValidToolEvents must round-trip ---
     . (Join-Path $ScriptDir "agent-capability-registry.ps1")

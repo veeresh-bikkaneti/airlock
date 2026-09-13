@@ -35,54 +35,87 @@ function ConvertTo-AirlockUnslothModelRef {
     return "unsloth/Qwen3.8-27B-GGUF:$Quant"
 }
 
-# Pure: pick a Unsloth Dynamic 3.0 quant for a measured GPU. Does not
-# change ai-agent-start's default profile. Step-downs never inherit 3/3.
+# Pure: pick a Unsloth Dynamic 3.0 quant for THIS machine.
+# GPU-all is the fast coding door. When VRAM is short but system RAM can
+# hold the GGUF (llama.cpp mmap — what people mean by "I ran 70B on RAM"),
+# return CpuOffload: same weights, --n-gpu-layers 0, slow, live Pi required.
+# Never inherit a GPU 3/3 onto a CPU run. 1-bit still refused.
 function Resolve-AirlockUnslothQuantStrategy {
     param(
         [AllowNull()]$GpuTotalGb,
-        [AllowNull()]$FreeVramGiB
+        [AllowNull()]$FreeVramGiB,
+        [AllowNull()]$FreeRamGb
     )
-    if ($null -eq $GpuTotalGb -or $null -eq $FreeVramGiB) {
+    $q3 = ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q3_K_XL'
+    $gpuOk = ($null -ne $GpuTotalGb -and $null -ne $FreeVramGiB)
+    if ($gpuOk) {
+        $total = [double]$GpuTotalGb
+        $free = [double]$FreeVramGiB
+        if ($total -ge 16 -and $free -ge 14) {
+            return [pscustomobject]@{
+                Action               = 'UseDefault'
+                Quant                = 'UD-Q3_K_XL'
+                ModelRef             = $q3
+                InheritEvidence      = $true
+                Offload              = 'gpu-all'
+                MinimumFreeVramGiB   = 14
+                Reason               = "RTX-class ${total} GB, $free GiB free: coding default UD-Q3_K_XL (14 GiB floor, 3/3). Q4_K_XL is 17.6 GB and spills on 16 GB."
+            }
+        }
+        if ($free -ge 12) {
+            return [pscustomobject]@{
+                Action               = 'StepDown'
+                Quant                = 'UD-IQ3_XXS'
+                ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-IQ3_XXS')
+                InheritEvidence      = $false
+                Offload              = 'gpu-all'
+                MinimumFreeVramGiB   = 12
+                Reason               = "$free GiB free is below the Q3_K_XL 14 GiB floor. Step down to UD-IQ3_XXS (more KV). candidateOnly; live contract required."
+            }
+        }
+        if ($free -ge 11) {
+            return [pscustomobject]@{
+                Action               = 'StepDown'
+                Quant                = 'UD-Q2_K_XL'
+                ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q2_K_XL')
+                InheritEvidence      = $false
+                Offload              = 'gpu-all'
+                MinimumFreeVramGiB   = 11
+                Reason               = "$free GiB free: UD-Q2_K_XL step-down. Quality cost is real. candidateOnly; live contract required."
+            }
+        }
+    }
+
+    $ram = if ($null -eq $FreeRamGb) { $null } else { [double]$FreeRamGb }
+    if ($null -ne $ram) {
+        $cpuPick = $null
+        if ($ram -ge 18) { $cpuPick = 'UD-Q3_K_XL' }
+        elseif ($ram -ge 14) { $cpuPick = 'UD-IQ3_XXS' }
+        elseif ($ram -ge 12) { $cpuPick = 'UD-Q2_K_XL' }
+        elseif ($ram -ge 10) { $cpuPick = 'UD-IQ2_XXS' }
+        if ($cpuPick) {
+            $vramNote = if ($gpuOk) { "$([math]::Round([double]$FreeVramGiB, 2)) GiB VRAM" } else { 'no NVIDIA GPU' }
+            return [pscustomobject]@{
+                Action               = 'CpuOffload'
+                Quant                = $cpuPick
+                ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant $cpuPick)
+                InheritEvidence      = $false
+                Offload              = 'cpu'
+                MinimumFreeVramGiB   = 0
+                Reason               = "$vramNote; $([math]::Round($ram, 1)) GiB RAM: mmap $cpuPick on CPU (--n-gpu-layers 0). This is the 'run it on RAM' path. Slow (often 1-5 tok/s). Tools can still work. Live Pi on THIS PC required; do not inherit a GPU 3/3."
+            }
+        }
+    }
+
+    if (-not $gpuOk) {
         return [pscustomobject]@{
             Action               = 'Refuse'
             Quant                = $null
             ModelRef             = $null
             InheritEvidence      = $false
+            Offload              = 'none'
             MinimumFreeVramGiB   = 14
-            Reason               = 'cannot measure GPU/VRAM. Refusing a Unsloth quant pick.'
-        }
-    }
-    $total = [double]$GpuTotalGb
-    $free = [double]$FreeVramGiB
-    $q3 = ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q3_K_XL'
-    if ($total -ge 16 -and $free -ge 14) {
-        return [pscustomobject]@{
-            Action               = 'UseDefault'
-            Quant                = 'UD-Q3_K_XL'
-            ModelRef             = $q3
-            InheritEvidence      = $true
-            MinimumFreeVramGiB   = 14
-            Reason               = "RTX-class ${total} GB, $free GiB free: coding default UD-Q3_K_XL (14 GiB floor, 3/3). Q4_K_XL is 17.6 GB and spills on 16 GB."
-        }
-    }
-    if ($free -ge 12) {
-        return [pscustomobject]@{
-            Action               = 'StepDown'
-            Quant                = 'UD-IQ3_XXS'
-            ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-IQ3_XXS')
-            InheritEvidence      = $false
-            MinimumFreeVramGiB   = 12
-            Reason               = "$free GiB free is below the Q3_K_XL 14 GiB floor. Step down to UD-IQ3_XXS (more KV). candidateOnly; live contract required."
-        }
-    }
-    if ($free -ge 11) {
-        return [pscustomobject]@{
-            Action               = 'StepDown'
-            Quant                = 'UD-Q2_K_XL'
-            ModelRef             = (ConvertTo-AirlockUnslothModelRef -Quant 'UD-Q2_K_XL')
-            InheritEvidence      = $false
-            MinimumFreeVramGiB   = 11
-            Reason               = "$free GiB free: UD-Q2_K_XL step-down. Quality cost is real. candidateOnly; live contract required."
+            Reason               = 'cannot measure GPU/VRAM, and RAM is missing or too small for a Unsloth mmap. Refusing a coding quant pick.'
         }
     }
     return [pscustomobject]@{
@@ -90,8 +123,9 @@ function Resolve-AirlockUnslothQuantStrategy {
         Quant                = $null
         ModelRef             = $null
         InheritEvidence      = $false
+        Offload              = 'none'
         MinimumFreeVramGiB   = 14
-        Reason               = "$free GiB free is below the Unsloth coding floor. Do not load 1-bit. Use ai-start for chat."
+        Reason               = "$([math]::Round([double]$FreeVramGiB, 2)) GiB VRAM is below the GPU coding floor and RAM is missing or too small for mmap. Do not load 1-bit. Use ai-start for chat."
     }
 }
 

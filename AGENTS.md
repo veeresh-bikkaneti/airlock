@@ -8,7 +8,7 @@ Tool-specific filenames (`CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions
 
 ## What this repo is
 
-Airlock is a hardened **single-instance local AI platform for Windows**.
+Airlock is a hardened **single-instance local AI platform for Windows**. The job is **any PC**, not the author ThinkPad: inspect this machine, pull an open-weight model that actually fits it, and if the user wants coding, prove tool-calling **on this machine** before trusting it. The Unsloth + Pi 3/3 on the RTX 5000 Ada is evidence bound to one box. It is not a certificate for anyone else.
 
 - PowerShell lives in `scripts/`. Config lives in `config/`. Python services live in `memory-service/` and `tool-proxy/`.
 - One Ollama **or** vLLM backend on port **12345**.
@@ -63,8 +63,8 @@ Airlock is a hardened **single-instance local AI platform for Windows**.
 `llamacpp-qwen38-ud-q3-k-xl` (Unsloth Qwen3.8-27B UD-Q3_K_XL) via llama-server + Pi harness: **3/3 real tool events** (ADR-013 / AIR-015). Profile is in `config/agent-profiles.json` with `candidateOnly: false`. That flag is **not** a certificate.
 
 - `ai-start` still selects Ollama by VRAM. Chat, not coding.
-- `ai-agent-start` is the coding door (ADR-016): default profile `llamacpp-qwen38-ud-q3-k-xl`, harness `pi-worker`. It starts llama-server, acquires the GGUF, runs the Pi contract, and publishes `active-agent.json` only on pass. `candidateOnly: false` is still **not** a certificate.
-- Unsloth Dynamic 3.0 ladder (ADR-018): on this 16 GB Ada card, **UD-Q3_K_XL is the coding quant**. `UD-Q4_K_XL` (17.6 GB) spills. A smaller step-down (`UD-IQ3_XXS`, `UD-Q2_K_XL`) is candidate-only and does not inherit the 3/3.
+- `ai-agent-start` is the coding door (ADR-016), harness `pi-worker`. **No `-Profile`:** size the Unsloth Dynamic 3.0 ladder to *this* PC's free VRAM, then a live Pi 3/3. Explicit `-Profile` still means that catalogue entry (never pick installed-but-unrequested). It starts llama-server, acquires the GGUF, runs the Pi contract, and publishes `active-agent.json` only on pass. `candidateOnly: false` is still **not** a certificate.
+- Unsloth Dynamic 3.0 ladder (ADR-018): **UD-Q3_K_XL is the 16 GB-class GPU coding quant**. Smaller GPUs step down (`UD-IQ3_XXS` / `UD-Q2_K_XL`). If VRAM is too small but **system RAM can hold the GGUF**, `ai-agent-start` mmap's it on CPU (`--n-gpu-layers 0`). That is the "run a heavy model on RAM" path: same llama-server + Pi door, often 1–5 tok/s, live contract required, never inherit a GPU 3/3. Tiny RAM (under ~10 GB free) still refuses. `UD-Q4_K_XL` needs ~24 GB VRAM.
 - Do not re-verify this profile on Ollama.
 - Real cross-session memory (PENDING.md item 9, closed): when `ai-memory-start` is running, `ai-agent-start` auto-starts a second small CPU-only llama-server (EmbeddingGemma-300M) for embeddings and routes through memory-service's `/coding/v1/chat/completions` (recall) + `/coding/v1/memory/remember` (persist). No Ollama involved. Fully optional, degrades to passthrough if the embedding runtime isn't up.
 

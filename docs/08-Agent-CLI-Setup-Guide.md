@@ -7,6 +7,7 @@ You don't need to read this front to back. Find your tool in the table of conten
 ## Contents
 
 - [Before you start (read this once)](#before-you-start-read-this-once)
+- [Harness honesty](#harness-honesty-coding-vs-it-connected)
 - [Pi.dev](#pidev)
 - [opencode.ai](#opencodeai)
 - [jcode](#jcode)
@@ -18,12 +19,24 @@ You don't need to read this front to back. Find your tool in the table of conten
 
 ## Before you start (read this once)
 
-Every tool below needs three things from you:
+Two doors. The rest of this guide is mostly "wire a CLI to localhost for chat." That is not a coding agent.
 
-1. **Airlock running.** Double-click `Start-AI.bat`, or run `.\scripts\Start-AI.ps1` — see [`07-Quickstart-Playbook.md`](07-Quickstart-Playbook.md) if you haven't done this yet. Leave that window open (or let it run in the background); if it's not running, every step below fails with a connection error, not a config error.
-2. **The port it's listening on.** Default is `12345`. The startup script prints it (`Endpoint: http://127.0.0.1:12345/v1`) — if you changed it with `-Port`, use your number everywhere `12345` appears below.
-3. **A model that's actually downloaded.** Run `ai-models` (or `ollama list`) to see what you have. `ai-start` auto-pulls a model sized to your hardware on first run, so you likely already have one — just make sure the name in your config matches something in that list. A config pointing at a model you haven't pulled yet will fail with a "model not found" error, which is easy to mistake for a setup mistake when it's really just a missing download.
-4. **An honest sense of what a local model is for.** This platform gets you a real, working connection — that part is solved and tested per tool below. It does not turn a 7-30B local model into a frontier model. Every tested tool section below already notes where a small model connects fine but ignores instructions or hallucinates; that's a model-tier ceiling, not a wiring bug. `config/models.json`'s `supportsFunctionCalling` flag is a seed, not a live verdict — see each model's `agenticReliabilityNote` and ADR-012/ADR-014 (`false` on `deepseek-r1:14b` and the embedding model — don't point an agentic harness at those; `true` on a coding model does **not** mean it completes a multi-turn tool loop). Treat the local backend as strong for single-file edits, focused refactors, test generation, and explanation; treat "switch to local when the cloud limit hits" as a way to keep doing *that* kind of work, not as a drop-in continuation of large multi-step agentic work across an entire repo — [`09-Cross-Harness-Session-Resume.md`](09-Cross-Harness-Session-Resume.md) covers what actually carries over when you switch.
+1. **Chat / connection checks.** Double-click `Start-AI.bat`, or run `.\scripts\Start-AI.ps1` — see [`07-Quickstart-Playbook.md`](07-Quickstart-Playbook.md). Leave it running. If it isn't, every step below fails with a connection error, not a config error. This is Ollama (or vLLM) on port `12345`. Fine for "does this CLI talk?"
+2. **Coding with bash/read/write loops.** Skip Ollama. Skip `qwen2.5-coder:7b`. Run `ai-agent-start` with **no `-Profile`** (ADR-016) — it sizes Unsloth Dynamic 3.0 to *this* machine's free VRAM, starts llama-server, then a live Pi 3/3. Explicit `-Profile` still works. The 7b "tool JSON as plain text" examples below are known failures, not a starter recipe. Ollama has no passing agentic verdict on this hardware. Not GLM/Grok/cloud Qwen.
+3. **The port it's listening on — check every time.** Chat default is `12345`. Run `ai-port` and use *that* number, not last week's config. The startup script prints it (`Endpoint: http://127.0.0.1:12345/v1`) — if you changed it with `-Port`, use your number everywhere `12345` appears below. Coding uses the certified endpoint from `ai-agent-start` (`active-agent.json`), not the chat port. Yesterday's port is not a promise.
+4. **A model that's actually downloaded.** For chat, run `ai-models` (or `ollama list`). `ai-start` auto-pulls by VRAM, not by tool skill — a config pointing at a model you haven't pulled fails with "model not found," which looks like a setup bug and isn't. For coding, `ai-agent-start` acquires the GGUF itself.
+5. **An honest sense of what a local chat model is for.** A working connection is solved and tested per tool below. It does not turn a 7-30B Ollama model into a frontier coding agent. Small models connect fine and still ignore instructions or hallucinate; that's a model-tier ceiling, not a wiring bug. `config/models.json`'s `supportsFunctionCalling` flag is a seed, not a live verdict — see each model's `agenticReliabilityNote` and ADR-012/ADR-014 (`false` on `deepseek-r1:14b` and the embedding model — don't point an agentic harness at those; `true` on a coding model does **not** mean it completes a multi-turn tool loop). Treat the chat backend as strong for single-file edits you attach yourself, focused refactors, test generation, and explanation. Treat "switch to local when the cloud limit hits" as a way to keep doing *that* kind of work, not as a drop-in continuation of large multi-step agentic work across an entire repo — [`09-Cross-Harness-Session-Resume.md`](09-Cross-Harness-Session-Resume.md) covers what actually carries over when you switch.
+
+### Harness honesty (coding vs "it connected")
+
+Check **`ai-port`** (chat) or the certificate endpoint in `active-agent.json` (coding) **every time**. Wiring a CLI to the wrong listener is the most common "it used to work" bug in this guide.
+
+| Harness | Verdict | What that actually means |
+|---|---|---|
+| **Pi** (`pi-worker` via `ai-agent-start`) | Proven on llama-server | The only live 3/3 on Unsloth Qwen3.8. That pass is bound to the machine that ran it — do not inherit another PC's certificate. |
+| **OpenCode** | Not a verified gate | AIR-017: `--auto` dumped ~282K of skills. Connection/chat can work; do not treat OpenCode as the coding certificate. |
+| **dsh** (DeepSeek harness) | Wait | Feasibility scoped; no stable release, not adopted. See `docs/adr/evidence/ADR-013-dsh-feasibility.md`. |
+| **Codex CLI** | Connectivity only | Live round-trip against the chat `/v1/responses` endpoint. That is not an agentic coding verdict. |
 
 **One command to sanity-check the platform itself, before blaming any tool's config:**
 

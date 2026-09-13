@@ -17,14 +17,14 @@ function Select-ModelForMemory([double]$availableGB) {
 }
 
 $cases = @(
-    @{ gb = 22; expect = "qwen3-coder:30b" }
-    @{ gb = 20; expect = "devstral-small-2:24b" }
+    @{ gb = 22; expect = "qwen3:14b" }
+    @{ gb = 20; expect = "qwen3:14b" }
     @{ gb = 10; expect = "qwen2.5-coder:7b" }
     @{ gb = 3;  expect = "qwen2.5-coder:7b" }
     # ThinkPad P16 Gen 2 RTX 5000 Ada ~15 GB free: 24b (15GB) needs 18GB with
-    # 20% headroom; 30b needs 21.6GB. Chat door therefore lands on 7b — which
-    # is why ai-agent-start exists (ADR-016). This is the author's idle GPU.
-    @{ gb = 15; expect = "qwen2.5-coder:7b" }
+    # 20% headroom; 30b needs 21.6GB. Both are known-failed agentic; 14b
+    # (unproven, ~9GB / 10.8GB with headroom) is the chat default (AGENT-001).
+    @{ gb = 15; expect = "qwen3:14b" }
 )
 
 $failures = 0
@@ -90,16 +90,16 @@ Write-Host "Testing installed-model preference..." -ForegroundColor Cyan
 
 $installTests = @(
     @{
-        name      = "30B and 7B both fit, only 7B installed -> pick installed 7B, not bigger 30B"
+        name      = "installed FAIL 7b must not beat uninstalled unproven 14b that fits"
         gb        = 22
         installed = @("qwen2.5-coder:7b")
-        expect    = "qwen2.5-coder:7b"
+        expect    = "qwen3:14b"
     }
     @{
-        name      = "30B and 7B both fit, nothing installed -> pick biggest (unchanged default)"
+        name      = "30B/24B fail and 14b unproven all fit, nothing installed -> unproven 14b"
         gb        = 22
         installed = @()
-        expect    = "qwen3-coder:30b"
+        expect    = "qwen3:14b"
     }
 )
 
@@ -113,6 +113,38 @@ foreach ($test in $installTests) {
     }
 }
 
+$sameClassConfig = @'
+{
+  "localModels": {
+    "big-unproven:30b": { "size": "~18 GB", "agenticLoopVerdict": "unproven" },
+    "small-unproven:14b": { "size": "~9 GB", "agenticLoopVerdict": "unproven" }
+  },
+  "fallbackOrder": ["big-unproven:30b", "small-unproven:14b"]
+}
+'@ | ConvertFrom-Json
+$sameClassPick = Select-BestCuratedModel -AvailableGB 22 -ModelsConfig $sameClassConfig -InstalledModels @("small-unproven:14b")
+if ($sameClassPick.Model -ne "small-unproven:14b") {
+    Write-Host "FAIL: installed unproven must beat larger unproven download -> got '$($sameClassPick.Model)'" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: installed unproven beats larger unproven download" -ForegroundColor Green
+}
+
+$skipFail = Select-BestCuratedModel -AvailableGB 22 -ModelsConfig $modelsConfig
+if ($skipFail.Reason -notmatch 'skipped known-failed agentic') {
+    Write-Host "FAIL: 22GB reason should mention skipped known-failed agentic, got '$($skipFail.Reason)'" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: 22GB reason skips known-failed agentic models" -ForegroundColor Green
+}
+$onlyFail = Select-BestCuratedModel -AvailableGB 10 -ModelsConfig $modelsConfig
+if ($onlyFail.Reason -notmatch 'known-failed agentic' -or $onlyFail.Model -ne 'qwen2.5-coder:7b') {
+    Write-Host "FAIL: 10GB reason should say winner is still fail, got '$($onlyFail.Model)' / '$($onlyFail.Reason)'" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: 10GB reason is known-failed agentic (only class that fits)" -ForegroundColor Green
+}
+
 # Test agentic-reliability disclosure (PBI-002/ADR-014): supportsFunctionCalling is an
 # API-capability flag, not a reliability signal - every curated coding model has it set
 # true, including qwen2.5-coder:7b, which is live-proven unreliable at tool-calling.
@@ -123,8 +155,8 @@ Write-Host "Testing agentic-reliability note disclosure..." -ForegroundColor Cya
 
 $reliabilityTests = @(
     @{ name = "Only qwen2.5-coder:7b fits -> its known-unreliable note surfaces"; gb = 10; expectNote = $true }
-    @{ name = "devstral-small-2:24b fits and wins -> no note (no known issue disclosed)"; gb = 20; expectNote = $false }
-    @{ name = "ThinkPad P16 Gen 2 idle 15GB VRAM -> 7b wins and its unreliability note surfaces"; gb = 15; expectNote = $true }
+    @{ name = "qwen3:14b fits and wins at 20GB -> no note"; gb = 20; expectNote = $false }
+    @{ name = "ThinkPad P16 Gen 2 idle 15GB VRAM -> 14b wins, no unreliability note"; gb = 15; expectNote = $false }
 )
 
 foreach ($test in $reliabilityTests) {
@@ -179,8 +211,11 @@ if ($nvidiaName -match 'RTX 5000 Ada') {
         Write-Host "PASS: live CpuCores is 32 (i9-13950HX)" -ForegroundColor Green
     }
     $chatPick = Select-BestCuratedModel -AvailableGB $ceiling -ModelsConfig $modelsConfig
-    if ([double]$ceiling -lt 18 -and $chatPick.Model -ne 'qwen2.5-coder:7b') {
-        Write-Host "FAIL: live chat pick is '$($chatPick.Model)', expected qwen2.5-coder:7b below 18 GB VRAM" -ForegroundColor Red
+    if ([double]$ceiling -ge 10.8 -and [double]$ceiling -lt 18 -and $chatPick.Model -ne 'qwen3:14b') {
+        Write-Host "FAIL: live chat pick is '$($chatPick.Model)', expected qwen3:14b at ~15 GB free (not 7b)" -ForegroundColor Red
+        $failures++
+    } elseif ([double]$ceiling -lt 10.8 -and $chatPick.Model -ne 'qwen2.5-coder:7b') {
+        Write-Host "FAIL: live chat pick is '$($chatPick.Model)', expected qwen2.5-coder:7b below 10.8 GB VRAM" -ForegroundColor Red
         $failures++
     } else {
         Write-Host "PASS: live chat pick is $($chatPick.Model)" -ForegroundColor Green

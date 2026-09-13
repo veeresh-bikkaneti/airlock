@@ -18,7 +18,7 @@ Write-Host "Testing AIR-016 ai-agent-start..." -ForegroundColor Cyan
 $helpersPath = Join-Path $ScriptDir "profile-helpers.ps1"
 $helpersText = Get-Content $helpersPath -Raw
 Assert-True ($helpersText -match 'function global:ai-agent-start') "T1: profile-helpers.ps1 defines function global:ai-agent-start"
-Assert-True ($helpersText -match 'llamacpp-qwen38-ud-q3-k-xl') "T1: ai-agent-start defaults to the Unsloth profile id"
+Assert-True ($helpersText -notmatch "Profile = 'llamacpp-qwen38-ud-q3-k-xl'") "T1: ai-agent-start does not hardcode the ThinkPad Q3 profile — empty -Profile sizes this PC"
 Assert-True ($helpersText -match 'pi-worker') "T1: ai-agent-start defaults to harness pi-worker"
 
 # --- T2-T4: GGUF mapper + skip/mismatch ---
@@ -79,13 +79,26 @@ if (Test-Path $ggufHelper) {
     Assert-True ($ada2bit.Quant -eq 'UD-Q2_K_XL') "ADR-018: ~11 GiB free -> UD-Q2_K_XL"
 
     $adaLow = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 8
-    Assert-True ($adaLow.Action -eq 'Refuse') "ADR-018: 8 GiB free refuses (no 1-bit coding path)"
+    Assert-True ($adaLow.Action -eq 'Refuse') "ADR-018: 8 GiB VRAM with no RAM figure still refuses (no silent 1-bit)"
+
+    $ramOff = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 8 -FreeRamGb 32
+    Assert-True ($ramOff.Action -eq 'CpuOffload') "8 GiB VRAM + 32 GiB RAM -> RAM mmap, not refuse"
+    Assert-True ($ramOff.Quant -eq 'UD-Q3_K_XL') "32 GiB RAM mmap uses the Q3 GGUF (same weights, CPU)"
+    Assert-True ($ramOff.Offload -eq 'cpu') "RAM path is labeled cpu"
+    Assert-True (-not $ramOff.InheritEvidence) "RAM mmap never inherits the GPU 3/3"
+
+    $noGpuRam = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null -FreeRamGb 24
+    Assert-True ($noGpuRam.Action -eq 'CpuOffload') "no NVIDIA GPU + 24 GiB RAM still gets a coding mmap"
+    Assert-True ($noGpuRam.Quant -eq 'UD-Q3_K_XL') "24 GiB RAM is enough for Q3 mmap"
+
+    $tinyRam = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null -FreeRamGb 6
+    Assert-True ($tinyRam.Action -eq 'Refuse') "6 GiB RAM cannot mmap a Unsloth 27B GGUF"
 
     $card24 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 24 -FreeVramGiB 22
     Assert-True ($card24.Quant -eq 'UD-Q3_K_XL') "ADR-018: 24 GB card still defaults to proven Q3_K_XL, not unverified Q4"
 
     $missing = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null
-    Assert-True ($missing.Action -eq 'Refuse') "ADR-018: missing nvidia-smi refuses a quant pick"
+    Assert-True ($missing.Action -eq 'Refuse') "ADR-018: missing nvidia-smi AND missing RAM refuses a quant pick"
 } else {
     Assert-True $false "T2: ConvertTo-AirlockGgufFileName unavailable"
     Assert-True $false "T3: skip-download branch unavailable"
@@ -139,6 +152,10 @@ $sessionText = Get-Content $sessionScript -Raw
 Assert-True ($sessionText -match 'Start-LlamaCppRuntime') "G2: Start-AgentSession mentions Start-LlamaCppRuntime"
 Assert-True ($sessionText -notmatch 'is not automated in this pass') "G2: the manual-start error string is gone"
 Assert-True ($sessionText -match 'Start-LlamaCppRuntime\s+-ModelPath') "G2: Start-AgentSession has a production Start-LlamaCppRuntime call"
+Assert-True ($sessionText -match '\$script:AirlockCertificateTtlHours\s*=\s*24') "certificate TTL named constant is 24 hours"
+Assert-True ($sessionText -match 'AddHours\(\$script:AirlockCertificateTtlHours\)') "expiresAt uses AirlockCertificateTtlHours (24h), not 5 minutes"
+Assert-True ($sessionText -notmatch 'expiresAt\s+=\s+\[DateTime\]::UtcNow\.AddMinutes\(5\)') "expiresAt is not now+5 minutes"
+Assert-True ($sessionText -match 'Write-Host \$fitState\.Message') "portable-fit fail-fast prints Resolve-AirlockPortableFitState.Message (Unsloth ladder / live Pi 3/3 / do-not-inherit)"
 
 # --- D9: VRAM start gate ---
 $cmdVram = Get-Command Resolve-AirlockVramStartGate -ErrorAction SilentlyContinue

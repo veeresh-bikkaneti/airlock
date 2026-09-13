@@ -1,8 +1,15 @@
 # Airlock
 
-**A hardened, single-instance AI infrastructure for Windows with Ollama, PowerShell, and optional cloud fallback.**
+**A hardened, single-instance local AI platform for Windows.** Any PC, not one ThinkPad. Inspect *this* machine, pull an open-weight model that actually fits it, and if you want coding, prove tool-calling **on this machine** before you trust it.
 
-One door open at a time — exactly one local model backend running, walled off from the outside, everything logged.
+Two doors. One at a time. Not GLM, not Grok, not cloud Qwen.
+
+- **`ai-start`** — chat, sized for *this* PC (Ollama or vLLM on port 12345). Talk. Don't expect bash/read/write loops.
+- **`ai-agent-start`** — the coding door. Sizes Unsloth Dynamic 3.0 (Qwen3.8-27B GGUF) to *this* machine's free VRAM, starts llama-server, then a live Pi 3/3. First run needs no `-Profile`. A 3/3 on someone else's box is not your certificate.
+
+On a 16 GB class card the coding quant is **UD-Q3_K_XL**. Smaller cards step down the Unsloth ladder (`UD-IQ3_XXS`, `UD-Q2_K_XL`) — those are **candidate-only** and do not inherit the 3/3. If VRAM is too small but system RAM can hold the GGUF, we mmap it on CPU (`--n-gpu-layers 0`): slow (often 1–5 tok/s), still llama-server + Pi, live contract on this PC. Tiny RAM still refuses.
+
+One local backend at a time, walled off from the outside, everything logged.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![PowerShell 7+](https://img.shields.io/badge/PowerShell-7+-green.svg)](https://github.com/PowerShell/PowerShell)
@@ -37,12 +44,12 @@ See [`CHANGELOG.md`](CHANGELOG.md) for what's new in each release.
 
 ### After This Platform
 
-✅ **Single-instance enforcement** — only one Ollama process, always on port 12345  
+✅ **Two doors, one at a time** — `ai-start` is chat sized for this PC; `ai-agent-start` is llama-server coding sized to *this* machine's free VRAM, then a live Pi 3/3. Not the same process, not the same verdict, not another PC's certificate.  
 ✅ **Automatic firewall guard** — inbound traffic blocked by default  
 ✅ **Structured audit logging** — every API call logged with model/provider metadata  
 ✅ **Resource monitoring** — RAM/VRAM checks before model load  
 ✅ **Policy-driven cloud fallback** — explicit approval required, secrets never in code  
-✅ **Unified CLI** — `ai-start`, `ai-stop`, `ai-health`, `ai-code`  
+✅ **Unified CLI** — `ai-start` (chat), `ai-agent-start` (coding), `ai-stop`, `ai-health`  
 
 ---
 
@@ -464,8 +471,13 @@ Add-Content $PROFILE ". `"$env:USERPROFILE\.ai-platform\scripts\profile-helpers.
 
 ### First Run
 
+Two doors. `ai-start` is chat sized for *this* PC (Ollama or vLLM). `ai-agent-start` is the coding door (ADR-016): no `-Profile` sizes Unsloth Dynamic 3.0 to *this* machine's free VRAM, then a live Pi 3/3. Do not inherit another PC's certificate.
+
 ```powershell
-# Start the platform (single-instance, hardened)
+# Coding door — sizes Unsloth to THIS PC, then a live Pi 3/3. Not GLM/Grok/cloud Qwen.
+ai-agent-start -DownloadConfirmed
+
+# Chat door (single-instance, hardened) — not the coding agent
 ai-start
 
 # Expected output:
@@ -485,7 +497,7 @@ ai-start
 # Check health
 ai-health
 
-# Start coding with aider
+# aider against the chat endpoint (not a bash/read/write agent — that's ai-agent-start)
 ai-code
 ```
 
@@ -493,9 +505,12 @@ ai-code
 
 ## 📚 Commands Reference
 
+`ai-start` is chat sized for this PC. `ai-agent-start` is the coding door (ADR-016): Unsloth Dynamic 3.0 sized to *this* machine, then a live Pi 3/3. Not GLM/Grok/cloud Qwen.
+
 | Command | Description |
 |---------|-------------|
-| `ai-start [-Model <name>] [-Backend ollama\|vllm] [-Force]` | Start the platform, kill any rogues. `-Backend` overrides/persists the saved backend choice (e.g. retry vLLM after a fallback) |
+| `ai-start [-Model <name>] [-Backend ollama\|vllm] [-Force]` | **Chat door.** Start Ollama or vLLM, kill any rogues. `-Backend` overrides/persists the saved backend choice (e.g. retry vLLM after a fallback). Does not certify tool-calling. |
+| `ai-agent-start [-Profile <id>] [-WhatIf] [-ForceVerify] [-DownloadConfirmed]` | **Coding door.** No `-Profile` sizes Unsloth Dynamic 3.0 to *this* PC (VRAM first; RAM mmap if the GPU is too small). Starts llama-server, acquires the GGUF, runs the live Pi contract, publishes `active-agent.json` only on pass. Explicit `-Profile` still supported — that is not auto-select of installed-but-unrequested (ADR-012). `-WhatIf` dry-run; `-ForceVerify` re-runs the live contract (no cache); `-DownloadConfirmed` is the recorded yes for the GGUF. |
 | `ai-stop [-CleanFirewall]` | Stop the active backend, clear state and any `ai-claude-on` redirect |
 | `ai-health` | Full health check (processes, API, firewall, resources) |
 | `ai-doctor` | Find dead `ANTHROPIC_*`/`OPENAI_*`/`COPILOT_*`/`GROK_*` redirects (any scope) pointing at a port nothing is listening on, and print the exact fix. Also flags skew between `~/.airlock-src` and `~/.ai-platform` when the standard installer's clone exists — a patch merged in the repo isn't live until `install.ps1` re-syncs it |

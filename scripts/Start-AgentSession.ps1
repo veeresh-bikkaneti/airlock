@@ -20,6 +20,10 @@ param(
     [string]$ProfileCataloguePath
 )
 
+# Published worker-certificate TTL. Capability-registry pass/fail cache stays 5 min.
+$script:AirlockCertificateTtlHours = 24
+$script:AirlockSizedOffload = 'gpu-all'
+
 # $PSScriptRoot (not a hand-assigned $ScriptDir) - immune to being clobbered
 # by any of these dot-sourced files reassigning the same variable name.
 . (Join-Path $PSScriptRoot "agent-state-helpers.ps1")
@@ -57,9 +61,10 @@ $OpenCodeConfigPath = "$env:USERPROFILE\.opencode\opencode.json"
 $BackupDir = Join-Path $PlatformDir "state" "config-backups"
 $TransactionDir = Join-Path $PlatformDir "state" "config-transactions"
 
-# Reads the catalogue and resolves a profile - pure/read-only, safe to call
-# both from -WhatIf's discovery-only path and from the real path (§7.1 step 2:
-# "never auto-select a candidate merely because it is already installed").
+# Reads the catalogue and resolves a profile. Explicit -Profile still means
+# exactly that profile (ADR-012: never pick an installed-but-unrequested
+# candidate). Empty -Profile is the any-PC coding door: size the Unsloth
+# ladder to this machine's VRAM, then live-prove. Step-downs ForceVerify.
 function Resolve-SessionProfile {
     $catalogue = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
     foreach ($p in $catalogue) {
@@ -69,12 +74,44 @@ function Resolve-SessionProfile {
             exit 1
         }
     }
-    $selection = Resolve-AirlockProfileSelection -RequestedProfileId $Profile -AvailableProfiles $catalogue
-    if (-not $selection.Selected) {
-        Write-Host "FAILED: $($selection.Reason)" -ForegroundColor Red
+    if ($Profile) {
+        $selection = Resolve-AirlockProfileSelection -RequestedProfileId $Profile -AvailableProfiles $catalogue
+        if (-not $selection.Selected) {
+            Write-Host "FAILED: $($selection.Reason)" -ForegroundColor Red
+            exit 1
+        }
+        return $selection.Selected
+    }
+    $freeVram = Get-AirlockFreeVramGiB
+    $gpuTotal = Get-AirlockGpuTotalGiB
+    $freeRam = Get-AirlockFreeRamGiB
+    $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $gpuTotal -FreeVramGiB $freeVram -FreeRamGb $freeRam
+    $sized = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $strategy
+    if (-not $sized.Selected) {
+        $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogue -FreeVramGiB $freeVram
+        Write-Host "FAILED: $($sized.Reason)" -ForegroundColor Red
+        Write-Host $fitState.Message -ForegroundColor Yellow
+        Write-Host "Chat door is still available: ai-start." -ForegroundColor Yellow
         exit 1
     }
-    return $selection.Selected
+    Write-Host "SIZED: $($sized.Reason)" -ForegroundColor Cyan
+    $script:AirlockSizedOffload = if ($sized.Offload) { $sized.Offload } else { 'gpu-all' }
+    if ($sized.ForceVerify) {
+        Set-Variable -Name ForceVerify -Value $true -Scope Script
+        Write-Host "SIZED: unproven on this PC — live Pi contract required (do not inherit another machine's 3/3)." -ForegroundColor Yellow
+    }
+    if ($script:AirlockSizedOffload -eq 'cpu') {
+        Write-Host "SIZED: RAM mmap / CPU offload. Expect 1-5 tok/s. This is still the coding door (llama-server + Pi), not a refuse." -ForegroundColor Yellow
+        $clone = $sized.Selected | Select-Object *
+        $args = @($clone.runtimeArgs)
+        for ($i = 0; $i -lt $args.Count; $i++) {
+            if ($args[$i] -eq '--n-gpu-layers' -and ($i + 1) -lt $args.Count) { $args[$i + 1] = '0' }
+        }
+        $clone.runtimeArgs = $args
+        $clone.minimumFreeVramGiB = 0
+        return $clone
+    }
+    return $sized.Selected
 }
 
 # --- §7.1: "-WhatIf performs discovery and prints the plan only. It never
@@ -193,29 +230,36 @@ try {
                 # itself, reintroduced here by a later, separate change.
                 $catalogueForFit = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
                 $freeVramGiB = Get-AirlockFreeVramGiB
-                $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
-                $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
-                if (-not $selfFit) {
-                    $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
-                        ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
-                    } else {
-                        "none in the catalogue fit this machine's detected VRAM"
-                    }
-                    Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
-                    exit 1
-                }
-
                 $runtimeArgs = @($selectedProfile.runtimeArgs)
-                $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
-                $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
-                if (-not $vramGate.Allowed) {
-                    Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
-                    exit 1
+                $cpuOffload = ($script:AirlockSizedOffload -eq 'cpu') -or ((($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains '0'))
+                if (-not $cpuOffload) {
+                    $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
+                    $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
+                    if (-not $selfFit) {
+                        $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
+                            ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
+                        } else {
+                            "none in the catalogue fit this machine's detected VRAM"
+                        }
+                        Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
+                        Write-Host $fitState.Message -ForegroundColor Yellow
+                        exit 1
+                    }
+
+                    $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
+                    $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
+                    if (-not $vramGate.Allowed) {
+                        Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
+                        exit 1
+                    }
+                } else {
+                    Write-Host "VRAM gate skipped: RAM mmap / --n-gpu-layers 0 (slow coding door)." -ForegroundColor Yellow
                 }
 
                 Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
+                $cpuTimeout = if ($cpuOffload) { 600 } else { 300 }
                 $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context ([int]$selectedProfile.initialContext) `
-                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir
+                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout
                 if (-not $started.Started) {
                     Write-Host "FAILED: $($started.Reason)" -ForegroundColor Red
                     exit 1
@@ -237,6 +281,23 @@ try {
             # Fully optional: if memory-service isn't running, $baseUrl is
             # unchanged and behavior is identical to before this existed.
             $memoryHealth = Get-AirlockMemoryServiceHealth -PlatformDir $PlatformDir
+            if (-not $memoryHealth.Healthy) {
+                $memApp = Join-Path $PlatformDir "memory-service"
+                $memVenv = Join-Path $memApp ".venv"
+                $memStarter = Join-Path $PSScriptRoot "Start-MemoryService.ps1"
+                if ((Test-Path $memVenv) -and (Test-Path $memStarter)) {
+                    Write-Host "Memory-service is down; starting it so this coding session can persist and resume." -ForegroundColor Yellow
+                    try {
+                        & $memStarter | Out-Null
+                    } catch {
+                        Write-Host "WARNING: could not start memory-service ($($_.Exception.Message))." -ForegroundColor Yellow
+                    }
+                    $memoryHealth = Get-AirlockMemoryServiceHealth -PlatformDir $PlatformDir
+                }
+                if (-not $memoryHealth.Healthy) {
+                    Write-Host "WARNING: no memory-service on this PC — coding will not recall or persist across sessions. Run ai-memory-start (needs the venv under ~/.ai-platform/memory-service)." -ForegroundColor Yellow
+                }
+            }
             if ($memoryHealth.Healthy) {
                 $codingPortState = [pscustomobject]@{
                     started = [DateTime]::UtcNow.ToString("o")
@@ -383,6 +444,9 @@ try {
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }
         if (-not $contractPassed) { $failureReasons += "Transport '$($next.Transport)' failed the capability contract." }
         else {
+            # Capability-registry pass/fail cache TTLs stay short (re-verify skip).
+            # The published worker certificate is the long-lived admission ticket
+            # bound to digest/runtime/harness. Liveness of llama-server is a separate probe.
             $publishedCertificate = [pscustomobject]@{
                 schemaVersion         = 1
                 sessionId             = $lock.sessionId
@@ -396,7 +460,7 @@ try {
                 capabilityEvidenceKey = $evidenceKey
                 sandboxPolicyVersion  = 1
                 provenAt              = [DateTime]::UtcNow.ToString('o')
-                expiresAt             = [DateTime]::UtcNow.AddMinutes(5).ToString('o')
+                expiresAt             = [DateTime]::UtcNow.AddHours($script:AirlockCertificateTtlHours).ToString('o')
                 fitState              = $fitState
                 provenance            = if ($gguf) {
                     [pscustomobject]@{

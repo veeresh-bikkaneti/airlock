@@ -16,7 +16,7 @@ Write-Host "Testing agent-profile-helpers.ps1..." -ForegroundColor Cyan
 # --- Get-AirlockProfileCatalogue / Test-AirlockProfileSchema against the real catalogue ---
 
 $catalogue = Get-AirlockProfileCatalogue -Path (Join-Path $ScriptDir "..\config\agent-profiles.json")
-Assert-True ($catalogue.Count -eq 2) "config/agent-profiles.json parses with the expected candidate count"
+Assert-True ($catalogue.Count -eq 5) "config/agent-profiles.json parses with Q3 coding default plus IQ3/Q2/IQ2 rungs"
 foreach ($p in $catalogue) {
     $schema = Test-AirlockProfileSchema -Profile $p
     Assert-True $schema.Valid "profile '$($p.profileId)' in the real catalogue passes schema validation"
@@ -41,6 +41,12 @@ $qwen = $catalogue | Where-Object { $_.profileId -eq 'llamacpp-qwen38-ud-q3-k-xl
 Assert-True ($null -ne $qwen) "Unsloth llama-server profile is in the catalogue"
 Assert-True ($qwen.candidateOnly -eq $false) "Unsloth profile is promoted (candidateOnly JSON false)"
 Assert-True (Test-AirlockProfileSchema -Profile $qwen).Valid "promoted Unsloth profile still passes schema"
+$iq3 = $catalogue | Where-Object { $_.profileId -eq 'llamacpp-qwen38-ud-iq3-xxs' } | Select-Object -First 1
+Assert-True ($null -ne $iq3) "IQ3_XXS step-down profile is in the catalogue"
+Assert-True $iq3.candidateOnly "IQ3_XXS step-down stays candidate-only (does not inherit 3/3)"
+$q2 = $catalogue | Where-Object { $_.profileId -eq 'llamacpp-qwen38-ud-q2-k-xl' } | Select-Object -First 1
+Assert-True ($null -ne $q2) "Q2_K_XL step-down profile is in the catalogue"
+Assert-True $q2.candidateOnly "Q2_K_XL step-down stays candidate-only"
 
 $gemma = $catalogue | Where-Object { $_.profileId -eq 'ollama-gemma4-12b' } | Select-Object -First 1
 Assert-True $gemma.candidateOnly "ollama-gemma4-12b stays candidate-only"
@@ -146,6 +152,39 @@ Assert-True ($fitLowVramState.IneligibleProfiles[0].Reason -match "below this pr
 $fitNoGpu = Resolve-AirlockPortableFitState -AvailableProfiles $fitCatalogue -FreeVramGiB $null
 Assert-True (-not $fitNoGpu.AnyEligible) "no NVIDIA GPU detected (null free VRAM) -> nothing eligible"
 Assert-True ($fitNoGpu.IneligibleProfiles[0].Reason -match "no NVIDIA GPU detected") "the reason distinguishes 'no GPU' from 'GPU too small' - different remediation"
+Assert-True ($fitEnoughVram.Message -match 'llamacpp-qwen38-ud-q3-k-xl') "enough VRAM -> message names the profile that fits"
+Assert-True ($fitEnoughVram.Message -match 'Unsloth') "message names the Unsloth ladder"
+Assert-True ($fitLowVramState.Message -match 'none') "nothing eligible -> message says none fit"
+Assert-True ($fitLowVramState.Message -match 'live') "message requires a live Pi contract on a new PC"
+Assert-True ($fitLowVramState.Message -match 'not inherit') "message says do not inherit another machine's certificate"
+Assert-True ($fitNoGpu.Message -match 'not inherit') "no-GPU path still carries the live-contract / not-inherit warning"
+Assert-True ($fitLowVramState.Message -match 'THIS PC') "message is about this machine, not the author ThinkPad"
+
+$useDefault = [pscustomobject]@{ Action = 'UseDefault'; Quant = 'UD-Q3_K_XL'; InheritEvidence = $true; Reason = '16 GB class' }
+$sizedDefault = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $useDefault
+Assert-True ($sizedDefault.Selected.profileId -eq 'llamacpp-qwen38-ud-q3-k-xl') "16 GB class sizes to Q3_K_XL"
+Assert-True $sizedDefault.InheritEvidence "Q3_K_XL may inherit evidence on this machine after a live pass"
+Assert-True (-not $sizedDefault.ForceVerify) "Q3_K_XL does not force-verify solely because it was sized"
+
+$stepDown = [pscustomobject]@{ Action = 'StepDown'; Quant = 'UD-IQ3_XXS'; InheritEvidence = $false; Reason = '13 GiB free' }
+$sizedStep = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $stepDown
+Assert-True ($sizedStep.Selected.profileId -eq 'llamacpp-qwen38-ud-iq3-xxs') "12-14 GiB free sizes to IQ3_XXS"
+Assert-True $sizedStep.ForceVerify "step-down ForceVerify — live contract on THIS PC"
+Assert-True (-not $sizedStep.InheritEvidence) "step-down never inherits another machine's 3/3"
+
+$refuse = [pscustomobject]@{ Action = 'Refuse'; Quant = $null; InheritEvidence = $false; Reason = '8 GiB free is below the Unsloth coding floor' }
+$sizedRefuse = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $refuse
+Assert-True ($null -eq $sizedRefuse.Selected) "below coding floor selects nothing"
+Assert-True ($sizedRefuse.Reason -match 'below') "refuse reason is the strategy reason"
+
+Assert-True ((ConvertTo-AirlockUnslothProfileId -Quant 'UD-Q2_K_XL') -eq 'llamacpp-qwen38-ud-q2-k-xl') "Q2 maps to the step-down profile id"
+Assert-True ((ConvertTo-AirlockUnslothProfileId -Quant 'UD-IQ2_XXS') -eq 'llamacpp-qwen38-ud-iq2-xxs') "IQ2 maps to the RAM-mmap last-resort profile id"
+
+$cpuStrat = [pscustomobject]@{ Action = 'CpuOffload'; Quant = 'UD-Q3_K_XL'; InheritEvidence = $false; Offload = 'cpu'; Reason = '32 GiB RAM mmap' }
+$sizedCpu = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $cpuStrat
+Assert-True ($sizedCpu.Selected.profileId -eq 'llamacpp-qwen38-ud-q3-k-xl') "RAM mmap still uses the Q3 GGUF"
+Assert-True ($sizedCpu.Offload -eq 'cpu') "CpuOffload is labeled cpu"
+Assert-True $sizedCpu.ForceVerify "RAM mmap never inherits a GPU 3/3"
 
 # --- Resolve-AirlockCodingMemoryRoute (PENDING.md item 9) ---
 

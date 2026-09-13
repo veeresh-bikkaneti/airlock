@@ -5,6 +5,7 @@ Switch between AI coding tools mid-task — Claude Code, Grok CLI, Pi CLI, OpenC
 ## Contents
 
 - [How it works](#how-it-works)
+- [What this is not](#what-this-is-not)
 - [Claude Code](#claude-code)
 - [Grok CLI](#grok-cli)
 - [Pi CLI](#pi-cli)
@@ -18,6 +19,14 @@ Switch between AI coding tools mid-task — Claude Code, Grok CLI, Pi CLI, OpenC
 One file per project: `.ai-context/SESSION_STATE.md`, written in the repo root. Claude Code writes it automatically — after every turn, right before context compaction, and when a session ends. Every other tool reads it — nothing else writes it this pass, so there's no risk of two tools racing to update the same file.
 
 The file is plain markdown, not JSON — every consumer here is an LLM, so it reads it directly, no parser needed.
+
+## What this is not
+
+This is a sticky note on the fridge, not a second brain. Don't confuse the two.
+
+- **Not full GLM-style memory.** Nothing auto-remembers every turn into a vault. The snapshot is git crumbs plus the last 10 user turns — enough to pick up the thread, not a lifelong diary.
+- **Not coding RAG.** Cross-session recall for `ai-agent-start` needs `ai-memory-start` running (memory-service + the embedding runtime). Resume is a file; RAG is a service. They don't substitute for each other.
+- **Pi still bleeds this file.** Pi has no dedicated ADR-004 adapter, so `.ai-context/SESSION_STATE.md` can leak into unrelated tool calls. That's a known gap — see [`adr/ADR-004-cross-harness-session-resume.md`](adr/ADR-004-cross-harness-session-resume.md). The resume skill is not "Pi will politely ignore the snapshot until you ask."
 
 ## Claude Code
 
