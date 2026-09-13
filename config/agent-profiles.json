@@ -25,6 +25,45 @@
       "runtimeArgs": ["--jinja", "--flash-attn", "on", "--n-gpu-layers", "all", "--reasoning-effort", "low"],
       "toolSurface": "lean",
       "candidateOnly": false
+    },
+    {
+      "profileId": "llamacpp-qwen38-ud-iq3-xxs",
+      "displayName": "Qwen3.8 27B UD-IQ3_XXS via llama.cpp (step-down)",
+      "runtime": "llama-server",
+      "transportCandidates": ["openai-direct"],
+      "modelRef": "unsloth/Qwen3.8-27B-GGUF:UD-IQ3_XXS",
+      "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
+      "initialContext": 8192,
+      "minimumFreeVramGiB": 12,
+      "runtimeArgs": ["--jinja", "--flash-attn", "on", "--n-gpu-layers", "all", "--reasoning-effort", "low"],
+      "toolSurface": "lean",
+      "candidateOnly": true
+    },
+    {
+      "profileId": "llamacpp-qwen38-ud-q2-k-xl",
+      "displayName": "Qwen3.8 27B UD-Q2_K_XL via llama.cpp (step-down)",
+      "runtime": "llama-server",
+      "transportCandidates": ["openai-direct"],
+      "modelRef": "unsloth/Qwen3.8-27B-GGUF:UD-Q2_K_XL",
+      "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
+      "initialContext": 8192,
+      "minimumFreeVramGiB": 11,
+      "runtimeArgs": ["--jinja", "--flash-attn", "on", "--n-gpu-layers", "all", "--reasoning-effort", "low"],
+      "toolSurface": "lean",
+      "candidateOnly": true
+    },
+    {
+      "profileId": "llamacpp-qwen38-ud-iq2-xxs",
+      "displayName": "Qwen3.8 27B UD-IQ2_XXS via llama.cpp (RAM mmap / last resort)",
+      "runtime": "llama-server",
+      "transportCandidates": ["openai-direct"],
+      "modelRef": "unsloth/Qwen3.8-27B-GGUF:UD-IQ2_XXS",
+      "acquisition": { "kind": "huggingface-gguf", "requiresConfirmation": true },
+      "initialContext": 4096,
+      "minimumFreeVramGiB": 9,
+      "runtimeArgs": ["--jinja", "--flash-attn", "on", "--n-gpu-layers", "all", "--reasoning-effort", "low"],
+      "toolSurface": "lean",
+      "candidateOnly": true
     }
   ]
 }

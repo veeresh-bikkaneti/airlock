@@ -2,7 +2,24 @@
 
 A beginner-friendly guide to running Airlock. No Ollama installed, no model pulled, no idea if your PC can handle it? That's the point — you don't need to know any of that up front.
 
-## What this platform does for you
+## Pick a door first
+
+Airlock has **two doors**. They are not interchangeable, and the chat one will happily start a model that cannot use tools. First run is **any PC** — yours, not the author's ThinkPad.
+
+| You want | Run this | Skip this |
+|---|---|---|
+| A coding agent with bash/read/write tools | `ai-agent-start` with **no `-Profile`**. It sizes Unsloth Dynamic 3.0 to *this* box's free VRAM, then a live Pi 3/3. Explicit `-Profile` still works if you mean a catalogue entry. | `Start-AI.bat` / `ai-start`. That's chat. Not GLM/Grok/cloud Qwen. |
+| Chat, completions, "talk to a local model" | Double-click `Start-AI.bat` (or `ai-start`). Rest of this playbook. | Don't expect tool loops. Ollama 7b printing JSON is a known miss, not a setup bug. |
+
+Coding door, one line (needs PowerShell 7, same as below):
+
+```powershell
+ai-agent-start -DownloadConfirmed
+```
+
+No `-Profile` is the point. Airlock reads **this** machine: free VRAM first, then free RAM. GPU-fit Unsloth is the fast door (16 GB class → `UD-Q3_K_XL`; smaller cards step down, **candidate-only**). If the GPU is too small but RAM can hold the GGUF, we mmap it on CPU — the same "run a heavy model on RAM" trick, labeled slow, still Pi. A live Pi pass on this box is the only coding certificate. `-WhatIf` to see the plan. `-ForceVerify` for a live contract, not a cached pass. `-Profile <id>` only if you really mean a specific catalogue entry (ADR-012: installed-but-unrequested is still never auto-selected). Then you're done with this playbook; the rest is the chat door.
+
+## What the chat door does for you
 
 You run one script. It figures out the rest:
 1. Installs Ollama if missing (one-time via winget), then checks if it's running (starts it if not).
@@ -21,11 +38,11 @@ Only one thing, one-time:
   ```
   Major version must be `7`. If not, install it from `winget install Microsoft.PowerShell`.
 
-Ollama is installed automatically on first run if missing — you do **not** need to install it yourself. This step can take several minutes (download + install via winget) with little visible progress in our console — that's normal, let it finish.
+Chat door only: Ollama is installed automatically on first run if missing — you do **not** need to install it yourself. This step can take several minutes (download + install via winget) with little visible progress in our console — that's normal, let it finish. Coding door (`ai-agent-start`) does not use Ollama.
 
-## Running it
+## Running the chat door
 
-**Double-click `Start-AI.bat`** in the repo root. That's the whole interaction — no terminal to open, no command to type.
+**Double-click `Start-AI.bat`** in the repo root. That's the whole chat interaction — no terminal to open, no command to type. Coding agents: you already skipped this; use `ai-agent-start`.
 
 A console window opens and tells you in plain language what's happening: hardware detected, model chosen and why, download/pull progress, and when the model is ready. When it's done, press any key to close the window — the platform keeps running in the background.
 
@@ -90,7 +107,8 @@ If you add `scripts/profile-helpers.ps1` to your PowerShell profile (see Step 9 
 
 | Command | What it does |
 |---|---|
-| `ai-start` | Same as `Start-AI.ps1` |
+| `ai-start` | Chat door. Same as `Start-AI.ps1`. Not tool-calling. |
+| `ai-agent-start` | Coding door (ADR-016). No `-Profile` sizes Unsloth to *this* box, then live Pi 3/3. Flags: `-Profile` (explicit catalogue id), `-WhatIf`, `-ForceVerify`, `-DownloadConfirmed`. |
 | `ai-stop` | Same as `Stop-AI.ps1` |
 | `ai-port` | Shows the port, model, whether it's healthy, and progress on any model still downloading |
 | `ai-provider` | Shows which provider (local or cloud fallback) is active |
@@ -103,6 +121,7 @@ You never have to guess if a model fits your PC. The picker:
 - Sizes against your **graphics card's free memory (VRAM)** if you have one — not system RAM. A model that doesn't fit your GPU can technically still run by spilling onto the CPU, but that's minutes-per-response slow, not "slow but usable." No GPU detected? Then system RAM is the ceiling instead, same as before.
 - Requires 20% headroom above the model's size before considering it a fit (a model needs more than just its file size once it's actually thinking).
 - Prefers a model you already have downloaded over a same-size one you don't, so it never makes you wait for an extra download when something on disk already works.
+- Among models that still fit, a known-failed agentic loop (`agenticLoopVerdict: fail` in `config/models.json`) loses to an unproven or passing one. Chat, not coding: this does not make the winner coding-ready.
 - Among what's left, picks the largest model that still fits comfortably.
 - Only reaches out to Hugging Face if nothing in the curated list (`config/models.json`) fits — see [`06-Model-Acquisition-Backlog.md`](06-Model-Acquisition-Backlog.md) for the full backlog behind this.
 

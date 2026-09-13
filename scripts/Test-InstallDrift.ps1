@@ -16,8 +16,8 @@ function Get-DoctorOutput {
 
 function Reset-Scratch {
     if (Test-Path $Scratch) { Remove-Item $Scratch -Recurse -Force }
-    New-Item -Path "$Scratch\.airlock-src\scripts" -ItemType Directory -Force | Out-Null
-    New-Item -Path "$Scratch\.ai-platform\scripts" -ItemType Directory -Force | Out-Null
+    New-Item -Path "$Scratch\.airlock-src\scripts\runtime-adapters" -ItemType Directory -Force | Out-Null
+    New-Item -Path "$Scratch\.ai-platform\scripts\runtime-adapters" -ItemType Directory -Force | Out-Null
 }
 
 Write-Host "Testing ai-doctor install-skew detection..." -ForegroundColor Cyan
@@ -88,9 +88,42 @@ try {
     } else {
         Write-Host "PASS: script missing from installed copy -> reported" -ForegroundColor Green
     }
+
+    # Case 6: runtime-adapters skew is visible (setup now copies them; doctor must too).
+    Reset-Scratch
+    Set-Content "$Scratch\.airlock-src\scripts\Foo.ps1" -Value "Write-Host 'hi'`n" -NoNewline
+    Set-Content "$Scratch\.ai-platform\scripts\Foo.ps1" -Value "Write-Host 'hi'`n" -NoNewline
+    Set-Content "$Scratch\.airlock-src\scripts\runtime-adapters\llamacpp.ps1" -Value "Write-Host 'new'`n" -NoNewline
+    Set-Content "$Scratch\.ai-platform\scripts\runtime-adapters\llamacpp.ps1" -Value "Write-Host 'old'`n" -NoNewline
+    $out = Get-DoctorOutput
+    if ($out -notmatch 'INSTALL DRIFT') {
+        Write-Host "FAIL: runtime-adapters content difference was not reported as drift" -ForegroundColor Red
+        $failures++
+    } elseif ($out -notmatch 'runtime-adapters\\llamacpp\.ps1') {
+        Write-Host "FAIL: adapter drift reported but did not name runtime-adapters\llamacpp.ps1" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: runtime-adapters content difference -> reported with relative path" -ForegroundColor Green
+    }
 } finally {
     $env:USERPROFILE = $RealUserProfile
     if (Test-Path $Scratch) { Remove-Item $Scratch -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host "Testing setup.ps1 coding-door deploy source..." -ForegroundColor Cyan
+$setupPath = Join-Path (Split-Path $ScriptDir -Parent) "setup.ps1"
+$setup = Get-Content $setupPath -Raw
+if ($setup -notmatch [regex]::Escape('Copy-Item "$RepoDir\scripts\runtime-adapters\*.ps1"')) {
+    Write-Host "FAIL: setup.ps1 source missing Copy-Item of runtime-adapters" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: setup.ps1 copies runtime-adapters" -ForegroundColor Green
+}
+if ($setup -notmatch [regex]::Escape('Copy-Item "$RepoDir\config\agent-profiles.json"')) {
+    Write-Host "FAIL: setup.ps1 source missing Copy-Item of agent-profiles.json" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: setup.ps1 copies agent-profiles.json" -ForegroundColor Green
 }
 
 if ($failures -gt 0) {

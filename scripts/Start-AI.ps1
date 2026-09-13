@@ -418,7 +418,15 @@ Write-Host ""
 
 Write-Host ""
 Write-Host "Checking model: $Model" -ForegroundColor Yellow
-$modelPullPending = Start-ModelAcquisitionPull -Model $Model -LivePort $LivePort -LogFile $LogFile
+$fallbackChat = $Model
+try {
+    $cfgPath = Join-Path $ScriptDir "..\config\models.json"
+    if (-not (Test-Path $cfgPath)) { $cfgPath = Join-Path $ConfigDir "models.json" }
+    $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+    if ($cfg.fallbackOrder -and $cfg.fallbackOrder.Count -gt 0) { $fallbackChat = [string]$cfg.fallbackOrder[-1] }
+} catch {}
+$modelPullPending = Start-ModelAcquisitionPull -Model $Model -LivePort $LivePort -LogFile $LogFile -FallbackModel $fallbackChat
+if ($script:AirlockEffectiveChatModel) { $Model = $script:AirlockEffectiveChatModel }
 
 # Final status summary for the user, showing endpoint, model, and security posture.
 Write-Host ""

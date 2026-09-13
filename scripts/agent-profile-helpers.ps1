@@ -75,6 +75,85 @@ function Get-AirlockFreeVramGiB {
     }
 }
 
+function Get-AirlockFreeRamGiB {
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem
+        if (-not $os -or -not $os.FreePhysicalMemory) { return $null }
+        return [math]::Round([double]$os.FreePhysicalMemory / 1MB, 2)
+    } catch {
+        return $null
+    }
+}
+
+function Get-AirlockGpuTotalGiB {
+    if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) { return $null }
+    try {
+        $raw = & nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+        $totalMiB = [double](($raw | Select-Object -First 1) -replace '\s', '')
+        return $totalMiB / 1024
+    } catch {
+        return $null
+    }
+}
+
+# Map a Unsloth quant strategy (Resolve-AirlockUnslothQuantStrategy) onto a
+# catalogue profile for THIS machine. Not "auto-select because it is
+# installed" (ADR-012). Empty -Profile on the coding door means: size the
+# Unsloth ladder to measured VRAM. Step-downs never inherit another PC's 3/3.
+function ConvertTo-AirlockUnslothProfileId {
+    param([Parameter(Mandatory)][string]$Quant)
+    switch ($Quant) {
+        'UD-Q3_K_XL' { return 'llamacpp-qwen38-ud-q3-k-xl' }
+        'UD-IQ3_XXS' { return 'llamacpp-qwen38-ud-iq3-xxs' }
+        'UD-Q2_K_XL' { return 'llamacpp-qwen38-ud-q2-k-xl' }
+        'UD-IQ2_XXS' { return 'llamacpp-qwen38-ud-iq2-xxs' }
+        default { return $null }
+    }
+}
+
+function Resolve-AirlockHardwareSizedCodingProfile {
+    param(
+        [Parameter(Mandatory)][object[]]$AvailableProfiles,
+        [Parameter(Mandatory)]$QuantStrategy
+    )
+    if ($QuantStrategy.Action -eq 'Refuse' -or -not $QuantStrategy.Quant) {
+        return [pscustomobject]@{
+            Selected        = $null
+            InheritEvidence = $false
+            ForceVerify     = $true
+            Reason          = [string]$QuantStrategy.Reason
+        }
+    }
+    $profileId = ConvertTo-AirlockUnslothProfileId -Quant $QuantStrategy.Quant
+    if (-not $profileId) {
+        return [pscustomobject]@{
+            Selected        = $null
+            InheritEvidence = $false
+            ForceVerify     = $true
+            Reason          = "quant '$($QuantStrategy.Quant)' has no coding-door catalogue id"
+        }
+    }
+    $match = $AvailableProfiles | Where-Object { $_.profileId -eq $profileId } | Select-Object -First 1
+    if (-not $match) {
+        return [pscustomobject]@{
+            Selected        = $null
+            InheritEvidence = $false
+            ForceVerify     = $true
+            Reason          = "catalogue is missing profile '$profileId' for quant $($QuantStrategy.Quant)"
+        }
+    }
+    $inherit = [bool]$QuantStrategy.InheritEvidence
+    $offload = if ($QuantStrategy.Offload) { [string]$QuantStrategy.Offload } else { 'gpu-all' }
+    return [pscustomobject]@{
+        Selected        = $match
+        InheritEvidence = $inherit
+        ForceVerify     = -not $inherit
+        Offload         = $offload
+        Reason          = "sized for this machine: $($QuantStrategy.Reason)"
+    }
+}
+
 # §4.1: three independent eligibility states, all required for coding-ready.
 # Pure given already-measured inputs - the caller (Start-AgentSession.ps1)
 # is responsible for actually measuring VRAM/residency/contract results.
@@ -209,10 +288,22 @@ function Resolve-AirlockPortableFitState {
             $ineligible += [pscustomobject]@{ ProfileId = $p.profileId; FloorGiB = $floor; Reason = $reason }
         }
     }
+    $fits = if ($eligible.Count -gt 0) {
+        ($eligible | ForEach-Object { $_.ProfileId }) -join ', '
+    } else {
+        'none'
+    }
+    $vramNote = if ($null -eq $FreeVramGiB) {
+        'no NVIDIA GPU detected'
+    } else {
+        "$([math]::Round([double]$FreeVramGiB, 2)) GiB free VRAM"
+    }
+    $message = "This machine ($vramNote): llama-server profiles that fit: $fits. A live Pi 3/3 on THIS PC is the only coding certificate — do not inherit another machine's pass. Unsloth Dynamic 3.0 ladder (ADR-018): pick the largest quant that fits this VRAM (UD-Q3_K_XL is the 16 GB coding quant; UD-Q4_K_XL needs ~18 GB free; UD-IQ3_XXS / UD-Q2_K_XL are candidate-only and do not inherit a 3/3). If none fit, use ai-start for chat — a bigger -Profile will hit the same VRAM gate."
     return [pscustomobject]@{
         EligibleProfiles   = $eligible
         IneligibleProfiles = $ineligible
         AnyEligible        = ($eligible.Count -gt 0)
+        Message            = $message
     }
 }
 

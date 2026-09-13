@@ -23,7 +23,7 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Log the detected hardware profile and the resulting size ceiling.
 - Priority: **P0** (blocks story 3)
 - Implemented: `Test-ResourceAvailability` (`scripts/Get-ModelAcquisition.ps1:59`) reads RAM via `Win32_OperatingSystem`, VRAM via `nvidia-smi`, cores via `Win32_ComputerSystem`.
-- **Fixed:** Model sizing now uses system RAM (FreeMemGB) as the ceiling regardless of GPU presence. GPU info is computed and logged as informational/speed context only. Rationale: Ollama automatically offloads model layers that don't fit in VRAM to CPU/RAM, so GPU only affects inference speed, not whether a model can run. Sizing logic extracted to `Get-ModelSizingCeilingGB` (`scripts/Get-ModelAcquisition.ps1:88`) for testability. Regression test confirms 4GB GPU + 32GB RAM box gets sized to 32GB, not 4GB. See ADR-001 decision point 3.
+- **Fixed (ADR-005):** Model sizing uses **free VRAM** as the ceiling whenever `nvidia-smi` reports a GPU. System RAM is the ceiling only when no GPU is detected. A model that spills onto CPU still "runs," but it's minutes-per-response slow — not an interactive chat default. Sizing lives in `Get-ModelSizingCeilingGB`. Regression: 4GB GPU + 32GB RAM box sizes to 4GB, not 32GB. The old RAM-ceiling wording here was leftover from ADR-001 decision point 3; ADR-005 supersedes it.
 
 ### 3. Prioritize the best model when multiple fit — **Status: Done**
 **As a** user **I want** the platform to pick the single best-fitting model when several candidates qualify **so that** I get good quality without manual comparison.
@@ -44,8 +44,9 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Auto-start the model once pulled, matching existing provider-selection flow in the blueprint.
 - Handle already-pulled models as a no-op (skip re-download).
 - Priority: **P0**
-- Implemented: `scripts/Get-ModelAcquisition.ps1:350-437` runs `ollama pull` in a background `Start-Job` for curated models, or launches `Start-HuggingFaceImport` for HF-sourced models. Both warm the model with a no-prompt `/api/generate` call and skip already-available models. `Start-ModelAcquisitionPull` (lines 343-437) detects HF models by name prefix and skips registry pull for them.
+- Implemented: `Start-ModelAcquisitionPull` and `Start-HuggingFaceImport` in `scripts/Get-ModelAcquisition.ps1` launch `pwsh -File scripts/Invoke-DetachedModelPull.ps1` via `Start-Process -WindowStyle Hidden`. State lives in `~/.ai-platform/state/model-pull.json`. Both warm the model with a no-prompt `/api/generate` call and skip already-available models. `Start-ModelAcquisitionPull` detects HF models by name prefix and skips registry pull for them. A second pull is reused only when the live pid is already fetching the same model; a different in-flight model is refused.
 - **Confirmed gap (real end-to-end test, 2026-08-07)**: the "ponytail" limitation noted in-code (`Start-Job only survives this PowerShell session`) is not theoretical — it reproduced on the very first live run. `ai-start -Model qwen2.5:0.5b` logged `ModelPull STARTED` and printed "will auto-start when ready," but the pull job died silently when the invoking PowerShell process exited: no `SUCCESS`/`FAILED` audit entry ever followed, `ollama list` showed zero models minutes later, and the console gave no indication anything had gone wrong. This will bite any invocation pattern where the process that ran `ai-start` doesn't stay alive for the full download (scripted/CI-style calls, some remote-exec wrappers) — an interactive terminal kept open is fine, but the failure is silent and undetectable from the console output either way. Upgrading from "accepted tradeoff, low priority" — needs either a completion check on next `ai-start`/`ai-health` (detect "model still missing after a plausible pull duration" and surface it) or the documented detached-process upgrade. Priority raised to **P2**.
+- **Fixed on `feat/airlock-coding-door-gaps`:** that Start-Job death is gone. `Start-ModelAcquisitionPull` and `Start-HuggingFaceImport` now launch `pwsh -File scripts/Invoke-DetachedModelPull.ps1` via `Start-Process -WindowStyle Hidden`, recording pid/model/kind in `~/.ai-platform/state/model-pull.json`. Closing the parent session no longer kills the pull. Story 4c (fallback when an HF import fails) is still backlog.
 
 ### 4b. Wire up Hugging Face acquisition — **Status: Done**
 **As a** user **I want** a model actually downloaded from Hugging Face when nothing in the curated Ollama list fits **so that** the "check HF" story pays off instead of just logging a source that never supplies a model.
@@ -53,10 +54,11 @@ Zero-touch setup: on first run (or when no suitable model is present), the platf
 - Priority: **P1**
 - Implemented: `Get-HuggingFaceGGUFCandidate` (`scripts/Get-ModelAcquisition.ps1:88-151`) queries HF's `/api/models` endpoint for GGUF files, gets sizes via `Content-Length` HEAD requests when needed, and filters by 20% headroom. `Start-HuggingFaceImport` (`scripts/Get-ModelAcquisition.ps1:153-278`) launches a background job that downloads the file, creates a Modelfile, runs `ollama create` to import, and warm-starts the model. Model names prefixed with `hf-` (e.g., `hf-anthropic-qwen`) identify HF imports; `Start-ModelAcquisitionPull` skips registry pull for these. Falls back to smallest curated model if HF search/download/import fails at any point.
 
-### 4c. Fallback when a background HuggingFace import fails after selection — **Status: Backlog**
+### 4c. Fallback when a detached HuggingFace import fails after selection — **Status: Backlog**
 **As a** user **I want** the platform to fall back to a curated model **so that** a failed HuggingFace download or `ollama create` doesn't leave me with no running model at all.
-- Today `Start-HuggingFaceImport` runs as a fire-and-forget background job; if the download or `ollama create` import fails, the failure is only visible in the audit log — the user is told their model is "pending" and nothing ever starts.
-- Needs the platform to detect job failure/timeout and retry with the next-best curated model, or clearly surface the failure instead of silently leaving the user without a working model.
+- Job-death is already fixed (story 4): the import is a detached `Start-Process`, not a `Start-Job` that dies with the parent session. This story is only the *fallback-on-fail* half.
+- Today if the download or `ollama create` import fails, the failure is only visible in the audit log — the user is told their model is "pending" and nothing ever starts.
+- Needs the platform to detect worker failure/timeout and retry with the next-best curated model, or clearly surface the failure instead of silently leaving the user without a working model.
 - Priority: **P2**
 
 ### 6. Auto-install Ollama itself when missing — **Status: Done**

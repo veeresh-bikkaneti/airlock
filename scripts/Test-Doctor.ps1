@@ -64,6 +64,68 @@ try {
     Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue
 }
 
+# Source-level: platform-ownership probes live in ai-doctor / ai-health. Do not
+# assert absence of a live 11434 warning — that port is the real machine.
+$helpersSrc = Get-Content (Join-Path $ScriptDir "profile-helpers.ps1") -Raw
+$doctorStart = $helpersSrc.IndexOf('function global:ai-doctor')
+$healthStart = $helpersSrc.IndexOf('function global:ai-health')
+if ($doctorStart -lt 0 -or $healthStart -lt 0 -or $healthStart -le $doctorStart) {
+    Write-Host "FAIL: could not isolate ai-doctor / ai-health in profile-helpers.ps1" -ForegroundColor Red
+    $failures++
+    $doctorBody = ""
+    $healthBody = ""
+} else {
+    $doctorBody = $helpersSrc.Substring($doctorStart, $healthStart - $doctorStart)
+    $healthBody = $helpersSrc.Substring($healthStart)
+}
+if ($doctorBody -and $doctorBody -notmatch '11434') {
+    Write-Host "FAIL: ai-doctor missing 11434 rogue-Ollama check" -ForegroundColor Red
+    $failures++
+} elseif ($doctorBody -and $doctorBody -notmatch 'active-agent\.json') {
+    Write-Host "FAIL: ai-doctor missing active-agent.json certificate check" -ForegroundColor Red
+    $failures++
+} elseif ($doctorBody -and $doctorBody -notmatch '12346') {
+    Write-Host "FAIL: ai-doctor missing memory-service 12346 check" -ForegroundColor Red
+    $failures++
+} elseif ($doctorBody) {
+    Write-Host "PASS: ai-doctor source contains 11434, active-agent.json, and 12346 checks" -ForegroundColor Green
+}
+if ($healthBody -and $healthBody -notmatch '/v1/models') {
+    Write-Host "FAIL: ai-health missing vllm /v1/models probe" -ForegroundColor Red
+    $failures++
+} elseif ($healthBody -and $healthBody -notmatch 'No active AI session') {
+    Write-Host "FAIL: ai-health missing no-session message" -ForegroundColor Red
+    $failures++
+} elseif ($healthBody -and ($healthBody -match '(?s)No active AI session.*?return\b') -and ($healthBody.IndexOf('return') -lt $healthBody.IndexOf('11434'))) {
+    Write-Host "FAIL: ai-health still returns before 11434/cert/memory checks when no session" -ForegroundColor Red
+    $failures++
+} elseif ($healthBody) {
+    Write-Host "PASS: ai-health probes /v1/models and does not return before ownership checks" -ForegroundColor Green
+}
+
+# Scratch USERPROFILE: expired coding cert must warn without touching real ~/.ai-platform.
+$RealUserProfile = $env:USERPROFILE
+$Scratch = Join-Path $env:TEMP "airlock-doctor-cert-$PID"
+try {
+    New-Item -Path "$Scratch\.ai-platform\state" -ItemType Directory -Force | Out-Null
+    Set-Content "$Scratch\.ai-platform\state\active-agent.json" -Value (@{
+        provenAt  = "2020-01-01T00:00:00Z"
+        expiresAt = "2020-01-02T00:00:00Z"
+        profileId = "test"
+    } | ConvertTo-Json)
+    $env:USERPROFILE = $Scratch
+    $out = Get-DoctorOutput
+    if ($out -notmatch 'WARNING' -or $out -notmatch 'provenAt' -or $out -notmatch 'expiresAt' -or $out -notmatch 'ai-agent-start') {
+        Write-Host "FAIL: expired active-agent.json did not warn with provenAt/expiresAt and ai-agent-start" -ForegroundColor Red
+        $failures++
+    } else {
+        Write-Host "PASS: expired active-agent.json -> WARNING with provenAt/expiresAt and ai-agent-start" -ForegroundColor Green
+    }
+} finally {
+    $env:USERPROFILE = $RealUserProfile
+    if (Test-Path $Scratch) { Remove-Item $Scratch -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 if ($failures -gt 0) {
     Write-Host ""
     Write-Host "$failures ai-doctor check(s) FAILED" -ForegroundColor Red

@@ -7,7 +7,9 @@
       "maxOutputTokens": 16384,
       "role": "preferred",
       "tags": ["coding", "general", "reasoning"],
-      "supportsFunctionCalling": true
+      "supportsFunctionCalling": true,
+      "agenticLoopVerdict": "fail",
+      "agenticReliabilityNote": "Narrates tool intent as plain text on Ollama (AGENTS.md)."
     },
     "deepseek-r1:14b": {
       "size": "~9 GB",
@@ -16,7 +18,8 @@
       "maxOutputTokens": 32768,
       "role": "reasoning",
       "tags": ["reasoning", "deep-think", "math", "logic"],
-      "supportsFunctionCalling": false
+      "supportsFunctionCalling": false,
+      "agenticLoopVerdict": "unproven"
     },
     "qwen3-coder:30b": {
       "size": "~18 GB",
@@ -26,6 +29,7 @@
       "role": "coding",
       "tags": ["coding", "large", "complex"],
       "supportsFunctionCalling": true,
+      "agenticLoopVerdict": "fail",
       "agenticReliabilityNote": "ADR-012 live evidence (2026-08-23/30): reliable for isolated single tool calls, but failed 0/3 and 0/6 on real multi-turn/agentic contract trials (an out-of-workspace write attempt, then a hallucinated tool call ignoring a local file). Treat as inconsistent for agentic coding sessions, not solved."
     },
     "qwen2.5-coder:7b": {
@@ -36,6 +40,7 @@
       "role": "fallback",
       "tags": ["coding", "fast", "lightweight"],
       "supportsFunctionCalling": true,
+      "agenticLoopVerdict": "fail",
       "agenticReliabilityNote": "Proven unreliable for tool-calling in agentic sessions (raw JSON/plain-text tool calls instead of structured calls) - see docs/adr/ADR-012-validated-local-agent-bootstrap.md. Prefer a larger model when one fits."
     },
     "qwen3:14b": {
@@ -45,7 +50,8 @@
       "maxOutputTokens": 8192,
       "role": "general",
       "tags": ["general", "balanced"],
-      "supportsFunctionCalling": true
+      "supportsFunctionCalling": true,
+      "agenticLoopVerdict": "unproven"
     },
     "nomic-embed-text": {
       "size": "~274 MB",
@@ -60,6 +66,7 @@
   "fallbackOrder": [
     "devstral-small-2:24b",
     "qwen3-coder:30b",
+    "qwen3:14b",
     "qwen2.5-coder:7b"
   ],
   "defaultEndpoint": "http://127.0.0.1:12345/v1",

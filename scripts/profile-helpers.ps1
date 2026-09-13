@@ -25,12 +25,12 @@ function global:ai-start {
     & "$env:USERPROFILE\.ai-platform\scripts\Start-AI.ps1" @args
 }
 
-# AIR-016 coding door. Default profile is Unsloth llama-server; explicit
-# -Profile is required for any other catalogue entry (Start-AgentSession
-# still never auto-selects). Chat stays on ai-start.
+# AIR-016 coding door. No -Profile: size Unsloth Dynamic 3.0 to THIS PC's
+# free VRAM (any-PC product). Explicit -Profile still means that catalogue
+# entry (ADR-012: never pick installed-but-unrequested). Chat stays on ai-start.
 function global:ai-agent-start {
     param(
-        [string]$Profile = 'llamacpp-qwen38-ud-q3-k-xl',
+        [string]$Profile,
         [switch]$WhatIf,
         [switch]$ForceVerify,
         [switch]$NoCache,
@@ -40,7 +40,15 @@ function global:ai-agent-start {
     if (-not (Test-Path $session)) {
         $session = "$env:USERPROFILE\.ai-platform\scripts\Start-AgentSession.ps1"
     }
-    & $session -Profile $Profile -Harness 'pi-worker' -WhatIf:$WhatIf -ForceVerify:$ForceVerify -NoCache:$NoCache -DownloadConfirmed:$DownloadConfirmed
+    $sessionArgs = @{
+        Harness            = 'pi-worker'
+        WhatIf             = $WhatIf
+        ForceVerify        = $ForceVerify
+        NoCache            = $NoCache
+        DownloadConfirmed  = $DownloadConfirmed
+    }
+    if ($Profile) { $sessionArgs.Profile = $Profile }
+    & $session @sessionArgs
 }
 
 # Shortcut to gracefully stop the platform and clean up state.
@@ -72,23 +80,26 @@ function global:ai-port {
         Write-Host "No active AI session. Run ai-start first." -ForegroundColor Yellow
     }
 
-    # Background model pulls/imports (ModelPull-*, HFImport-*) are Start-Job jobs in this session —
-    # surface their state so "is it hung?" has an answer without grepping the JSONL log.
-    $pullJobs = Get-Job | Where-Object { $_.Name -like "ModelPull-*" -or $_.Name -like "HFImport-*" }
-    if ($pullJobs) {
+    $pullStatus = $null
+    $pullStateFile = "$env:USERPROFILE\.ai-platform\state\model-pull.json"
+    if (Test-Path $pullStateFile) {
+        try {
+            $st = Get-Content $pullStateFile -Raw | ConvertFrom-Json
+            if ($st.pid -and (Get-Process -Id $st.pid -ErrorAction SilentlyContinue)) { $pullStatus = $st }
+        } catch {}
+    }
+    if ($pullStatus) {
         Write-Host ""
         Write-Host "Background pulls:" -ForegroundColor Cyan
         $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
         $progress = if (Test-Path $progressFile) { Get-Content $progressFile -Raw | ConvertFrom-Json } else { $null }
-        foreach ($j in $pullJobs) {
-            $color = switch ($j.State) { 'Running' { 'Yellow' }; 'Completed' { 'Green' }; 'Failed' { 'Red' }; default { 'Gray' } }
-            if ($j.State -eq 'Running' -and $progress -and $j.Name -eq "ModelPull-$($progress.model)") {
-                $speedPart = if ($progress.speed) { " at $($progress.speed)" } else { "" }
-                $etaPart = if ($progress.eta) { ", ~$($progress.eta) left" } else { "" }
-                Write-Host "  $($j.Name): $($progress.percent)% ($($progress.downloaded)/$($progress.total))$speedPart$etaPart" -ForegroundColor $color
-            } else {
-                Write-Host "  $($j.Name): $($j.State)" -ForegroundColor $color
-            }
+        $label = if ($pullStatus.kind -eq 'hf-import') { "HFImport-$($pullStatus.model)" } else { "ModelPull-$($pullStatus.model)" }
+        if ($progress -and $progress.model -eq $pullStatus.model) {
+            $speedPart = if ($progress.speed) { " at $($progress.speed)" } else { "" }
+            $etaPart = if ($progress.eta) { ", ~$($progress.eta) left" } else { "" }
+            Write-Host "  ${label}: $($progress.percent)% ($($progress.downloaded)/$($progress.total))$speedPart$etaPart (pid $($pullStatus.pid))" -ForegroundColor Yellow
+        } else {
+            Write-Host "  ${label}: Running (pid $($pullStatus.pid))" -ForegroundColor Yellow
         }
     }
 }
@@ -973,6 +984,17 @@ function global:ai-doctor {
                 $skewed += $f.Name
             }
         }
+        $srcAdapters = Join-Path $srcScripts "runtime-adapters"
+        if (Test-Path $srcAdapters) {
+            foreach ($f in Get-ChildItem "$srcAdapters\*.ps1") {
+                $rel = "runtime-adapters\$($f.Name)"
+                $installedPath = "$env:USERPROFILE\.ai-platform\scripts\$rel"
+                if (-not (Test-Path $installedPath)) { $skewed += $rel; continue }
+                if ((Get-NormalizedContentHash $f.FullName) -ne (Get-NormalizedContentHash $installedPath)) {
+                    $skewed += $rel
+                }
+            }
+        }
         if ($skewed.Count -gt 0) {
             $issues++
             Write-Host ""
@@ -980,6 +1002,53 @@ function global:ai-doctor {
             Write-Host "    $($skewed -join ', ')" -ForegroundColor Yellow
             Write-Host "    setup.ps1 always overwrites scripts\ from source on every run - this just means it hasn't been re-run since a patch landed there." -ForegroundColor Yellow
             Write-Host "    FIX: cd ~\.airlock-src; git pull --ff-only; .\install.ps1   (or re-run the irm|iex one-liner)" -ForegroundColor Cyan
+        }
+    }
+
+    # --- platform ownership: live stack vs default Ollama / expired cert / memory ---
+    $warnings = 0
+    $listen11434 = Test-PortAlive -TargetHost '127.0.0.1' -Port 11434
+    $listen12345 = Test-PortAlive -TargetHost '127.0.0.1' -Port 12345
+    if ($listen11434 -and -not $listen12345) {
+        $warnings++
+        Write-Host ""
+        Write-Host "  WARNING: rogue/default Ollama on 11434; Airlock coding/chat door is 12345; run ai-start or ai-agent-start." -ForegroundColor Yellow
+        Write-Host "    Port 11434 is listening and 12345 is not. This function does not kill anything." -ForegroundColor Gray
+    }
+
+    $certPath = "$env:USERPROFILE\.ai-platform\state\active-agent.json"
+    if (Test-Path $certPath) {
+        try {
+            $cert = Get-Content $certPath -Raw | ConvertFrom-Json
+            $expiresAt = $null
+            if ($cert.expiresAt) {
+                if ($cert.expiresAt -is [DateTime]) {
+                    $expiresAt = $cert.expiresAt.ToUniversalTime()
+                } else {
+                    try {
+                        $expiresAt = [DateTime]::Parse([string]$cert.expiresAt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                    } catch { }
+                }
+            }
+            if (-not $expiresAt -or $expiresAt -lt [DateTime]::UtcNow) {
+                $warnings++
+                Write-Host ""
+                Write-Host "  WARNING: coding certificate expired or missing expiresAt (provenAt=$($cert.provenAt); expiresAt=$($cert.expiresAt)). Run ai-agent-start." -ForegroundColor Yellow
+            }
+        } catch {
+            $warnings++
+            Write-Host ""
+            Write-Host "  WARNING: coding certificate unreadable at $certPath. Run ai-agent-start." -ForegroundColor Yellow
+        }
+    }
+
+    $memPortFile = "$env:USERPROFILE\.ai-platform\.memory-port.json"
+    $chromaExists = (Test-Path "$env:USERPROFILE\.ai-platform\memory\chroma") -or (Test-Path "$env:USERPROFILE\.ai-platform\memory\chroma-coding")
+    if ((Test-Path $memPortFile) -or $chromaExists) {
+        if (-not (Test-PortAlive -TargetHost '127.0.0.1' -Port 12346)) {
+            $warnings++
+            Write-Host ""
+            Write-Host "  WARNING: memory-service not running (port 12346 closed). Run ai-memory-start." -ForegroundColor Yellow
         }
     }
 
@@ -999,60 +1068,112 @@ function global:ai-doctor {
             Write-Host "  After clearing, restart every open shell and every running agent CLI — they hold stale copies of the environment." -ForegroundColor Yellow
         }
     }
+    if ($warnings -gt 0) {
+        Write-Host "  $warnings platform-ownership warning(s)." -ForegroundColor Yellow
+    }
 }
 
 function global:ai-health {
     $portFile = "$env:USERPROFILE\.ai-platform\.active-port.json"
     if (-not (Test-Path $portFile)) {
         Write-Host "No active AI session. Run ai-start first." -ForegroundColor Yellow
-        return
-    }
-    $state = Get-Content $portFile -Raw | ConvertFrom-Json
-    $port = $state.port
+    } else {
+        $state = Get-Content $portFile -Raw | ConvertFrom-Json
+        $port = $state.port
 
-    Write-Host "AI Platform Health Check" -ForegroundColor Cyan
-    Write-Host "========================" -ForegroundColor DarkCyan
+        Write-Host "AI Platform Health Check" -ForegroundColor Cyan
+        Write-Host "========================" -ForegroundColor DarkCyan
 
-    $processCount = (Get-Process -Name "ollama*" -ErrorAction SilentlyContinue | Measure-Object).Count
-    $procColor = if ($processCount -eq 2) { "Green" } elseif ($processCount -gt 2) { "Yellow" } else { "Red" }
-    Write-Host "  Processes : $processCount (expected: 2 [app + serve])" -ForegroundColor $procColor
-    if ($processCount -gt 2) {
-        Write-Host "    WARNING: Multiple instances! Run ai-stop then ai-start -Force" -ForegroundColor Yellow
-    }
-
-    try {
-        $c = [System.Net.Http.HttpClient]::new()
-        $c.Timeout = [TimeSpan]::FromSeconds(5)
-        $resp = $c.GetAsync("http://127.0.0.1:$port/api/tags").Result
-        if ($resp.IsSuccessStatusCode) {
-            Write-Host "  API       : HEALTHY (port $port)" -ForegroundColor Green
-        } else {
-            Write-Host "  API       : UNHEALTHY (HTTP $($resp.StatusCode))" -ForegroundColor Red
+        $processCount = (Get-Process -Name "ollama*" -ErrorAction SilentlyContinue | Measure-Object).Count
+        $procColor = if ($processCount -eq 2) { "Green" } elseif ($processCount -gt 2) { "Yellow" } else { "Red" }
+        Write-Host "  Processes : $processCount (expected: 2 [app + serve])" -ForegroundColor $procColor
+        if ($processCount -gt 2) {
+            Write-Host "    WARNING: Multiple instances! Run ai-stop then ai-start -Force" -ForegroundColor Yellow
         }
-    } catch {
-        Write-Host "  API       : UNREACHABLE (port $port)" -ForegroundColor Red
+
+        $apiUrl = "http://127.0.0.1:$port/api/tags"
+        $providerFile = "$env:USERPROFILE\.ai-platform\state\active-provider.json"
+        if (Test-Path $providerFile) {
+            try {
+                $prov = Get-Content $providerFile -Raw | ConvertFrom-Json
+                if ($prov.provider -eq 'vllm') {
+                    $apiUrl = if ($prov.endpoint) { "$($prov.endpoint.TrimEnd('/'))/models" } else { "http://127.0.0.1:$port/v1/models" }
+                }
+            } catch {}
+        }
+
+        try {
+            $c = [System.Net.Http.HttpClient]::new()
+            $c.Timeout = [TimeSpan]::FromSeconds(5)
+            $resp = $c.GetAsync($apiUrl).Result
+            if ($resp.IsSuccessStatusCode) {
+                Write-Host "  API       : HEALTHY (port $port)" -ForegroundColor Green
+            } else {
+                Write-Host "  API       : UNHEALTHY (HTTP $($resp.StatusCode))" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "  API       : UNREACHABLE (port $port)" -ForegroundColor Red
+        }
+
+        $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-Ollama-Block-$port" -ErrorAction SilentlyContinue
+        $fwColor = if ($fwRule) { "Green" } else { "Yellow" }
+        Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $port" } else { "NO RULE - port $port exposed!" })" -ForegroundColor $fwColor
+
+        $os = Get-CimInstance Win32_OperatingSystem
+        $freeMemPct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
+        $memColor = if ($freeMemPct -ge 20) { "Green" } else { "Red" }
+        Write-Host "  RAM       : $freeMemPct% free" -ForegroundColor $memColor
+
+        try {
+            $nvidia = & nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>$null
+            if ($nvidia) {
+                $vramFreeGB = [math]::Round([double]($nvidia.Trim()) / 1024, 1)
+                $vramColor = if ($vramFreeGB -ge 4) { "Green" } else { "Red" }
+                Write-Host "  VRAM      : $vramFreeGB GB free" -ForegroundColor $vramColor
+            }
+        } catch {}
+
+        $envSet = ($env:OLLAMA_HOST -eq "127.0.0.1:$port") -and ($env:OPENAI_BASE_URL -eq "http://127.0.0.1:$port/v1")
+        Write-Host "  Env vars  : $(if ($envSet) { 'OK' } else { 'NOT SET - re-source profile-helpers.ps1' })" -ForegroundColor $(if ($envSet) { "Green" } else { "Yellow" })
     }
 
-    $fwRule = Get-NetFirewallRule -DisplayName "AI-Platform-Ollama-Block-$port" -ErrorAction SilentlyContinue
-    $fwColor = if ($fwRule) { "Green" } else { "Yellow" }
-    Write-Host "  Firewall  : $(if ($fwRule) { "BLOCKED inbound port $port" } else { "NO RULE - port $port exposed!" })" -ForegroundColor $fwColor
+    $listen11434 = Test-PortAlive -TargetHost '127.0.0.1' -Port 11434
+    $listen12345 = Test-PortAlive -TargetHost '127.0.0.1' -Port 12345
+    if ($listen11434 -and -not $listen12345) {
+        Write-Host "  WARNING: rogue/default Ollama on 11434; Airlock coding/chat door is 12345; run ai-start or ai-agent-start." -ForegroundColor Yellow
+    }
 
-    $os = Get-CimInstance Win32_OperatingSystem
-    $freeMemPct = [math]::Round(($os.FreePhysicalMemory / $os.TotalVisibleMemorySize) * 100, 1)
-    $memColor = if ($freeMemPct -ge 20) { "Green" } else { "Red" }
-    Write-Host "  RAM       : $freeMemPct% free" -ForegroundColor $memColor
-
-    try {
-        $nvidia = & nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>$null
-        if ($nvidia) {
-            $vramFreeGB = [math]::Round([double]($nvidia.Trim()) / 1024, 1)
-            $vramColor = if ($vramFreeGB -ge 4) { "Green" } else { "Red" }
-            Write-Host "  VRAM      : $vramFreeGB GB free" -ForegroundColor $vramColor
+    $certPath = "$env:USERPROFILE\.ai-platform\state\active-agent.json"
+    if (Test-Path $certPath) {
+        try {
+            $cert = Get-Content $certPath -Raw | ConvertFrom-Json
+            $expiresAt = $null
+            if ($cert.expiresAt) {
+                if ($cert.expiresAt -is [DateTime]) {
+                    $expiresAt = $cert.expiresAt.ToUniversalTime()
+                } else {
+                    try {
+                        $expiresAt = [DateTime]::Parse([string]$cert.expiresAt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                    } catch { }
+                }
+            }
+            if (-not $expiresAt -or $expiresAt -lt [DateTime]::UtcNow) {
+                Write-Host "  Coding cert: expired or missing expiresAt (provenAt=$($cert.provenAt); expiresAt=$($cert.expiresAt)). Run ai-agent-start." -ForegroundColor Yellow
+            } else {
+                Write-Host "  Coding cert: valid until $($cert.expiresAt)" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "  Coding cert: unreadable. Run ai-agent-start." -ForegroundColor Yellow
         }
-    } catch {}
+    }
 
-    $envSet = ($env:OLLAMA_HOST -eq "127.0.0.1:$port") -and ($env:OPENAI_BASE_URL -eq "http://127.0.0.1:$port/v1")
-    Write-Host "  Env vars  : $(if ($envSet) { 'OK' } else { 'NOT SET - re-source profile-helpers.ps1' })" -ForegroundColor $(if ($envSet) { "Green" } else { "Yellow" })
+    $memPortFile = "$env:USERPROFILE\.ai-platform\.memory-port.json"
+    $chromaExists = (Test-Path "$env:USERPROFILE\.ai-platform\memory\chroma") -or (Test-Path "$env:USERPROFILE\.ai-platform\memory\chroma-coding")
+    if ((Test-Path $memPortFile) -or $chromaExists) {
+        if (-not (Test-PortAlive -TargetHost '127.0.0.1' -Port 12346)) {
+            Write-Host "  WARNING: memory-service not running (port 12346 closed). Run ai-memory-start." -ForegroundColor Yellow
+        }
+    }
 }
 
 # Helper summary printed at end of source – omitted to avoid parsing issues in this context

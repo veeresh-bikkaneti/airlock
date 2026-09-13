@@ -2,6 +2,8 @@
 # Called by scripts/Start-AI.ps1 after Write-AuditLog is defined
 # Requires: Write-AuditLog (from Start-AI.ps1)
 
+$script:AcquisitionScriptDir = $PSScriptRoot
+
 function Install-OllamaIfMissing {
     # Check if ollama is available on PATH or at the default per-user install location.
     # If not found and winget is available, install via winget. Otherwise, log failure and return $false.
@@ -267,113 +269,142 @@ function Get-HuggingFaceGGUFCandidate {
     }
 }
 
+function Get-ModelPullRecord {
+    $path = Join-Path $env:USERPROFILE ".ai-platform\state\model-pull.json"
+    if (-not (Test-Path $path)) { return $null }
+    try {
+        return Get-Content $path -Raw | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-ModelPullStatus {
+    $st = Get-ModelPullRecord
+    if (-not $st) { return $null }
+    if (-not $st.pid -or [int]$st.pid -le 0) { return $null }
+    if (-not (Get-Process -Id $st.pid -ErrorAction SilentlyContinue)) { return $null }
+    return $st
+}
+
+# Story 4c: a dead worker that recorded lastResult=FAILED for this model
+# means "do not keep saying pending" — caller should fall back.
+function Resolve-AirlockFailedPullFallback {
+    param(
+        [AllowNull()]$Record,
+        [Parameter(Mandatory)][string]$RequestedModel,
+        [Parameter(Mandatory)][string]$FallbackModel
+    )
+    if (-not $Record) {
+        return [pscustomobject]@{ Action = 'none'; Model = $RequestedModel; Reason = 'no pull record' }
+    }
+    $last = [string]$Record.lastResult
+    $recorded = [string]$Record.model
+    $pidLive = $false
+    if ($Record.pid -and [int]$Record.pid -gt 0) {
+        $pidLive = [bool](Get-Process -Id ([int]$Record.pid) -ErrorAction SilentlyContinue)
+    }
+    if ($pidLive) {
+        return [pscustomobject]@{ Action = 'none'; Model = $RequestedModel; Reason = 'pull still running' }
+    }
+    if ($last -eq 'FAILED' -and $recorded -eq $RequestedModel) {
+        if ($FallbackModel -eq $RequestedModel) {
+            return [pscustomobject]@{
+                Action = 'give-up'
+                Model  = $RequestedModel
+                Reason = "detached pull of '$RequestedModel' already failed; not starting the same worker again"
+            }
+        }
+        return [pscustomobject]@{
+            Action = 'fallback'
+            Model  = $FallbackModel
+            Reason = "detached pull of '$RequestedModel' failed; falling back to '$FallbackModel'"
+        }
+    }
+    return [pscustomobject]@{ Action = 'none'; Model = $RequestedModel; Reason = 'no failed pull to recover' }
+}
+
+function Save-ModelPullState {
+    param(
+        [Parameter(Mandatory)][int]$ProcessId,
+        [Parameter(Mandatory)][string]$Model,
+        [Parameter(Mandatory)][string]$Kind
+    )
+    $dir = Join-Path $env:USERPROFILE ".ai-platform\state"
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ([ordered]@{
+        pid       = $ProcessId
+        model     = $Model
+        startedAt = [DateTime]::UtcNow.ToString("o")
+        kind      = $Kind
+    } | ConvertTo-Json -Compress) | Set-Content -Path (Join-Path $dir "model-pull.json") -Encoding utf8NoBOM
+}
+
+# Pure: one in-flight pull at a time. Reuse only when the live pid is already
+# fetching this exact model; otherwise refuse so callers never log STARTED /
+# SUCCESS for model B while pid is pulling model A.
+function Resolve-AirlockInFlightPull {
+    param(
+        [AllowNull()]$Existing,
+        [Parameter(Mandatory)][string]$RequestedModel
+    )
+    if (-not $Existing) {
+        return [pscustomobject]@{ Action = 'start'; Reason = 'no in-flight pull' }
+    }
+    $existingModel = [string]$Existing.model
+    if ($existingModel -eq $RequestedModel) {
+        return [pscustomobject]@{
+            Action = 'reuse'
+            Reason = "reuse in-flight pull pid $($Existing.pid) for $RequestedModel"
+        }
+    }
+    return [pscustomobject]@{
+        Action = 'refuse'
+        Reason = "in-flight pull pid $($Existing.pid) is '$existingModel'; not starting '$RequestedModel'"
+    }
+}
+
 function Start-HuggingFaceImport {
     # Story 4b: download HF GGUF and import via `ollama create`.
-    # Runs in background job; returns derived model name (e.g., hf-anthropic-qwen).
+    # Detached process; returns derived model name (e.g., hf-anthropic-qwen).
     param(
         [Parameter(Mandatory)][hashtable]$Candidate,
         [Parameter(Mandatory)][int]$LivePort,
         [Parameter(Mandatory)][string]$LogFile
     )
 
-    # Derive model name: hf-<slugified-repo> (e.g., anthropic/qwen → hf-anthropic-qwen).
     $modelName = "hf-" + ($Candidate.RepoId -replace '/', '-' -replace '[^a-zA-Z0-9\-]', '')
 
-    # ponytail: Start-Job only survives this PowerShell session. Upgrade path: detached process.
-    $job = Start-Job -Name "HFImport-$modelName" -ArgumentList $Candidate, $modelName, $LivePort, $LogFile -ScriptBlock {
-        param($Cand, $Model, $Port, $LogFile)
-
-        function Write-JobAuditLog {
-            param([string]$Action, [string]$Result, [string]$Message, [string]$Detail = "")
-            $entry = [ordered]@{
-                timestampUtc = [DateTime]::UtcNow.ToString("o")
-                user         = $env:USERNAME
-                host         = $env:COMPUTERNAME
-                action       = $Action
-                result       = $Result
-                provider     = "huggingface"
-                model        = $Model
-                endpoint     = ""
-                message      = $Message
-                detail       = $Detail
-            }
-            ($entry | ConvertTo-Json -Compress) | Add-Content -Path $LogFile -Encoding utf8
-        }
-
-        # Ensure download directory exists.
-        $downloadDir = Join-Path $env:USERPROFILE ".ai-platform\models"
-        if (-not (Test-Path $downloadDir)) {
-            New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
-        }
-
-        $safeFilename = (Split-Path -Leaf $Cand.Filename) -replace '[^a-zA-Z0-9._-]', ''
-        $filepath = Join-Path $downloadDir $safeFilename
-
-        try {
-            # Download the GGUF file.
-            Write-JobAuditLog -Action "HuggingFaceDownload" -Result "STARTED" `
-                -Message "Downloading $($Cand.RepoId)/$($Cand.Filename) from HuggingFace" `
-                -Detail "Size: $($Cand.SizeGB) GB"
-
-            Invoke-WebRequest -Uri $Cand.Url -OutFile $filepath -TimeoutSec 3600 -ErrorAction Stop
-
-            if ((Test-Path $filepath) -and ((Get-Item $filepath).Length -gt 0)) {
-                Write-JobAuditLog -Action "HuggingFaceDownload" -Result "SUCCESS" `
-                    -Message "Downloaded $($Cand.Filename) ($($Cand.SizeGB) GB)" `
-                    -Detail "Saved to: $filepath"
-
-                # Create Modelfile for `ollama create`.
-                $modelfilePath = Join-Path $downloadDir "$Model.modelfile"
-                "FROM $filepath" | Set-Content -Path $modelfilePath -Encoding utf8
-
-                # Run `ollama create` to import the model.
-                Write-JobAuditLog -Action "HuggingFaceImport" -Result "STARTED" `
-                    -Message "Importing GGUF into Ollama: $Model"
-
-                & ollama create $Model -f $modelfilePath
-                Remove-Item -Path $modelfilePath -Force -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -eq 0) {
-                    Write-JobAuditLog -Action "HuggingFaceImport" -Result "SUCCESS" `
-                        -Message "Model imported successfully: $Model"
-
-                    # Auto-start: warm-start the model.
-                    try {
-                        $c = [System.Net.Http.HttpClient]::new()
-                        $c.Timeout = [TimeSpan]::FromSeconds(120)
-                        $body = [System.Net.Http.StringContent]::new(
-                            (@{ model = $Model } | ConvertTo-Json -Compress),
-                            [System.Text.Encoding]::UTF8, "application/json")
-                        $warmResp = $c.PostAsync("http://127.0.0.1:$Port/api/generate", $body).Result
-                        if ($warmResp.IsSuccessStatusCode) {
-                            Write-JobAuditLog -Action "ModelStarted" -Result "SUCCESS" `
-                                -Message "Model auto-started after HuggingFace import"
-                        } else {
-                            Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" `
-                                -Message "Warm-up call failed" -Detail "HTTP $($warmResp.StatusCode)"
-                        }
-                    } catch {
-                        Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" `
-                            -Message "Warm-up call failed" -Detail $_.Exception.Message
-                    }
-                } else {
-                    Write-JobAuditLog -Action "HuggingFaceImport" -Result "FAILED" `
-                        -Message "ollama create failed for $Model"
-                }
-            } else {
-                Remove-Item -Path $filepath -Force -ErrorAction SilentlyContinue
-                Write-JobAuditLog -Action "HuggingFaceDownload" -Result "FAILED" `
-                    -Message "Download failed or file is empty" -Detail "Path: $filepath"
-            }
-        } catch {
-            Remove-Item -Path $filepath -Force -ErrorAction SilentlyContinue
-            Write-JobAuditLog -Action "HuggingFaceDownload" -Result "FAILED" `
-                -Message "Error downloading GGUF from HuggingFace" -Detail $_.Exception.Message
-        }
+    $existing = Get-ModelPullStatus
+    $gate = Resolve-AirlockInFlightPull -Existing $existing -RequestedModel $modelName
+    if ($gate.Action -eq 'reuse') {
+        Write-Host "  HuggingFace import already running (pid $($existing.pid), $($existing.model)); reusing." -ForegroundColor Yellow
+        return $modelName
+    }
+    if ($gate.Action -eq 'refuse') {
+        Write-Host "  FAILED: $($gate.Reason). Wait for that pull to finish before starting another." -ForegroundColor Red
+        Write-AuditLog -Action "HuggingFaceImport" -Result "FAILED" -ModelName $modelName -Message $gate.Reason
+        return $null
     }
 
-    Write-Host "  Starting HuggingFace import in background (job $($job.Id)) — won't block startup" -ForegroundColor Yellow
+    $puller = Join-Path $script:AcquisitionScriptDir "Invoke-DetachedModelPull.ps1"
+    $argList = @(
+        '-NoProfile', '-File', $puller,
+        '-Kind', 'import',
+        '-Model', $modelName,
+        '-Port', "$LivePort",
+        '-LogFile', $LogFile,
+        '-RepoId', "$($Candidate.RepoId)",
+        '-Filename', "$($Candidate.Filename)",
+        '-Url', "$($Candidate.Url)",
+        '-SizeGB', "$($Candidate.SizeGB)"
+    )
+    $proc = Start-Process -FilePath 'pwsh' -ArgumentList $argList -WindowStyle Hidden -PassThru
+    Save-ModelPullState -ProcessId $proc.Id -Model $modelName -Kind 'hf-import'
+
+    Write-Host "  Starting HuggingFace import in background (pid $($proc.Id)) — won't block startup" -ForegroundColor Yellow
     Write-AuditLog -Action "HuggingFaceImport" -Result "STARTED" -ModelName $modelName `
-        -Message "Importing $($Candidate.RepoId) in background (job $($job.Id)) — won't block startup"
+        -Message "Importing $($Candidate.RepoId) in background (pid $($proc.Id)) — won't block startup"
 
     return $modelName
 }
@@ -388,28 +419,34 @@ function Select-BestCuratedModel {
     )
     $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
         $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
+        $verdict = $ModelsConfig.localModels.$candidate.agenticLoopVerdict
+        if (-not $verdict) { $verdict = 'unproven' }
+        $verdict = $verdict.ToString().ToLowerInvariant()
         [pscustomobject]@{
             Name              = $candidate
             SizeGB            = $sizeGB
             Fits              = ($AvailableGB -ge ($sizeGB * 1.2))
             Installed         = $InstalledModels -contains $candidate
             ReliabilityNote   = $ModelsConfig.localModels.$candidate.agenticReliabilityNote
+            AgenticRank       = if ($verdict -eq 'fail') { 0 } else { 1 }
         }
     }
     $candidateSummary = ($candidates | ForEach-Object {
         "$($_.Name)=$($_.SizeGB)GB($(if ($_.Fits) {'fits'} else {'too big'}))$(if ($_.Installed) {'[installed]'} else {''})"
     }) -join ", "
-    # Among models that fit, prefer one already pulled over one requiring a download,
-    # then prefer the largest. Pulling an 18GB model when a working 4.7GB model is
-    # already on disk is never the right default (PBI-airlock-local-fallback-architecture,
-    # child item 1) - "installed" outranks "bigger" for this tiebreak specifically.
+    # Fit first. Known-failed agentic loops lose to unproven/pass (AGENT-001).
+    # Then already-pulled over a same-class download, then largest.
     $fitting = $candidates | Where-Object { $_.Fits }
     $winner = $fitting |
-        Sort-Object -Property @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
+        Sort-Object -Property @{Expression = 'AgenticRank'; Descending = $true }, @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
         Select-Object -First 1
-    # Say which rule actually fired - "largest that fits" is false whenever a bigger,
-    # not-yet-installed candidate also fit and lost only because it wasn't installed.
-    $reason = if ($winner -and $winner.Installed -and ($fitting | Where-Object { $_.SizeGB -gt $winner.SizeGB })) {
+    $reason = if (-not $winner) {
+        "largest model that fits with headroom"
+    } elseif ($winner.AgenticRank -eq 0) {
+        "known-failed agentic model (only class that fits)"
+    } elseif ($fitting | Where-Object { $_.AgenticRank -eq 0 }) {
+        "skipped known-failed agentic models"
+    } elseif ($winner.Installed -and ($fitting | Where-Object { $_.SizeGB -gt $winner.SizeGB })) {
         "already installed - preferred over a larger download that also fit"
     } else {
         "largest model that fits with headroom"
@@ -463,9 +500,17 @@ function Select-BestModel {
 
                 if ($hfCandidate) {
                     $Model = Start-HuggingFaceImport -Candidate $hfCandidate -LivePort $LivePort -LogFile $logFile
-                    Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
-                        -Message "Selected HuggingFace model $($hfCandidate.RepoId) ($($hfCandidate.SizeGB) GB) - importing in background" `
-                        -Detail "Candidates (curated): $candidateSummary"
+                    if ($Model) {
+                        Write-AuditLog -Action "ModelSelection" -Result "SUCCESS" -ModelName $Model `
+                            -Message "Selected HuggingFace model $($hfCandidate.RepoId) ($($hfCandidate.SizeGB) GB) - importing in background" `
+                            -Detail "Candidates (curated): $candidateSummary"
+                    } else {
+                        $Model = $modelsConfig.fallbackOrder[-1]
+                        Write-Host "  WARNING: HuggingFace import not started (another pull is in flight); falling back to smallest: $Model" -ForegroundColor Yellow
+                        Write-AuditLog -Action "ModelSelection" -Result "WARNING" -ModelName $Model `
+                            -Message "HuggingFace import refused because another pull is in flight; falling back to smallest model $Model" `
+                            -Detail "Candidates (curated): $candidateSummary"
+                    }
                 } else {
                     # HF also has nothing; fall back to smallest curated model.
                     $Model = $modelsConfig.fallbackOrder[-1]
@@ -511,9 +556,11 @@ function Start-ModelAcquisitionPull {
     param(
         [Parameter(Mandatory)][string]$Model,
         [Parameter(Mandatory)][int]$LivePort,
-        [Parameter(Mandatory)][string]$LogFile
+        [Parameter(Mandatory)][string]$LogFile,
+        [string]$FallbackModel
     )
 
+    $script:AirlockEffectiveChatModel = $Model
     $modelPullPending = $false
     try {
         $c = [System.Net.Http.HttpClient]::new()
@@ -527,6 +574,26 @@ function Start-ModelAcquisitionPull {
             Write-Host "  Size  : $([math]::Round($found.size / 1GB, 2)) GB" -ForegroundColor DarkGray
             Write-AuditLog -Action "ModelCheck" -Result "SUCCESS" -ModelName $Model -Message "Model available" -Detail "Digest: $($found.digest)"
         } else {
+            if ($FallbackModel) {
+                $fb = Resolve-AirlockFailedPullFallback -Record (Get-ModelPullRecord) -RequestedModel $Model -FallbackModel $FallbackModel
+                if ($fb.Action -eq 'give-up') {
+                    Write-Host "  $($fb.Reason)" -ForegroundColor Red
+                    Write-AuditLog -Action "ModelPull" -Result "FAILED" -ModelName $Model -Message $fb.Reason
+                    return $false
+                }
+                if ($fb.Action -eq 'fallback') {
+                    Write-Host "  $($fb.Reason)" -ForegroundColor Yellow
+                    Write-AuditLog -Action "ModelPull" -Result "WARNING" -ModelName $fb.Model -Message $fb.Reason
+                    $Model = $fb.Model
+                    $script:AirlockEffectiveChatModel = $Model
+                    $found = $json.models | Where-Object { $_.name -eq $Model }
+                    if ($found) {
+                        Write-Host "  Fallback model '$Model' is ready" -ForegroundColor Green
+                        Write-AuditLog -Action "ModelCheck" -Result "SUCCESS" -ModelName $Model -Message "Fallback model available after failed pull"
+                        return $false
+                    }
+                }
+            }
             # Check if this is a HuggingFace-imported model (prefixed with "hf-").
             # HF models are imported via Start-HuggingFaceImport and don't exist in Ollama registry.
             if ($Model -like "hf-*") {
@@ -536,88 +603,36 @@ function Start-ModelAcquisitionPull {
                     -Detail "Check logs for HuggingFaceImport progress"
                 $modelPullPending = $true
             } else {
-                Write-Host "  Model '$Model' not found locally. Pulling it in the background..." -ForegroundColor Yellow
-                Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
+                Write-Host "  Model '$Model' not found locally." -ForegroundColor Yellow
 
-                # ponytail: Start-Job only survives this PowerShell session — closing the terminal
-                # kills an in-progress pull. Upgrade path if that ever matters: a detached process
-                # (Start-Process) instead of a session-bound job.
-                $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
-                # Start-Job runs in its own runspace and inherits none of this script's
-                # functions - InitializationScript re-injects ConvertFrom-OllamaPullLine's
-                # exact definition instead of duplicating the regex here to drift out of sync.
-                $initScript = [scriptblock]::Create("function ConvertFrom-OllamaPullLine { $((Get-Item Function:\ConvertFrom-OllamaPullLine).Definition) }")
-                $job = Start-Job -Name "ModelPull-$Model" -InitializationScript $initScript -ArgumentList $Model, $LivePort, $LogFile, $progressFile -ScriptBlock {
-                param($Model, $Port, $LogFile, $ProgressFile)
-
-                function Write-JobAuditLog {
-                    param(
-                        [string]$Action,
-                        [string]$Result,
-                        [string]$Message,
-                        [string]$Detail = ""
-                    )
-                    $entry = [ordered]@{
-                        timestampUtc = [DateTime]::UtcNow.ToString("o")
-                        user         = $env:USERNAME
-                        host         = $env:COMPUTERNAME
-                        action       = $Action
-                        result       = $Result
-                        provider     = "ollama"
-                        model        = $Model
-                        endpoint     = ""
-                        message      = $Message
-                        detail       = $Detail
-                    }
-                    ($entry | ConvertTo-Json -Compress) | Add-Content -Path $LogFile -Encoding utf8
-                }
-
-                # Piping through ForEach-Object (instead of capturing to a variable) processes
-                # each line as it arrives, so the progress file updates live instead of only
-                # once at the end.
-                & ollama pull $Model 2>&1 | ForEach-Object {
-                    $parsed = ConvertFrom-OllamaPullLine -Line $_.ToString()
-                    if ($parsed) {
-                        $progress = [ordered]@{
-                            model      = $Model
-                            percent    = $parsed.Percent
-                            downloaded = $parsed.Downloaded
-                            total      = $parsed.Total
-                            speed      = $parsed.Speed
-                            eta        = $parsed.Eta
-                            updatedUtc = [DateTime]::UtcNow.ToString("o")
-                        }
-                        try { ($progress | ConvertTo-Json -Compress) | Set-Content -Path $ProgressFile -Encoding utf8NoBOM } catch {}
-                    }
-                }
-                Remove-Item $ProgressFile -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -eq 0) {
-                    Write-JobAuditLog -Action "ModelPull" -Result "SUCCESS" -Message "Model pulled in background"
-                    try {
-                        # Auto-start: a minimal /api/generate call (no prompt) makes Ollama load
-                        # the model into memory without generating any tokens.
-                        $c = [System.Net.Http.HttpClient]::new()
-                        $c.Timeout = [TimeSpan]::FromSeconds(120)
-                        $body = [System.Net.Http.StringContent]::new(
-                            (@{ model = $Model } | ConvertTo-Json -Compress),
-                            [System.Text.Encoding]::UTF8, "application/json")
-                        $warmResp = $c.PostAsync("http://127.0.0.1:$Port/api/generate", $body).Result
-                        if ($warmResp.IsSuccessStatusCode) {
-                            Write-JobAuditLog -Action "ModelStarted" -Result "SUCCESS" -Message "Model auto-started after background pull"
-                        } else {
-                            Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" -Message "Warm-up call failed" -Detail "HTTP $($warmResp.StatusCode)"
-                        }
-                    } catch {
-                        Write-JobAuditLog -Action "ModelStarted" -Result "WARNING" -Message "Warm-up call failed" -Detail $_.Exception.Message
-                    }
+                $existing = Get-ModelPullStatus
+                $gate = Resolve-AirlockInFlightPull -Existing $existing -RequestedModel $Model
+                if ($gate.Action -eq 'reuse') {
+                    Write-Host "  Pull already running (pid $($existing.pid), $($existing.model)); reusing." -ForegroundColor Yellow
+                    Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
+                    Write-AuditLog -Action "ModelPull" -Result "STARTED" -ModelName $Model -Message $gate.Reason
+                    $modelPullPending = $true
+                } elseif ($gate.Action -eq 'refuse') {
+                    Write-Host "  FAILED: $($gate.Reason). Wait for that pull to finish before starting another." -ForegroundColor Red
+                    Write-AuditLog -Action "ModelPull" -Result "FAILED" -ModelName $Model -Message $gate.Reason
                 } else {
-                    Write-JobAuditLog -Action "ModelPull" -Result "FAILED" -Message "ollama pull failed"
+                    Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
+                    $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
+                    $puller = Join-Path $script:AcquisitionScriptDir "Invoke-DetachedModelPull.ps1"
+                    $argList = @(
+                        '-NoProfile', '-File', $puller,
+                        '-Kind', 'pull',
+                        '-Model', $Model,
+                        '-Port', "$LivePort",
+                        '-LogFile', $LogFile,
+                        '-ProgressFile', $progressFile
+                    )
+                    $proc = Start-Process -FilePath 'pwsh' -ArgumentList $argList -WindowStyle Hidden -PassThru
+                    Save-ModelPullState -ProcessId $proc.Id -Model $Model -Kind 'ollama-pull'
+                    $modelPullPending = $true
+                    Write-Host "  Pulling '$Model' in the background (pid $($proc.Id)) — startup will continue without waiting" -ForegroundColor Yellow
+                    Write-AuditLog -Action "ModelPull" -Result "STARTED" -ModelName $Model -Message "Pulling '$Model' in the background (pid $($proc.Id)) — won't block startup"
                 }
-            }
-
-                $modelPullPending = $true
-                Write-Host "  Pulling '$Model' in the background (job $($job.Id)) — startup will continue without waiting" -ForegroundColor Yellow
-                Write-AuditLog -Action "ModelPull" -Result "STARTED" -ModelName $Model -Message "Pulling '$Model' in the background (job $($job.Id)) — won't block startup"
             }
         }
     } catch {
