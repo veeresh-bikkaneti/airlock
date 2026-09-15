@@ -347,11 +347,7 @@ function Resolve-CurrentTaskRoute {
         return [pscustomobject]@{ Error = "Active model '$activeModel' has no entry in models.json - cannot read supportsFunctionCalling."; Route = $null; ActiveModel = $activeModel }
     }
 
-    # ponytail: task-router-keywords.json isn't in setup.ps1's deploy copy list yet (only
-    # models.json/policies/*.json/*.template are) - resolve next to this script instead of
-    # under $Script:PlatformDir\config, so it works from a repo checkout today. Upgrade path:
-    # add it to setup.ps1's config copy step once that file is touched for another reason.
-    $keywordsFile = Join-Path $PSScriptRoot "..\config\task-router-keywords.json"
+    $keywordsFile = Join-Path $Script:PlatformDir "config\task-router-keywords.json"
     $keywords = if (Test-Path $keywordsFile) { @((Get-Content $keywordsFile -Raw | ConvertFrom-Json).planningKeywords) } else { @() }
 
     $fileCount = $Files.Count
@@ -791,7 +787,15 @@ function script:Get-ProcessAncestry {
     param([int]$StartPid = $PID, [int]$MaxDepth = 12)
     $chain = @()
     $id = $StartPid
+    $cimAvailable = [bool](Get-Command Get-CimInstance -ErrorAction SilentlyContinue)
     for ($i = 0; $i -lt $MaxDepth -and $id; $i++) {
+        if (-not $cimAvailable) {
+            $fallback = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if ($fallback) {
+                $chain += [pscustomobject]@{ Id = $fallback.Id; Name = $fallback.ProcessName }
+            }
+            break
+        }
         $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
         if (-not $p) { break }
         $chain += [pscustomobject]@{ Id = $p.ProcessId; Name = $p.Name }

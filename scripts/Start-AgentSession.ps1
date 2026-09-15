@@ -121,8 +121,10 @@ function Resolve-SessionProfile {
 if ($WhatIf) {
     $selectedProfile = Resolve-SessionProfile
     $endpointMode = Resolve-SessionEndpointMode -Runtime $selectedProfile.runtime -Harness $Harness
+    $effectiveContext = if ($Context -gt 0) { $Context } else { [int]$selectedProfile.initialContext }
     Write-Host "WHATIF: would acquire lock at $LockPath" -ForegroundColor Cyan
     Write-Host "WHATIF: selected profile '$($selectedProfile.profileId)' ($($selectedProfile.displayName))" -ForegroundColor Cyan
+    Write-Host "WHATIF: effective context window = $effectiveContext" -ForegroundColor Cyan
     Write-Host "WHATIF: would try transports in order: $($endpointMode.TransportCandidates -join ', ')" -ForegroundColor Cyan
     Write-Host "WHATIF: would check capability registry at $RegistryPath (ForceVerify=$ForceVerify, NoCache=$NoCache)" -ForegroundColor Cyan
     Write-Host "WHATIF: would run the $Harness workspace contract in $WorkspaceRoot if no fresh capability entry exists" -ForegroundColor Cyan
@@ -156,6 +158,7 @@ try {
 
     # --- Step 2: resolve profile ---
     $selectedProfile = Resolve-SessionProfile
+    $effectiveContext = if ($Context -gt 0) { $Context } else { [int]$selectedProfile.initialContext }
 
     # --- Step 4/5: start/adopt runtime, inspect. One branch per adapter -
     # the shapes genuinely differ: Ollama assumes an always-on daemon that
@@ -258,7 +261,7 @@ try {
 
                 Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
                 $cpuTimeout = if ($cpuOffload) { 600 } else { 300 }
-                $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context ([int]$selectedProfile.initialContext) `
+                $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context $effectiveContext `
                     -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout
                 if (-not $started.Started) {
                     Write-Host "FAILED: $($started.Reason)" -ForegroundColor Red
@@ -376,7 +379,7 @@ try {
         $evidenceKey = Get-AirlockCapabilityEvidenceKey -ContractVersion "1" -ProfileId $selectedProfile.profileId `
             -ModelRef $selectedProfile.modelRef -ModelDigest $modelDigest -ArtifactHash $(if ($gguf -and $gguf.Sha256) { $gguf.Sha256 } else { $modelDigest }) `
             -Runtime $selectedProfile.runtime -RuntimeVersion $runtimeVersion -EndpointMode $next.Transport -EndpointIdentity $endpointUrl `
-            -RuntimeConfigHash "n/a" -ChatTemplateIdentity $chatTemplateIdentity -EffectiveContext "$Context" `
+            -RuntimeConfigHash "n/a" -ChatTemplateIdentity $chatTemplateIdentity -EffectiveContext "$effectiveContext" `
             -KvCacheMode "default" -Harness $Harness -HarnessVersion "n/a" -HarnessConfigHash "n/a" `
             -ToolSurfaceHash $selectedProfile.toolSurface -SandboxPolicyVersion "1"
 
@@ -455,7 +458,7 @@ try {
                 modelDigest           = $modelDigest
                 runtime               = [pscustomobject]@{ name = $selectedProfile.runtime; version = $runtimeVersion }
                 transport             = [pscustomobject]@{ mode = $next.Transport; endpoint = $endpointUrl }
-                effectiveContext      = $Context
+                effectiveContext      = $effectiveContext
                 harness               = $Harness
                 capabilityEvidenceKey = $evidenceKey
                 sandboxPolicyVersion  = 1

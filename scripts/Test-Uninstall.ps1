@@ -5,14 +5,21 @@
 # Run: pwsh -File scripts/Test-Uninstall.ps1
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+if (-not $IsWindows) {
+    Write-Host "SKIP: uninstall lifecycle test requires Windows firewall and process APIs." -ForegroundColor Yellow
+    exit 0
+}
+
 $UninstallScript = Join-Path $ScriptDir "Uninstall-AI.ps1"
 
 $failures = 0
 
 # Disposable fixtures standing in for ~/.ai-platform and ~/.airlock-src - real script paths are
 # never touched by this test.
-$fixturePlatformDir = Join-Path $env:TEMP "air-test-uninstall-platform-$PID"
-$fixtureSrcDir       = Join-Path $env:TEMP "air-test-uninstall-src-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$fixturePlatformDir = Join-Path $TempRoot "air-test-uninstall-platform-$PID"
+$fixtureSrcDir       = Join-Path $TempRoot "air-test-uninstall-src-$PID"
 
 function New-Fixtures {
     # profile-helpers.ps1 dot-sources sibling scripts (Get-TaskRoute.ps1 etc.) by relative

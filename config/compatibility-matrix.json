@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "defaultVerdict": "unsupported-unverified",
+    "certificateScope": "machine-runtime-model-harness-configuration",
+    "publicClaimRule": "Only advertise a capability when a live contract passes on the current machine."
+  },
+  "capabilities": {
+    "chat": {
+      "description": "Local conversational inference without a coding-agent reliability claim.",
+      "verification": "connectivity-and-model-fit-required"
+    },
+    "coding": {
+      "description": "Multi-turn coding workflow with structured tools and a repair loop.",
+      "verification": "live-contract-required"
+    },
+    "reasoning": {
+      "description": "Model-specific reasoning behavior.",
+      "verification": "evaluation-suite-required"
+    },
+    "memory": {
+      "description": "Recall and persistence across turns or sessions.",
+      "verification": "service-and-restart-contract-required"
+    }
+  },
+  "environments": [
+    {
+      "id": "windows-thinkpad-rtx5000ada-llamacpp-pi",
+      "os": "windows",
+      "hardware": "Lenovo ThinkPad P16 Gen 2, RTX 5000 Ada Laptop 16 GB, 32 GB-class system RAM",
+      "runtime": "llama-server",
+      "harness": "pi-worker",
+      "coding": "live-verified",
+      "chat": "connectivity-tested",
+      "memory": "service-tested-live-path",
+      "reasoning": "unverified",
+      "evidence": [
+        "docs/adr/evidence/AGENT-005-repair-loop-live-evidence.md",
+        "docs/adr/ADR-018-unsloth-quantization-strategy.md"
+      ],
+      "notes": "Evidence is bound to this machine and exact runtime/model/harness configuration; it is not transferable."
+    },
+    {
+      "id": "windows-other-hardware",
+      "os": "windows",
+      "hardware": "Any hardware not covered by a live evidence record",
+      "runtime": "hardware-sized selection",
+      "harness": "pi-worker",
+      "coding": "requires-live-contract",
+      "chat": "requires-fit-and-connectivity-check",
+      "memory": "requires-service-contract",
+      "reasoning": "requires-evaluation",
+      "evidence": [],
+      "notes": "The system may size a candidate, but no capability certificate may be inherited."
+    },
+    {
+      "id": "linux",
+      "os": "linux",
+      "hardware": "all",
+      "runtime": "not-yet-certified",
+      "harness": "not-yet-certified",
+      "coding": "unsupported-unverified",
+      "chat": "unsupported-unverified",
+      "memory": "unsupported-unverified",
+      "reasoning": "unsupported-unverified",
+      "evidence": [],
+      "notes": "Linux port is future work until install, lifecycle, hardware, and live-runtime contracts pass."
+    },
+    {
+      "id": "macos",
+      "os": "macos",
+      "hardware": "all",
+      "runtime": "not-yet-certified",
+      "harness": "not-yet-certified",
+      "coding": "unsupported-unverified",
+      "chat": "unsupported-unverified",
+      "memory": "unsupported-unverified",
+      "reasoning": "unsupported-unverified",
+      "evidence": [],
+      "notes": "No macOS implementation or live evidence is currently part of the product."
+    }
+  ]
+}
