@@ -15,6 +15,11 @@ param(
     [switch]$NoCache,
     [switch]$WhatIf,
     [switch]$DownloadConfirmed,
+    [switch]$NoAutoInstallLlamaCpp,
+    # Landing: after a passing opencode contract, keep the proven staged
+    # config live at ~/.opencode/opencode.json instead of restoring the
+    # pre-run config. Explicit opt-in; backup retained for rollback.
+    [switch]$PersistHarnessConfig,
     [string]$WorkspaceRoot,
     [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
     [string]$ProfileCataloguePath
@@ -29,6 +34,8 @@ $script:AirlockSizedOffload = 'gpu-all'
 . (Join-Path $PSScriptRoot "agent-state-helpers.ps1")
 . (Join-Path $PSScriptRoot "agent-profile-helpers.ps1")
 . (Join-Path $PSScriptRoot "agent-capability-registry.ps1")
+. (Join-Path $PSScriptRoot "agent-fail-ledger.ps1")
+. (Join-Path $PSScriptRoot "agent-perf-probe.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "ollama.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "llamacpp.ps1")
 . (Join-Path $PSScriptRoot "runtime-adapters" "lmstudio.ps1")
@@ -56,6 +63,7 @@ if (-not $WorkspaceRoot) { $WorkspaceRoot = Join-Path $PlatformDir "workspaces" 
 
 $LockPath = Join-Path $PlatformDir "state" "bootstrap.lock"
 $RegistryPath = Join-Path $PlatformDir "state" "capability-registry.json"
+$FailLedgerPath = Join-Path $PlatformDir "state" "fail-ledger.jsonl"
 $CertificatePath = Join-Path $PlatformDir "state" "active-agent.json"
 $OpenCodeConfigPath = "$env:USERPROFILE\.opencode\opencode.json"
 $BackupDir = Join-Path $PlatformDir "state" "config-backups"
@@ -157,13 +165,23 @@ try {
     # --- Step 2: resolve profile ---
     $selectedProfile = Resolve-SessionProfile
 
+    # Fail ledger (vision: "self-improve in-repo"): warn - never refuse - when
+    # this profile+harness already failed on this hardware. A past failure is
+    # a reason to watch the run closely, not a verdict about this run.
+    $failSummary = Get-AirlockFailLedgerSummary -LedgerPath $FailLedgerPath `
+        -ProfileId $selectedProfile.profileId -Harness $Harness
+    $failWarning = Resolve-AirlockFailLedgerWarning -Summary $failSummary `
+        -ProfileId $selectedProfile.profileId -Harness $Harness
+    if ($failWarning) { Write-Host "LEDGER: $failWarning" -ForegroundColor Yellow }
+
     # --- Step 4/5: start/adopt runtime, inspect. One branch per adapter -
     # the shapes genuinely differ: Ollama assumes an always-on daemon that
     # already has models resident (Discover then Inspect); llama-server
     # starts exactly one model per process and has no persistent daemon to
-    # discover (an instance must already be running - Acquire/Start
-    # automation isn't implemented in this pass, matching Ollama's own
-    # missing-model gap below); LM Studio is a local server you start
+    # discover (Acquire downloads the GGUF from Hugging Face once
+    # -DownloadConfirmed is passed; Start launches llama-server, whose
+    # binary is auto-installed on a cold machine unless
+    # -NoAutoInstallLlamaCpp is given); LM Studio is a local server you start
     # yourself, discoverable via its own API once running. Every branch
     # ends with $runtimeVersion/$modelDigest/$chatTemplateIdentity set so
     # the evidence key and certificate below aren't Ollama-specific either. ---
@@ -216,6 +234,20 @@ try {
             # it must never be blocked by the model already resident leaving
             # little free (e.g. a cert renewal after -PassTtlMinutes 5 expiry).
             if ($needStart) {
+                # Cold-machine fix: llama-server was assumed on PATH, so a
+                # fresh machine died with a cryptic launch failure. Ensure a
+                # binary exists (PATH, ~/.ai-platform/bin, or auto-download
+                # of the official llama.cpp release) before the VRAM gate /
+                # process start below.
+                $llamaBin = Get-AirlockLlamaServerBinary -PlatformDir $PlatformDir -NoAutoInstall:$NoAutoInstallLlamaCpp
+                if (-not $llamaBin.Path) {
+                    Write-Host "FAILED: $($llamaBin.Reason)" -ForegroundColor Red
+                    Write-Host "  Fix: install llama.cpp from https://github.com/ggerganov/llama.cpp/releases and put llama-server on PATH," -ForegroundColor Yellow
+                    Write-Host "  or re-run without -NoAutoInstallLlamaCpp to allow the automatic download." -ForegroundColor Yellow
+                    exit 1
+                }
+                if ($llamaBin.Source -ne 'PATH') { Write-Host "  llama-server: $($llamaBin.Reason)" -ForegroundColor Green }
+
                 # PENDING.md item 8: fail fast on hardware mismatch before
                 # actually starting a process, and say what (if anything) in
                 # the catalogue would fit - instead of the generic VRAM-gate
@@ -259,7 +291,7 @@ try {
                 Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
                 $cpuTimeout = if ($cpuOffload) { 600 } else { 300 }
                 $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context ([int]$selectedProfile.initialContext) `
-                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout
+                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout -BinaryPath $llamaBin.Path
                 if (-not $started.Started) {
                     Write-Host "FAILED: $($started.Reason)" -ForegroundColor Red
                     exit 1
@@ -354,6 +386,23 @@ try {
     $publishedCertificate = $null
     $failureReasons = @()
 
+    # Perf probe (vision: "Speed honesty"): measure once against the live
+    # endpoint and report the real figure. A slow measurement informs - it
+    # never refuses; the vision refuses only when even mmap won't fit.
+    $measuredToksPerSec = $null
+    try {
+        $probe = Measure-AirlockEndpointToksPerSec -BaseUrl $baseUrl -Model $selectedProfile.modelRef
+        $measuredToksPerSec = $probe.ToksPerSec
+        $tier = Resolve-AirlockThroughputTier -ToksPerSec $measuredToksPerSec
+        if ($null -ne $measuredToksPerSec) {
+            Write-Host "THROUGHPUT: measured ~$measuredToksPerSec tok/s on this hardware (tier: $tier)." -ForegroundColor Cyan
+        } else {
+            Write-Host "THROUGHPUT: probe inconclusive ($($probe.Reason)) - continuing without a measurement." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "THROUGHPUT: probe failed ($($_.Exception.Message)) - continuing without a measurement." -ForegroundColor Yellow
+    }
+
     while ($true) {
         $next = Resolve-AirlockNextTransport -TransportCandidatesInOrder $endpointMode.TransportCandidates -AttemptedResults $attempted
         if ($next.Done) {
@@ -397,13 +446,21 @@ try {
                 'opencode' {
                     Invoke-AirlockOpenCodeCapabilityContract -ModelRef $selectedProfile.modelRef -EndpointUrl $endpointUrl `
                         -OpenCodeConfigPath $OpenCodeConfigPath -LockPath (Join-Path $PlatformDir "state" "opencode-config.lock") `
-                        -BackupDir $BackupDir -TransactionDir $TransactionDir -WorkspaceRoot $WorkspaceRoot
+                        -BackupDir $BackupDir -TransactionDir $TransactionDir -WorkspaceRoot $WorkspaceRoot `
+                        -PersistHarnessConfig:$PersistHarnessConfig
                 }
                 'pi-worker' {
                     Invoke-AirlockPiCapabilityContract -ModelRef $selectedProfile.modelRef -EndpointUrl $endpointUrl -WorkspaceRoot $WorkspaceRoot
                 }
                 default {
-                    Write-Host "FAILED: no contract for harness '$Harness' is implemented in this pass." -ForegroundColor Red
+                    # Honest gating: only pi-worker and opencode have live,
+                    # machine-verified capability contracts. aider and
+                    # openclaw remain selectable in the ValidateSet for
+                    # forward-compatibility, but fail here loudly rather
+                    # than implying support that doesn't exist.
+                    Write-Host "FAILED: no verified capability contract for harness '$Harness' in this pass." -ForegroundColor Red
+                    Write-Host "  Supported right now: pi-worker, opencode." -ForegroundColor Yellow
+                    Write-Host "  aider / openclaw are roadmap items - see docs/adr/PENDING.md." -ForegroundColor Yellow
                     exit 1
                 }
             }
@@ -442,7 +499,17 @@ try {
         }
 
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }
-        if (-not $contractPassed) { $failureReasons += "Transport '$($next.Transport)' failed the capability contract." }
+        if (-not $contractPassed) {
+            $failureReasons += "Transport '$($next.Transport)' failed the capability contract."
+            # Fail ledger (vision: "self-improve in-repo"): record this
+            # hardware's failure so the next run warns instead of
+            # rediscovering it. Ledger writes never break the session.
+            try {
+                Write-AirlockFailLedgerEntry -LedgerPath $FailLedgerPath -ProfileId $selectedProfile.profileId `
+                    -ModelRef $selectedProfile.modelRef -Runtime $selectedProfile.runtime -Harness $Harness `
+                    -EvidenceKey $evidenceKey -Reason (($failureReasons | Select-Object -Last 3) -join ' | ') | Out-Null
+            } catch { }
+        }
         else {
             # Capability-registry pass/fail cache TTLs stay short (re-verify skip).
             # The published worker certificate is the long-lived admission ticket
@@ -456,6 +523,7 @@ try {
                 runtime               = [pscustomobject]@{ name = $selectedProfile.runtime; version = $runtimeVersion }
                 transport             = [pscustomobject]@{ mode = $next.Transport; endpoint = $endpointUrl }
                 effectiveContext      = $Context
+                measuredToksPerSec    = $measuredToksPerSec
                 harness               = $Harness
                 capabilityEvidenceKey = $evidenceKey
                 sandboxPolicyVersion  = 1

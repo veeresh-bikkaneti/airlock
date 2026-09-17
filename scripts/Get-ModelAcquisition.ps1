@@ -4,6 +4,12 @@
 
 $script:AcquisitionScriptDir = $PSScriptRoot
 
+# Cold-machine fix: storage preflight for multi-GB downloads. Guarded so
+# this file still dot-sources cleanly in tests that stub the helper.
+if (-not (Get-Command Test-StoragePreflight -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot "StoragePreflight.ps1")
+}
+
 function Install-OllamaIfMissing {
     # Check if ollama is available on PATH or at the default per-user install location.
     # If not found and winget is available, install via winget. Otherwise, log failure and return $false.
@@ -387,6 +393,15 @@ function Start-HuggingFaceImport {
         return $null
     }
 
+    # Cold-machine fix: refuse BEFORE the multi-GB GGUF download when the
+    # disk can't hold it, instead of failing mid-download.
+    $hfStorage = Test-StoragePreflight -RequiredGB ([double]$Candidate.SizeGB * 1.5) -Path (Join-Path $env:USERPROFILE ".ai-platform\models")
+    if (-not $hfStorage.Ok) {
+        Write-Host "  FAILED: $($hfStorage.Reason)" -ForegroundColor Red
+        Write-AuditLog -Action "HuggingFaceImport" -Result "FAILED" -ModelName $modelName -Message $hfStorage.Reason
+        return $null
+    }
+
     $puller = Join-Path $script:AcquisitionScriptDir "Invoke-DetachedModelPull.ps1"
     $argList = @(
         '-NoProfile', '-File', $puller,
@@ -616,6 +631,26 @@ function Start-ModelAcquisitionPull {
                     Write-Host "  FAILED: $($gate.Reason). Wait for that pull to finish before starting another." -ForegroundColor Red
                     Write-AuditLog -Action "ModelPull" -Result "FAILED" -ModelName $Model -Message $gate.Reason
                 } else {
+                    # Cold-machine fix: storage preflight BEFORE the pull
+                    # starts. A nearly-full disk used to produce a failed
+                    # download and a stranded "pending" model; now it fails
+                    # fast with a clear reason and nothing is downloaded.
+                    $pullRequiredGB = 5.0  # fallback when the model isn't in the curated catalogue
+                    try {
+                        $pullCfgPath = Join-Path $script:AcquisitionScriptDir "..\config\models.json"
+                        $pullCfg = Get-Content $pullCfgPath -Raw | ConvertFrom-Json
+                        if ($pullCfg.localModels.$Model.size) {
+                            # 1.5x: download temp + final blob.
+                            $pullRequiredGB = [double]($pullCfg.localModels.$Model.size -replace '[^0-9.]', '') * 1.5
+                        }
+                    } catch {}
+                    $pullStorage = Test-StoragePreflight -RequiredGB $pullRequiredGB -Path (Join-Path $env:USERPROFILE ".ai-platform")
+                    if (-not $pullStorage.Ok) {
+                        Write-Host "  FAILED: $($pullStorage.Reason)" -ForegroundColor Red
+                        Write-Host "  Free up disk space, then re-run ai-start." -ForegroundColor Yellow
+                        Write-AuditLog -Action "ModelPull" -Result "FAILED" -ModelName $Model -Message $pullStorage.Reason
+                        return $false
+                    }
                     Write-Host "  Progress: run ai-port or ai-health to see it — no need to wait here." -ForegroundColor Yellow
                     $progressFile = "$env:USERPROFILE\.ai-platform\.pull-progress.json"
                     $puller = Join-Path $script:AcquisitionScriptDir "Invoke-DetachedModelPull.ps1"

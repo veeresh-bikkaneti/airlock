@@ -175,19 +175,33 @@ function Invoke-AirlockOpenCodeCapabilityContract {
         [Parameter(Mandatory)][string]$LockPath,
         [Parameter(Mandatory)][string]$BackupDir,
         [Parameter(Mandatory)][string]$TransactionDir,
-        [Parameter(Mandatory)][string]$WorkspaceRoot
+        [Parameter(Mandatory)][string]$WorkspaceRoot,
+        # Landing: keep the proven staged config live at $OpenCodeConfigPath
+        # after a passing trial, instead of restoring the pre-run config.
+        # Explicit opt-in - the default transaction behavior (restore) is
+        # unchanged. A timestamped backup is retained for rollback.
+        [switch]$PersistHarnessConfig
     )
     $sessionId = [guid]::NewGuid().ToString()
     $stagedContent = Get-OpenCodeStagedConfigContent -ModelRef $ModelRef -EndpointUrl $EndpointUrl -SessionId $sessionId
 
     $txnResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $OpenCodeConfigPath -StagedContent $stagedContent `
         -LockPath $LockPath -BackupDir $BackupDir -TransactionDir $TransactionDir `
+        -PromoteOnSuccess:$PersistHarnessConfig -PromoteWhen { param($r) $r.Passed } `
         -Run {
             Invoke-AirlockWorkspaceContract -WorkspaceRoot $WorkspaceRoot -TrialCount 3 -Invoke {
                 param($WorkspacePath, $Marker)
                 Invoke-OpenCodeWorkspaceTrial -WorkspacePath $WorkspacePath -Marker $Marker -OpenCodeConfigPath $OpenCodeConfigPath -ModelRef $ModelRef
             }
         }
+
+    if ($PersistHarnessConfig -and $txnResult.Record.restoreResult -match 'Promoted') {
+        Write-Host ''
+        Write-Host "OPENCODE LANDED: the proven config is now live at $OpenCodeConfigPath." -ForegroundColor Green
+        Write-Host "  provider 'airlock' -> $EndpointUrl, model '$ModelRef' (verified tool-calling on this hardware)"
+        Write-Host "  rollback backup: $($txnResult.Record.backupPath)" -ForegroundColor Yellow
+        Write-Host '  next: cd your repo, then run: opencode' -ForegroundColor Cyan
+    }
 
     return $txnResult.RunOutput
 }
