@@ -154,6 +154,42 @@ function Invoke-PiWorkspaceTrial {
     return Resolve-AirlockPiTrialObservations -ExitCode $proc.ExitCode -Stdout $stdout -Stderr $stderr
 }
 
+# Cold-machine fix: the Pi trial shells out to `docker run` with the hermes
+# image, and a fresh machine used to die with a cryptic docker error.
+# Test-AirlockPiPrerequisites fails fast with an actionable message instead:
+# Docker missing, daemon not running, or the image not built yet.
+function Test-AirlockPiPrerequisites {
+    param([string]$ImageName = "hermes-container-hermes-agent")
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{
+            Ok = $false
+            Reason = "Docker is not installed or not on PATH. Install Docker Desktop from https://www.docker.com/products/docker-desktop/, then re-run."
+        }
+    }
+    try {
+        & docker info 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{
+                Ok = $false
+                Reason = "Docker is installed but the daemon is not running. Start Docker Desktop and re-run."
+            }
+        }
+    } catch {
+        return [pscustomobject]@{
+            Ok = $false
+            Reason = "Could not reach the Docker daemon ($($_.Exception.Message)). Start Docker Desktop and re-run."
+        }
+    }
+    & docker image inspect $ImageName 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{
+            Ok = $false
+            Reason = "Docker image '$ImageName' is not built. Build it first with scripts/Build-AirlockWorkerImage.ps1, then re-run."
+        }
+    }
+    return [pscustomobject]@{ Ok = $true; Reason = "Docker daemon running; image '$ImageName' present." }
+}
+
 function Invoke-AirlockPiCapabilityContract {
     param(
         [Parameter(Mandatory)][string]$ModelRef,
@@ -161,6 +197,11 @@ function Invoke-AirlockPiCapabilityContract {
         [Parameter(Mandatory)][string]$WorkspaceRoot,
         [string]$ImageName = "hermes-container-hermes-agent"
     )
+    $piPre = Test-AirlockPiPrerequisites -ImageName $ImageName
+    if (-not $piPre.Ok) {
+        Write-Host "FAILED: $($piPre.Reason)" -ForegroundColor Red
+        return [pscustomobject]@{ Passed = $false; Reason = $piPre.Reason; TransportReturnedValidToolEvents = $false }
+    }
     return Invoke-AirlockWorkspaceContract -WorkspaceRoot $WorkspaceRoot -TrialCount 3 -Invoke {
         param($WorkspacePath, $Marker)
         Invoke-PiWorkspaceTrial -WorkspacePath $WorkspacePath -Marker $Marker -ModelRef $ModelRef -EndpointUrl $EndpointUrl -ImageName $ImageName

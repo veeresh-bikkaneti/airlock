@@ -7,6 +7,12 @@
 
 $script:AirlockGgufEvidenceBytes = [long]13146393504
 
+# Cold-machine fix: storage preflight lives in StoragePreflight.ps1; guard the
+# dot-source so this file also works when dot-sourced on its own (tests).
+if (-not (Get-Command Test-StoragePreflight -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot "StoragePreflight.ps1")
+}
+
 $script:AirlockGgufFileMap = @{
     'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL'  = 'Qwen3.8-27B-UD-Q3_K_XL.gguf'
     'unsloth/Qwen3.8-27B-GGUF:UD-IQ3_XXS'  = 'Qwen3.8-27B-UD-IQ3_XXS.gguf'
@@ -226,6 +232,26 @@ function Get-AirlockHuggingFaceGguf {
     if ($decision.Action -eq 'Download') {
         $dir = Split-Path $dest
         if (-not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
+        # Cold-machine fix: refuse BEFORE a ~13 GB download when the disk
+        # can't hold it, instead of failing mid-download.
+        $ladderGb = $null
+        try {
+            $row = Get-AirlockUnslothQuantLadder | Where-Object { (ConvertTo-AirlockUnslothModelRef -Quant $_.Quant) -eq $ModelRef } | Select-Object -First 1
+            if ($row) { $ladderGb = [double]$row.FileGb }
+        } catch {}
+        $requiredGgufGB = if ($ladderGb) { $ladderGb + 2.0 } else { 15.0 }
+        $ggufStorage = Test-StoragePreflight -RequiredGB $requiredGgufGB -Path $dest
+        if (-not $ggufStorage.Ok) {
+            return [pscustomobject]@{
+                Ready                = $false
+                Path                 = $dest
+                Bytes                = [long]0
+                Sha256               = $null
+                MatchedEvidenceBytes = $false
+                ForceVerify          = $true
+                Reason               = "Storage preflight failed: $($ggufStorage.Reason) The coding GGUF (~$([math]::Round($requiredGgufGB,1)) GB needed) was not downloaded."
+            }
+        }
         $repo = ConvertTo-AirlockHfRepo -ModelRef $ModelRef
         $fileName = ConvertTo-AirlockGgufFileName -ModelRef $ModelRef
         try {

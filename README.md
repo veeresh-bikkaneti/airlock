@@ -431,10 +431,10 @@ erDiagram
 ### Prerequisites
 
 - Windows 11
-- [PowerShell 7+](https://github.com/PowerShell/PowerShell)
-- [Ollama](https://ollama.ai) (installed, but **not running**)
+- [PowerShell 7+](https://github.com/PowerShell/PowerShell) (auto-installed via winget by `install.ps1` when missing)
+- [Ollama](https://ollama.ai) (auto-installed on first `ai-start` via winget when missing; must not already be running)
 - [Python 3.11+](https://www.python.org/) (for aider)
-- [Git](https://git-scm.com/)
+- [Git](https://git-scm.com/) (auto-installed via winget by `install.ps1` when missing)
 
 ### Installation (1-line)
 
