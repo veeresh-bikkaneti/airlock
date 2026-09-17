@@ -161,8 +161,12 @@ $dockerContextDir = Join-Path (Split-Path -Parent $PSScriptRoot) "airlock-worker
 $dockerfilePath = Join-Path $dockerContextDir "Dockerfile"
 Assert-True (Test-Path $dockerfilePath) "airlock-worker-container/Dockerfile exists (closes the Phase F missing-image gap)"
 
-$dockerOsType = & docker info --format '{{.OSType}}' 2>$null
-if ($LASTEXITCODE -eq 0 -and $dockerOsType -eq 'linux') {
+$dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+$dockerOsType = ''
+if ($dockerCommand) {
+    $dockerOsType = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
+}
+if ($dockerCommand -and $LASTEXITCODE -eq 0 -and $dockerOsType -eq 'linux') {
     & docker build -t airlock-worker:latest $dockerContextDir 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) "docker build -t airlock-worker:latest succeeds against airlock-worker-container/Dockerfile"
 } else {

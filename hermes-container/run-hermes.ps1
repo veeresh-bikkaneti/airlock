@@ -41,6 +41,32 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Airlock's image is a Linux image. On Windows the supported reproducible
+# deployment is Docker Desktop with the WSL2/Linux-container engine, not
+# Windows containers and not a guessed host shell. Fail before certificate
+# consumption or image build with an actionable diagnostic.
+$dockerOs = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $dockerOs -ne 'linux') {
+    Write-Host "ERROR: Airlock Docker containers require Docker Desktop's Linux/WSL2 engine." -ForegroundColor Red
+    Write-Host "  Current Docker server OS: '$dockerOs'. Switch Docker Desktop to Linux containers and re-run." -ForegroundColor Yellow
+    exit 1
+}
+
+$composeVersion = (& docker compose version 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $composeVersion) {
+    Write-Host "ERROR: Docker Compose v2 is required (the 'docker compose' command)." -ForegroundColor Red
+    Write-Host "  Update Docker Desktop, then re-run this command." -ForegroundColor Yellow
+    exit 1
+}
+
+$ComposePath = Join-Path $PSScriptRoot "docker-compose.yml"
+$composeCheck = & docker compose -f $ComposePath config --quiet 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: Airlock Docker Compose configuration is invalid." -ForegroundColor Red
+    Write-Host ($composeCheck | Out-String).Trim() -ForegroundColor Yellow
+    exit 1
+}
+
 # --- ADR-012 §8.2: consume the active-agent certificate, never choose
 # independently. A missing, expired, or harness-incompatible certificate
 # refuses to launch rather than falling back to a guessed port/model -
@@ -88,7 +114,7 @@ Write-Host "Endpoint: $EndpointUrl (proven $($certificate.transport.mode), certi
 Write-Host ""
 
 Write-Host "Building container..." -ForegroundColor Yellow
-docker compose -f "$PSScriptRoot\docker-compose.yml" build --quiet
+docker compose -f $ComposePath build --quiet
 
 Write-Host ""
 Write-Host "Launching Hermes agent..." -ForegroundColor Yellow
@@ -98,4 +124,4 @@ Write-Host "  Generated files go to /workspace/output (docker volume)" -Foregrou
 Write-Host "  Type /exit to quit" -ForegroundColor Cyan
 Write-Host ""
 
-docker compose -f "$PSScriptRoot\docker-compose.yml" run --rm hermes-agent
+docker compose -f $ComposePath run --rm hermes-agent

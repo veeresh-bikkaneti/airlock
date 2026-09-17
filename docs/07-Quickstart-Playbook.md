@@ -31,6 +31,8 @@ You run one script. It figures out the rest:
 
 ## Prerequisites
 
+For the reproducible Windows worker path, use Docker Desktop with the WSL2/Linux-container engine. See [`12-Windows-Docker-Profile.md`](12-Windows-Docker-Profile.md) for preflight and security details. PowerShell-only chat remains available when Docker is not installed; autonomous worker jobs still require the Docker boundary.
+
 Only one thing, one-time:
 - **PowerShell 7** (`pwsh`), not the old Windows PowerShell 5.1. Check with:
   ```powershell
