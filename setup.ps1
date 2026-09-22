@@ -47,6 +47,7 @@ if (Test-Path "$RepoDir\tool-proxy") {
 # unless -Force is passed. models.json and policy files are not secrets, always refresh those.
 Copy-Item "$RepoDir\config\models.json" "$PlatformDir\config\models.json" -Force
 Copy-Item "$RepoDir\config\policies\*.json" "$PlatformDir\config\policies\" -Force
+Copy-Item "$RepoDir\config\task-router-keywords.json" "$PlatformDir\config\task-router-keywords.json" -Force
 
 Get-ChildItem "$RepoDir\config" -Filter "*.template" | ForEach-Object {
     $dest = Join-Path "$PlatformDir\config" $_.Name
