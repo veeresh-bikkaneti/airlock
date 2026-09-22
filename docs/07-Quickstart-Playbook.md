@@ -31,6 +31,8 @@ You run one script. It figures out the rest:
 
 ## Prerequisites
 
+For the reproducible Windows worker path, use Docker Desktop with the WSL2/Linux-container engine. See [`12-Windows-Docker-Profile.md`](12-Windows-Docker-Profile.md) for preflight and security details. PowerShell-only chat remains available when Docker is not installed; autonomous worker jobs still require the Docker boundary.
+
 Only one thing, one-time:
 - **PowerShell 7** (`pwsh`), not the old Windows PowerShell 5.1. Check with:
   ```powershell
@@ -134,8 +136,35 @@ Every run writes a JSON-lines audit log to `%USERPROFILE%\.ai-platform\logs\<dat
 - **Ollama installation fails** — the script will print an error with a manual install link (https://ollama.com/download). This can happen on locked-down machines where `winget` isn't available or isn't allowed to install software. You can use `-NoAutoInstallOllama` to skip auto-install if you manage Ollama separately.
 - **Script won't parse / weird syntax errors** — you're probably running it under Windows PowerShell 5.1 instead of PowerShell 7. Use `pwsh .\scripts\Start-AI.ps1`, not `powershell .\scripts\Start-AI.ps1`.
 - **Port already in use** — run with `-Force` to kill the existing instance, or `-Port` to pick a different one.
-- **Model pull/download stuck or failed** — check the audit log for the exact step it failed at; background pulls are session-scoped, so closing the terminal mid-download will kill the job (known limitation).
+- **Model pull/download stuck or failed** — check the audit log for the exact step it failed at; background pulls run as detached processes, so closing the terminal no longer kills the job. If a pull recorded FAILED, the next `ai-start` automatically falls back to the smallest curated model instead of saying "pending" forever.
 - **Claude Code (or aider, or Copilot) suddenly can't connect to anything — even the real cloud API, even for unrelated projects** — this is almost always a leftover "point this tool at localhost" setting from a previous local-model experiment, still active after the platform stopped. It shows up as a scary-sounding but wrong error like "a firewall or proxy may be blocking it." Run `ai-doctor` — it checks every place this kind of setting can hide and tells you the exact command to remove it. Then restart whichever terminal/app was affected.
+
+## Coding door: from proof to a running agent
+
+`ai-agent-start` proves tool-calling on *your* hardware and publishes a certificate — it does not, by itself, run your task. The landing flow is three commands:
+
+```powershell
+# 1. Prove the coding door on this hardware (sizes the model to your VRAM,
+#    pulls it, runs the live tool-call contract, publishes the certificate).
+#    Watch for LEDGER: warnings (this profile failed here before) and the
+#    THROUGHPUT: line (measured tok/s on your hardware - "slow but real"
+#    is honest, not a refusal).
+ai-agent-start -Harness pi-worker
+
+# 2. Author a job manifest from the live certificate (secure defaults:
+#    network disabled, no merge/push, bounded time and tool steps).
+.\scripts\New-AgentJobManifest.ps1 -Task "Fix the failing Test-Foo suite" -RepoPath "C:\source\project"
+
+# 3. Launch the worker (isolated git worktree, locked-down container,
+#    produces an unmerged patch - never merges or pushes by itself).
+.\scripts\Start-AgentWorkerJob.ps1 -JobId <printed-id>
+```
+
+Notes:
+
+- The certificate and its evidence pass TTL are short (~5 minutes for the evidence key): launch the worker promptly after `ai-agent-start`, or re-run it.
+- Past contract failures are kept in `state\fail-ledger.jsonl` so the next run warns instead of rediscovering them. A ledger hit never refuses — it is memory, not a verdict.
+- Prefer the OpenCode harness instead? `ai-agent-start -Harness opencode -PersistHarnessConfig` keeps the *proven* staged config live at `~/.opencode/opencode.json` after a passing trial (timestamped backup retained for rollback), then `cd` your repo and run `opencode`. Without `-PersistHarnessConfig` the trial config is restored away by design.
 
 ## Where to go next
 

@@ -152,6 +152,70 @@ function Write-LlamaCppAuditLog {
 # for llamacpp-qwen38-ud-q3-k-xl: ["--jinja", "--flash-attn", "--n-gpu-layers", "all"])
 # rather than being reinvented here - --jinja is added only if the profile
 # somehow omitted it, since the ADR mandates it unconditionally.
+# Cold-machine fix: Start-LlamaCppRuntime used to assume `llama-server` was
+# already on PATH, so a fresh machine died with a cryptic launch failure.
+# Get-AirlockLlamaServerBinary ensures a binary exists: PATH first, then
+# $PlatformDir\bin, then an automatic download of the official llama.cpp
+# Windows release (CUDA build when nvidia-smi reports a GPU, CPU otherwise),
+# extracting llama-server.exe plus its sibling DLLs. Pure decision-free I/O
+# wrapper — returns a result object, never throws.
+function Get-AirlockLlamaServerBinary {
+    param(
+        [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
+        [switch]$NoAutoInstall
+    )
+    $onPath = Get-Command llama-server -ErrorAction SilentlyContinue
+    if ($onPath) {
+        return [pscustomobject]@{ Path = "llama-server"; Source = "PATH"; Reason = "llama-server found on PATH." }
+    }
+    $binDir = Join-Path $PlatformDir "bin"
+    $localBin = Join-Path $binDir "llama-server.exe"
+    if (Test-Path $localBin) {
+        if (($env:Path -split ';') -notcontains $binDir) { $env:Path = "$binDir;$env:Path" }
+        return [pscustomobject]@{ Path = $localBin; Source = "platform-bin"; Reason = "llama-server found in $binDir." }
+    }
+    if ($NoAutoInstall) {
+        return [pscustomobject]@{ Path = $null; Source = "missing"; Reason = "llama-server not found and auto-install is disabled (-NoAutoInstallLlamaCpp)." }
+    }
+    # Pick the release flavor: CUDA build for NVIDIA GPUs, CPU build otherwise.
+    $flavor = "cpu"
+    try { if (& nvidia-smi -L 2>$null) { $flavor = "cuda" } } catch {}
+    try {
+        Write-Host "llama-server not found - downloading the official llama.cpp release ($flavor build, one-time)..." -ForegroundColor Yellow
+        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest" -TimeoutSec 30
+        $pattern = if ($flavor -eq "cuda") { "bin-win-cuda-cu12.*-x64\.zip$" } else { "bin-win-cpu-x64\.zip$" }
+        $asset = $rel.assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1
+        if (-not $asset) {
+            return [pscustomobject]@{ Path = $null; Source = "missing"; Reason = "No llama.cpp Windows $flavor release asset found in $($rel.tag_name)." }
+        }
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("llamacpp-" + [guid]::NewGuid().ToString("N"))
+        New-Item -Path $tmp -ItemType Directory -Force | Out-Null
+        try {
+            $zip = Join-Path $tmp "llamacpp.zip"
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -TimeoutSec 900 -ErrorAction Stop
+            $extractDir = Join-Path $tmp "x"
+            Expand-Archive -Path $zip -DestinationPath $extractDir -Force
+            $exe = Get-ChildItem -Path $extractDir -Recurse -Filter "llama-server.exe" | Select-Object -First 1
+            if (-not $exe) {
+                return [pscustomobject]@{ Path = $null; Source = "missing"; Reason = "llama-server.exe not found inside the downloaded llama.cpp archive." }
+            }
+            New-Item -Path $binDir -ItemType Directory -Force | Out-Null
+            Copy-Item -Path $exe.FullName -Destination $localBin -Force
+            # llama-server needs its sibling DLLs (ggml, cublas/cudart on CUDA builds).
+            Get-ChildItem -Path $exe.DirectoryName -Filter "*.dll" | ForEach-Object {
+                Copy-Item $_.FullName -Destination $binDir -Force
+            }
+        } finally {
+            Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        $env:Path = "$binDir;$env:Path"
+        Write-Host "llama-server installed to $localBin ($($rel.tag_name), $flavor)." -ForegroundColor Green
+        return [pscustomobject]@{ Path = $localBin; Source = "downloaded"; Reason = "Downloaded llama.cpp $($rel.tag_name) ($flavor) to $binDir." }
+    } catch {
+        return [pscustomobject]@{ Path = $null; Source = "missing"; Reason = "llama-server auto-download failed: $($_.Exception.Message)" }
+    }
+}
+
 function Start-LlamaCppRuntime {
     param(
         # Optional (not Mandatory): PENDING item 9's embedding runtime has no

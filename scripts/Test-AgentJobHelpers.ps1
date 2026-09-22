@@ -134,7 +134,10 @@ Assert-True ($dockerArgs[$networkIdx + 1] -eq 'none') "network Disabled maps to 
 Assert-True (-not ($dockerArgs -join ' ' -match 'docker\.sock')) "no Docker socket is ever mounted"
 Assert-True (-not ($dockerArgs -contains '--privileged')) "the container is never launched --privileged"
 Assert-True (-not ($dockerArgs -contains '--pid')) "the container never shares the host PID namespace"
-Assert-True (($dockerArgs -join ' ') -match [regex]::Escape($env:USERPROFILE) -eq $false) "the host home directory is never mounted"
+$hostHome = [Environment]::GetFolderPath('UserProfile')
+$homeMount = @($dockerArgs | Where-Object { $_ -match '^type=bind,' -and $_ -match '(^|,)source=' }) |
+    Where-Object { $_ -match [regex]::Escape($hostHome) }
+Assert-True ([string]::IsNullOrEmpty($hostHome) -or $homeMount.Count -eq 0) "the host home directory is never mounted"
 Assert-True ($dockerArgs -contains '--read-only') "the container root filesystem is read-only"
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_WALL_CLOCK_MINUTES=45') "maxWallClockMinutes from the manifest is passed through"
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_TOOL_STEPS=80') "maxToolSteps from the manifest is passed through"

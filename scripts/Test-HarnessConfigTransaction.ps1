@@ -138,6 +138,41 @@ try {
     Assert-True (-not $whatIfRan) "-WhatIf never executes the Run scriptblock"
     Assert-True ((Get-FileHash $configPath -Algorithm SHA256).Hash -eq $beforeHash) "-WhatIf leaves the config file completely untouched"
     Assert-True (-not (Test-Path $lockPath)) "-WhatIf never creates a lock file"
+
+    # --- -PromoteOnSuccess: explicit landing keeps the proven staged config ---
+    Set-Content -Path $configPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
+    $promoteResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $configPath -StagedContent '{"staged":true}' `
+        -LockPath $lockPath -BackupDir $backupDir -TransactionDir $txnDir `
+        -PromoteOnSuccess -PromoteWhen { param($r) $r.Passed } `
+        -Run { [pscustomobject]@{ Passed = $true } }
+    Assert-True ((Get-Content $configPath -Raw) -eq '{"staged":true}') "-PromoteOnSuccess with an approving verdict keeps the staged config live"
+    Assert-True ($promoteResult.Record.restoreResult -match 'Promoted') "the transaction record marks the promotion"
+    Assert-True (Test-Path $promoteResult.Record.backupPath) "promotion retains the pre-run backup for rollback"
+
+    # PromoteWhen declines -> default restore behavior, promotion is opt-in per verdict
+    Set-Content -Path $configPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
+    $declinedResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $configPath -StagedContent '{"staged":true}' `
+        -LockPath $lockPath -BackupDir $backupDir -TransactionDir $txnDir `
+        -PromoteOnSuccess -PromoteWhen { param($r) $r.Passed } `
+        -Run { [pscustomobject]@{ Passed = $false } }
+    Assert-True ((Get-Content $configPath -Raw) -eq '{"original":true}') "a declining PromoteWhen verdict restores the original config"
+    Assert-True ($declinedResult.Record.restoreResult -notmatch 'Promoted') "a declined promotion is not recorded as promoted"
+
+    # Tampered mid-run + PromoteOnSuccess -> never promote over a concurrent change
+    Set-Content -Path $configPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
+    $tamperPromoteResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $configPath -StagedContent '{"staged":true}' `
+        -LockPath $lockPath -BackupDir $backupDir -TransactionDir $txnDir `
+        -PromoteOnSuccess -PromoteWhen { param($r) $true } `
+        -Run { Set-Content -Path $configPath -Value '{"user-changed-mid-run":true}' -Encoding utf8NoBOM -NoNewline }
+    Assert-True ($tamperPromoteResult.Record.restoreResult -match 'PRESERVED_FOR_RECOVERY') "mid-run tampering still preserves for recovery even with -PromoteOnSuccess"
+    Assert-True ($tamperPromoteResult.Record.restoreResult -notmatch 'Promoted') "a tampered config is never promoted"
+
+    # -PromoteOnSuccess without -PromoteWhen -> restore (no predicate, no promotion)
+    Set-Content -Path $configPath -Value '{"original":true}' -Encoding utf8NoBOM -NoNewline
+    $noPredicateResult = Invoke-AirlockHarnessConfigTransaction -ConfigPath $configPath -StagedContent '{"staged":true}' `
+        -LockPath $lockPath -BackupDir $backupDir -TransactionDir $txnDir `
+        -PromoteOnSuccess -Run { [pscustomobject]@{ Passed = $true } }
+    Assert-True ((Get-Content $configPath -Raw) -eq '{"original":true}') "-PromoteOnSuccess without -PromoteWhen restores (safe default)"
 } finally {
     Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
 }

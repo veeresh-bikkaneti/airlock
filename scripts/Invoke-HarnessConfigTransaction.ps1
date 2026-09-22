@@ -76,12 +76,22 @@ function Invoke-AirlockHarnessConfigTransaction {
         [Parameter(Mandatory)][string]$LockPath,
         [Parameter(Mandatory)][string]$BackupDir,
         [Parameter(Mandatory)][string]$TransactionDir,
+        # Promote branch: when set, a successful run whose staged content is
+        # still hash-intact AND whose PromoteWhen verdict approves keeps the
+        # staged config live instead of restoring. This is explicit user
+        # intent (e.g. opencode -PersistHarnessConfig), never a leak: the
+        # default path still restores, and promotion never overwrites a
+        # concurrent user change (PreserveRecoveryRecord still wins there).
+        [switch]$PromoteOnSuccess,
+        [scriptblock]$PromoteWhen,
         [switch]$WhatIf
     )
     if ($WhatIf) {
+        $plan = "Would lock $LockPath, back up $ConfigPath to $BackupDir, stage new content, run the harness, then restore or preserve a recovery record."
+        if ($PromoteOnSuccess) { $plan += " On a PromoteWhen-approved successful run, the staged config would be kept live (backup retained for rollback) instead of restored." }
         return [pscustomobject]@{
             WhatIf = $true
-            Plan   = "Would lock $LockPath, back up $ConfigPath to $BackupDir, stage new content, run the harness, then restore or preserve a recovery record."
+            Plan   = $plan
         }
     }
 
@@ -128,17 +138,32 @@ function Invoke-AirlockHarnessConfigTransaction {
         $currentHash = if (Test-Path $ConfigPath) { (Get-FileHash -Path $ConfigPath -Algorithm SHA256).Hash } else { $null }
         $decision = Resolve-AirlockConfigRestore -CurrentHash $currentHash -StagedHash $record.stagedHash -OriginalAbsent $record.originalAbsent
 
-        switch ($decision.Action) {
-            'RestoreBackup' {
-                Copy-Item -Path $record.backupPath -Destination $ConfigPath -Force
-                $record.restoreResult = "$($record.restoreResult) | Restored: $($decision.Reason)"
-            }
-            'DeleteConfig' {
-                Remove-Item -Path $ConfigPath -Force -ErrorAction SilentlyContinue
-                $record.restoreResult = "$($record.restoreResult) | DeletedToRestoreAbsence: $($decision.Reason)"
-            }
-            'PreserveRecoveryRecord' {
-                $record.restoreResult = "$($record.restoreResult) | PRESERVED_FOR_RECOVERY: $($decision.Reason)"
+        # Promote branch (see param comment): keep the proven staged config
+        # live. All three conditions must hold - successful run, staged
+        # content hash-intact (never promote over a concurrent change), and
+        # the caller's PromoteWhen verdict. The pre-run backup is retained so
+        # the user can roll back to their original config at any time.
+        $promote = $false
+        if ($PromoteOnSuccess -and $record.restoreResult -eq 'RunSucceeded' -and $PromoteWhen `
+            -and $decision.Action -in @('RestoreBackup', 'DeleteConfig')) {
+            try { $promote = [bool](& $PromoteWhen $runOutput) } catch { $promote = $false }
+        }
+
+        if ($promote) {
+            $record.restoreResult = "$($record.restoreResult) | Promoted: staged config kept live at $ConfigPath (rollback backup: $($record.backupPath))"
+        } else {
+            switch ($decision.Action) {
+                'RestoreBackup' {
+                    Copy-Item -Path $record.backupPath -Destination $ConfigPath -Force
+                    $record.restoreResult = "$($record.restoreResult) | Restored: $($decision.Reason)"
+                }
+                'DeleteConfig' {
+                    Remove-Item -Path $ConfigPath -Force -ErrorAction SilentlyContinue
+                    $record.restoreResult = "$($record.restoreResult) | DeletedToRestoreAbsence: $($decision.Reason)"
+                }
+                'PreserveRecoveryRecord' {
+                    $record.restoreResult = "$($record.restoreResult) | PRESERVED_FOR_RECOVERY: $($decision.Reason)"
+                }
             }
         }
         $record.finishedAt = [DateTime]::UtcNow.ToString('o')
