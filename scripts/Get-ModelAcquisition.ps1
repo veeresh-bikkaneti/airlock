@@ -639,9 +639,11 @@ function Start-ModelAcquisitionPull {
                     try {
                         $pullCfgPath = Join-Path $script:AcquisitionScriptDir "..\config\models.json"
                         $pullCfg = Get-Content $pullCfgPath -Raw | ConvertFrom-Json
-                        if ($pullCfg.localModels.$Model.size) {
+                        if ($pullCfg.localModels.$Model.size -match '([0-9.]+)\s*(GB|MB)') {
+                            $sizeNum = [double]$Matches[1]
+                            if ($Matches[2] -eq 'MB') { $sizeNum = $sizeNum / 1024 }
                             # 1.5x: download temp + final blob.
-                            $pullRequiredGB = [double]($pullCfg.localModels.$Model.size -replace '[^0-9.]', '') * 1.5
+                            $pullRequiredGB = $sizeNum * 1.5
                         }
                     } catch {}
                     $pullStorage = Test-StoragePreflight -RequiredGB $pullRequiredGB -Path (Join-Path $env:USERPROFILE ".ai-platform")

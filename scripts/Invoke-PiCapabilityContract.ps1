@@ -184,7 +184,7 @@ function Test-AirlockPiPrerequisites {
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{
             Ok = $false
-            Reason = "Docker image '$ImageName' is not built. Build it first with scripts/Build-AirlockWorkerImage.ps1, then re-run."
+            Reason = "Docker image '$ImageName' is not built. Build it first with 'docker compose -f hermes-container/docker-compose.yml build' (or run hermes-container/run-hermes.ps1, which builds it automatically), then re-run."
         }
     }
     return [pscustomobject]@{ Ok = $true; Reason = "Docker daemon running; image '$ImageName' present." }

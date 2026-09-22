@@ -353,6 +353,12 @@ try {
                     Write-Host "WARNING: embedding runtime for real memory failed to start ($($_.Exception.Message)) - coding memory will degrade to unaugmented passthrough." -ForegroundColor Yellow
                 }
             }
+            # The throughput probe below needs a raw OpenAI-compatible
+            # /v1/completions endpoint; memory-service's /coding proxy only
+            # implements /coding/v1/chat/completions, so probe the direct
+            # llama-server URL even when the session itself routes through
+            # memory-service.
+            $probeBaseUrl = $baseUrl
             $memoryRoute = Resolve-AirlockCodingMemoryRoute -LlamaCppBaseUrl $baseUrl -MemoryServiceHealthy $memoryHealth.Healthy -MemoryServicePort $memoryHealth.Port
             $baseUrl = $memoryRoute.BaseUrl
 
@@ -391,7 +397,8 @@ try {
     # never refuses; the vision refuses only when even mmap won't fit.
     $measuredToksPerSec = $null
     try {
-        $probe = Measure-AirlockEndpointToksPerSec -BaseUrl $baseUrl -Model $selectedProfile.modelRef
+        $probeTarget = if ($probeBaseUrl) { $probeBaseUrl } else { $baseUrl }
+        $probe = Measure-AirlockEndpointToksPerSec -BaseUrl $probeTarget -Model $selectedProfile.modelRef
         $measuredToksPerSec = $probe.ToksPerSec
         $tier = Resolve-AirlockThroughputTier -ToksPerSec $measuredToksPerSec
         if ($null -ne $measuredToksPerSec) {
