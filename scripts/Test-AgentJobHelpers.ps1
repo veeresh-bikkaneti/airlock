@@ -134,10 +134,12 @@ Assert-True ($dockerArgs[$networkIdx + 1] -eq 'none') "network Disabled maps to 
 Assert-True (-not ($dockerArgs -join ' ' -match 'docker\.sock')) "no Docker socket is ever mounted"
 Assert-True (-not ($dockerArgs -contains '--privileged')) "the container is never launched --privileged"
 Assert-True (-not ($dockerArgs -contains '--pid')) "the container never shares the host PID namespace"
-$hostHome = [Environment]::GetFolderPath('UserProfile')
-$homeMount = @($dockerArgs | Where-Object { $_ -match '^type=bind,' -and $_ -match '(^|,)source=' }) |
-    Where-Object { $_ -match [regex]::Escape($hostHome) }
-Assert-True ([string]::IsNullOrEmpty($hostHome) -or $homeMount.Count -eq 0) "the host home directory is never mounted"
+$hostHome = if ($env:USERPROFILE) { [string]$env:USERPROFILE } elseif ($HOME) { [string]$HOME } else { $null }
+if ($hostHome) {
+    Assert-True (-not (($dockerArgs -join ' ').Contains($hostHome))) "the host home directory is never mounted"
+} else {
+    Write-Host "SKIP: host home directory is unavailable in this test environment" -ForegroundColor Yellow
+}
 Assert-True ($dockerArgs -contains '--read-only') "the container root filesystem is read-only"
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_WALL_CLOCK_MINUTES=45') "maxWallClockMinutes from the manifest is passed through"
 Assert-True ($dockerArgs -contains 'AIRLOCK_MAX_TOOL_STEPS=80') "maxToolSteps from the manifest is passed through"

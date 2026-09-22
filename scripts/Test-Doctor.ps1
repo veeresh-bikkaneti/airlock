@@ -105,7 +105,8 @@ if ($healthBody -and $healthBody -notmatch '/v1/models') {
 
 # Scratch USERPROFILE: expired coding cert must warn without touching real ~/.ai-platform.
 $RealUserProfile = $env:USERPROFILE
-$Scratch = Join-Path $env:TEMP "airlock-doctor-cert-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$Scratch = Join-Path $TempRoot "airlock-doctor-cert-$PID"
 try {
     New-Item -Path "$Scratch\.ai-platform\state" -ItemType Directory -Force | Out-Null
     Set-Content "$Scratch\.ai-platform\state\active-agent.json" -Value (@{

@@ -7,7 +7,8 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $failures = 0
 $RealUserProfile = $env:USERPROFILE
-$Scratch = Join-Path $env:TEMP "airlock-drift-test-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$Scratch = Join-Path $TempRoot "airlock-drift-test-$PID"
 
 function Get-DoctorOutput {
     $out = ai-doctor *>&1 | Out-String
@@ -26,7 +27,7 @@ try {
     # Case 1: no ~/.airlock-src at all -> skipped silently, not guessed at. The function has
     # no fixed comparison point for a dev working from an arbitrary checkout, so it must not
     # report anything rather than assume drift that was never actually measured.
-    $env:USERPROFILE = Join-Path $env:TEMP "airlock-drift-test-nonexistent-$PID"
+    $env:USERPROFILE = Join-Path $TempRoot "airlock-drift-test-nonexistent-$PID"
     $out = Get-DoctorOutput
     if ($out -match 'INSTALL DRIFT') {
         Write-Host "FAIL: no ~/.airlock-src present but INSTALL DRIFT was still reported" -ForegroundColor Red
@@ -124,6 +125,12 @@ if ($setup -notmatch [regex]::Escape('Copy-Item "$RepoDir\config\agent-profiles.
     $failures++
 } else {
     Write-Host "PASS: setup.ps1 copies agent-profiles.json" -ForegroundColor Green
+}
+if ($setup -notmatch [regex]::Escape('Copy-Item "$RepoDir\config\task-router-keywords.json"')) {
+    Write-Host "FAIL: setup.ps1 source missing Copy-Item of task-router-keywords.json" -ForegroundColor Red
+    $failures++
+} else {
+    Write-Host "PASS: setup.ps1 copies task-router-keywords.json required by ai-route" -ForegroundColor Green
 }
 
 if ($failures -gt 0) {
