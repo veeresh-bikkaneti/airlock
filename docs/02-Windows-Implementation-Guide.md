@@ -38,13 +38,15 @@ icacls "$HOME\.ai-platform\.env" /inheritance:r /grant:r "${env:USERNAME}:(R,W)"
 - `policies` stores declarative routing and security settings.
 - `.env` exists only for non-secret local settings; do not store real API keys in it.
 
-## Step 2: Pull local models
+## Step 2: Choose the door and acquire the right model
 ```powershell
-ollama pull devstral-small-2:24b
-ollama pull qwen2.5-coder:7b
-ollama list
+ai-start                 # chat door; selects a fitting chat model
+# For the coding door, do not pull an Ollama model. Use the hardware-sized path:
+ai-agent-start -WhatIf
+ai-agent-start -DownloadConfirmed
 ```
-Use the larger model as preferred local coding model and the smaller model as a fallback if memory is limited.
+
+Airlock deliberately keeps chat and coding separate. Ollama models such as `devstral-small-2:24b` and `qwen2.5-coder:7b` are known-failed for the repository's real multi-turn coding loop. The coding door uses llama-server plus the Pi worker contract and proves the selected GGUF on the current machine before publishing a certificate.
 
 ## Step 3: Install aider
 ```powershell
@@ -87,13 +89,13 @@ If vLLM fails to start (e.g., GPU passthrough issue), the platform automatically
 Both backends expose the same endpoint: `http://127.0.0.1:12345/v1`. No client changes needed.
 
 ## Step 5: Create provider policy
-Create `%USERPROFILE%\.ai-platform\policies\provider-policy.json`:
+Create `%USERPROFILE%\.ai-platform\config\provider-policy.json`:
 ```json
 {
   "cloudFallbackEnabled": false,
   "allowSensitiveDataToCloud": false,
   "preferredLocalProvider": "ollama",
-  "preferredLocalModel": "devstral-small-2:24b",
+  "preferredLocalModel": "qwen3:14b",
   "localFallbackModels": ["qwen2.5-coder:7b"],
   "cloudProviderPriority": ["openrouter", "openai", "anthropic", "google", "azure-openai"],
   "defaultCloudModels": {
