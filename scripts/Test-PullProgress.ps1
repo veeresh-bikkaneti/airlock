@@ -20,7 +20,7 @@ $cases = @(
     }
     @{
         name   = "trailing clear-to-end-of-line code must not leak into ETA"
-        line   = "pulling 797b70c4edf8:  97% ▕█████████████████ ▏  44 MB/ 45 MB   22 MB/s      0s[K"
+        line   = "pulling 797b70c4edf8:  97% ▕███████████████████ ▏  44 MB/ 45 MB   22 MB/s      0s[K"
         expect = @{ Percent = 97; Downloaded = "44 MB"; Total = "45 MB"; Speed = "22 MB/s"; Eta = "0s" }
     }
     @{
@@ -97,7 +97,8 @@ if ($acqSrc -match 'Start-Job') {
 }
 
 $oldHome = $env:USERPROFILE
-$scratch = Join-Path $env:TEMP "airlock-pull-status-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$scratch = Join-Path $TempRoot "airlock-pull-status-$PID"
 try {
     New-Item -ItemType Directory -Path (Join-Path $scratch ".ai-platform\state") -Force | Out-Null
     $env:USERPROFILE = $scratch
