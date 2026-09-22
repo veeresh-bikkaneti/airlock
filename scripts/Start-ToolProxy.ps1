@@ -31,7 +31,13 @@ foreach ($dir in @($LogDir, $StateDir)) {
 function Test-ToolProxyProcessIdentity {
     param([Parameter(Mandatory)][int]$ProcessId)
     try {
-        $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop).CommandLine
+        if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) {
+            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop).CommandLine
+        } elseif (Get-Command ps -ErrorAction SilentlyContinue) {
+            $cmdLine = (& ps -p $ProcessId -o args= 2>$null | Out-String).Trim()
+        } else {
+            return $false
+        }
     } catch {
         return $false
     }

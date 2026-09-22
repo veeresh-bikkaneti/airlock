@@ -13,7 +13,8 @@ $StartScript = Join-Path $ScriptDir "Start-ToolProxy.ps1"
 $StopScript = Join-Path $ScriptDir "Stop-ToolProxy.ps1"
 
 $failures = 0
-$fixturePlatformDir = Join-Path $env:TEMP "air-test-toolproxy-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$fixturePlatformDir = Join-Path $TempRoot "air-test-toolproxy-$PID"
 
 function New-DummyProcess {
     # A real, harmless child process. Passing "uvicorn"/"app.main:app" as inert arguments

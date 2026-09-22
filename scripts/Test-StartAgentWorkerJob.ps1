@@ -161,20 +161,20 @@ $dockerContextDir = Join-Path (Split-Path -Parent $PSScriptRoot) "airlock-worker
 $dockerfilePath = Join-Path $dockerContextDir "Dockerfile"
 Assert-True (Test-Path $dockerfilePath) "airlock-worker-container/Dockerfile exists (closes the Phase F missing-image gap)"
 
-$dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
-$dockerOsType = ''
-if ($dockerCommand) {
-    $dockerOsType = (& docker info --format '{{.OSType}}' 2>$null | Out-String).Trim()
-}
-if ($dockerCommand -and $LASTEXITCODE -eq 0 -and $dockerOsType -eq 'linux') {
-    & docker build -t airlock-worker:latest $dockerContextDir 2>&1 | Out-Null
-    Assert-True ($LASTEXITCODE -eq 0) "docker build -t airlock-worker:latest succeeds against airlock-worker-container/Dockerfile"
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    $dockerOsType = & docker info --format '{{.OSType}}' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $dockerOsType -eq 'linux') {
+        & docker build -t airlock-worker:latest $dockerContextDir 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0) "docker build -t airlock-worker:latest succeeds against airlock-worker-container/Dockerfile"
+    } else {
+        # A reachable daemon in Windows-container mode reports OSType 'windows'
+        # and cannot build this Linux base image. Treat unavailable or incompatible
+        # Docker as an explicit skipped live gate rather than a false unit failure.
+        Write-Host "SKIP: no Linux-container Docker daemon reachable here (OSType: '$dockerOsType') - 'docker build' not exercised (live-hardware gate)." -ForegroundColor Yellow
+    }
 } else {
-    # Not just "docker missing" - a reachable daemon in Windows-container mode
-    # (the default on GitHub's windows-latest runner) reports OSType
-    # 'windows' and would fail to build this Linux base image, which is a
-    # CI-environment limitation, not a regression - skip rather than red.
-    Write-Host "SKIP: no Linux-container Docker daemon reachable here (OSType: '$dockerOsType') - 'docker build' not exercised (live-hardware gate, same as Test-LlamaCppAdapter.ps1)." -ForegroundColor Yellow
+    $dockerOsType = 'unavailable'
+    Write-Host "SKIP: docker is not installed - 'docker build' not exercised (live-hardware gate)." -ForegroundColor Yellow
 }
 
 if ($failures -gt 0) {

@@ -347,11 +347,7 @@ function Resolve-CurrentTaskRoute {
         return [pscustomobject]@{ Error = "Active model '$activeModel' has no entry in models.json - cannot read supportsFunctionCalling."; Route = $null; ActiveModel = $activeModel }
     }
 
-    # ponytail: task-router-keywords.json isn't in setup.ps1's deploy copy list yet (only
-    # models.json/policies/*.json/*.template are) - resolve next to this script instead of
-    # under $Script:PlatformDir\config, so it works from a repo checkout today. Upgrade path:
-    # add it to setup.ps1's config copy step once that file is touched for another reason.
-    $keywordsFile = Join-Path $PSScriptRoot "..\config\task-router-keywords.json"
+    $keywordsFile = Join-Path $Script:PlatformDir "config\task-router-keywords.json"
     $keywords = if (Test-Path $keywordsFile) { @((Get-Content $keywordsFile -Raw | ConvertFrom-Json).planningKeywords) } else { @() }
 
     $fileCount = $Files.Count
@@ -791,12 +787,34 @@ function script:Get-ProcessAncestry {
     param([int]$StartPid = $PID, [int]$MaxDepth = 12)
     $chain = @()
     $id = $StartPid
+    $cimAvailable = [bool](Get-Command Get-CimInstance -ErrorAction SilentlyContinue)
+    $psAvailable = [bool](Get-Command ps -ErrorAction SilentlyContinue)
     for ($i = 0; $i -lt $MaxDepth -and $id; $i++) {
-        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-        if (-not $p) { break }
-        $chain += [pscustomobject]@{ Id = $p.ProcessId; Name = $p.Name }
-        if ($p.ParentProcessId -eq $p.ProcessId) { break }
-        $id = $p.ParentProcessId
+        if ($cimAvailable) {
+            $p = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
+            if (-not $p) { break }
+            $chain += [pscustomobject]@{ Id = $p.ProcessId; Name = $p.Name }
+            if ($p.ParentProcessId -eq $p.ProcessId) { break }
+            $id = $p.ParentProcessId
+        } elseif ($psAvailable) {
+            # Portable (Linux/macOS) walk: no CIM there, but `ps` reports the
+            # parent PID directly, so the chain still climbs past this one
+            # process instead of stopping after it.
+            $proc = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if (-not $proc) { break }
+            $chain += [pscustomobject]@{ Id = $proc.Id; Name = $proc.ProcessName }
+            $ppid = (& ps -o ppid= -p $id 2>$null).Trim()
+            if (-not $ppid -or $ppid -notmatch '^\d+$' -or [int]$ppid -eq $id) { break }
+            $id = [int]$ppid
+        } else {
+            # Neither CIM nor `ps` available: one node is all that can be
+            # observed, so return it rather than claiming a full chain.
+            $fallback = Get-Process -Id $id -ErrorAction SilentlyContinue
+            if ($fallback) {
+                $chain += [pscustomobject]@{ Id = $fallback.Id; Name = $fallback.ProcessName }
+            }
+            break
+        }
     }
     return $chain
 }

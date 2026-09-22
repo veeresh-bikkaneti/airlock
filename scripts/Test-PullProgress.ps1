@@ -97,7 +97,8 @@ if ($acqSrc -match 'Start-Job') {
 }
 
 $oldHome = $env:USERPROFILE
-$scratch = Join-Path $env:TEMP "airlock-pull-status-$PID"
+$TempRoot = if ($env:TEMP) { $env:TEMP } else { [System.IO.Path]::GetTempPath() }
+$scratch = Join-Path $TempRoot "airlock-pull-status-$PID"
 try {
     New-Item -ItemType Directory -Path (Join-Path $scratch ".ai-platform\state") -Force | Out-Null
     $env:USERPROFILE = $scratch
