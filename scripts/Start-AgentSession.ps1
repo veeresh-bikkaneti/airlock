@@ -90,36 +90,57 @@ function Resolve-SessionProfile {
         }
         return $selection.Selected
     }
-    $freeVram = Get-AirlockFreeVramGiB
-    $gpuTotal = Get-AirlockGpuTotalGiB
+    $inventory = @(Get-AirlockNvidiaGpuList)
     $freeRam = Get-AirlockFreeRamGiB
-    $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $gpuTotal -FreeVramGiB $freeVram -FreeRamGb $freeRam -Vendor (Get-AirlockGpuVendor)
+    $pool = Resolve-AirlockGpuPool -Gpus $inventory -FreeRamGb $freeRam
+    if ($pool.UseRam) {
+        $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null -FreeRamGb $pool.FreeRamGb -Vendor ''
+    } else {
+        $chosen = $pool.Chosen
+        $amdNote = if ($pool.AmdNote) { [string]$pool.AmdNote } else { '' }
+        $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $chosen.TotalGiB -FreeVramGiB $chosen.FreeGiB -FreeRamGb $pool.FreeRamGb -Vendor $chosen.Vendor -AmdNote $amdNote
+    }
+    $fileGb = 0.0
+    if ($strategy.Quant) {
+        $quantRow = Get-AirlockUnslothQuantLadder | Where-Object { $_.Quant -eq $strategy.Quant } | Select-Object -First 1
+        if ($quantRow) { $fileGb = [double]$quantRow.FileGb }
+    }
+    # This PC has no measured bandwidth. A missing figure stays null.
+    # Do not invent a number, do not call llama-bench, do not upload.
+    $bandwidthGiBps = $null
+    $speed = Get-AirlockSpeedEstimate -FileGb $fileGb -BandwidthGiBps $bandwidthGiBps -Offload $strategy.Offload
+    $script:AirlockHardwareDoctorText = Format-AirlockHardwareDoctor -Pool $pool -Pick $strategy -SpeedLine $(if ($speed) { $speed.Line } else { 'speed unknown' })
+    Save-AirlockHardwareDoctor -PlatformDir $PlatformDir -Text $script:AirlockHardwareDoctorText -WhatIf:$WhatIf
     $sized = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $strategy
     if (-not $sized.Selected) {
-        $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogue -FreeVramGiB $freeVram
+        $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogue -FreeVramGiB $(if ($pool.Chosen) { $pool.Chosen.FreeGiB } else { $null })
         Write-Host "FAILED: $($sized.Reason)" -ForegroundColor Red
         Write-Host $fitState.Message -ForegroundColor Yellow
         Write-Host "Chat door is still available: ai-start." -ForegroundColor Yellow
         exit 1
     }
     Write-Host "SIZED: $($sized.Reason)" -ForegroundColor Cyan
+    Write-Host (Format-AirlockPickLine -HardwareName $(if ($pool.Chosen) { $pool.Chosen.Name } else { 'cpu' }) -FreeGb $(if ($pool.Chosen) { $pool.Chosen.FreeGiB } else { $null }) -RamGb $freeRam -Quant $strategy.Quant -Mode $(if ($strategy.Offload -eq 'gpu-all') { 'gpu' } else { 'cpu' }) -InheritEvidence $strategy.InheritEvidence -ContextTokens $strategy.ContextTokens -Fit $strategy.Fit)
     $script:AirlockSizedOffload = if ($sized.Offload) { $sized.Offload } else { 'gpu-all' }
-    if ($sized.ForceVerify) {
+    $script:AirlockHardwareSized = $true
+    $script:AirlockSizedContext = [int]$strategy.ContextTokens
+    if ($sized.ForceVerify -or $strategy.ContextTokens -ne 8192) {
         Set-Variable -Name ForceVerify -Value $true -Scope Script
         Write-Host "SIZED: unproven on this PC — live Pi contract required (do not inherit another machine's 3/3)." -ForegroundColor Yellow
     }
+    $clone = $sized.Selected | Select-Object *
+    $clone.initialContext = [int]$strategy.ContextTokens
+    $clone.minimumFreeVramGiB = [double]$strategy.MinimumFreeVramGiB
     if ($script:AirlockSizedOffload -eq 'cpu') {
         Write-Host "SIZED: RAM mmap / CPU offload. Expect 1-5 tok/s. This is still the coding door (llama-server + Pi), not a refuse." -ForegroundColor Yellow
-        $clone = $sized.Selected | Select-Object *
         $args = @($clone.runtimeArgs)
         for ($i = 0; $i -lt $args.Count; $i++) {
             if ($args[$i] -eq '--n-gpu-layers' -and ($i + 1) -lt $args.Count) { $args[$i + 1] = '0' }
         }
         $clone.runtimeArgs = $args
         $clone.minimumFreeVramGiB = 0
-        return $clone
     }
-    return $sized.Selected
+    return $clone
 }
 
 # --- §7.1: "-WhatIf performs discovery and prints the plan only. It never
@@ -268,21 +289,24 @@ try {
                 $runtimeArgs = @($selectedProfile.runtimeArgs)
                 $cpuOffload = ($script:AirlockSizedOffload -eq 'cpu') -or ((($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains '0'))
                 if (-not $cpuOffload) {
-                    $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
-                    $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
-                    if (-not $selfFit) {
-                        $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
-                            ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
-                        } else {
-                            "none in the catalogue fit this machine's detected VRAM"
+                    $freeForGate = $freeVramGiB
+                    $floorForGate = [double]$selectedProfile.minimumFreeVramGiB
+                    if (-not $script:AirlockHardwareSized) {
+                        $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
+                        $selfFit = $fitState.EligibleProfiles | Where-Object { $_.ProfileId -eq $selectedProfile.profileId }
+                        if (-not $selfFit) {
+                            $altList = if ($fitState.EligibleProfiles.Count -gt 0) {
+                                ($fitState.EligibleProfiles | ForEach-Object { $_.ProfileId }) -join ', '
+                            } else {
+                                "none in the catalogue fit this machine's detected VRAM"
+                            }
+                            Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
+                            Write-Host $fitState.Message -ForegroundColor Yellow
+                            exit 1
                         }
-                        Write-Host "FAILED: profile '$($selectedProfile.profileId)' does not fit this machine. Profiles that do fit: $altList" -ForegroundColor Red
-                        Write-Host $fitState.Message -ForegroundColor Yellow
-                        exit 1
                     }
-
                     $requiresGpuAll = (($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains 'all')
-                    $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB ([double]$selectedProfile.minimumFreeVramGiB) -RequiresGpuLayersAll $requiresGpuAll
+                    $vramGate = Resolve-AirlockVramStartGate -FreeVramGiB $freeForGate -MinimumFreeVramGiB $floorForGate -RequiresGpuLayersAll $requiresGpuAll
                     if (-not $vramGate.Allowed) {
                         Write-Host "FAILED: $($vramGate.Reason)" -ForegroundColor Red
                         exit 1

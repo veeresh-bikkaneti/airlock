@@ -80,6 +80,45 @@ function Get-AirlockGpuVendor {
     return $null
 }
 
+function Get-AirlockNvidiaGpuList {
+    if (-not (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) { return @() }
+    try {
+        $raw = & nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return @() }
+        $rows = @()
+        foreach ($line in @($raw)) {
+            $parts = @($line -split ',' | ForEach-Object { $_.Trim() })
+            if ($parts.Count -lt 3) { continue }
+            $rows += [pscustomobject]@{
+                Name     = $parts[0]
+                Vendor   = 'NVIDIA'
+                TotalGiB = ([double]$parts[1]) / 1024
+                FreeGiB  = ([double]$parts[2]) / 1024
+                Unified  = $false
+            }
+        }
+        return $rows
+    } catch {
+        return @()
+    }
+}
+
+# Writes the hardware doctor only on a real run. -WhatIf is a no-op: no
+# directory and no file. Explicit -Profile never calls this before the
+# WhatIf early-exit.
+function Save-AirlockHardwareDoctor {
+    param(
+        [Parameter(Mandatory)][string]$PlatformDir,
+        [AllowEmptyString()][string]$Text = '',
+        [switch]$WhatIf
+    )
+    if ($WhatIf) { return }
+    if (-not $Text) { return }
+    $doctorDir = Join-Path $PlatformDir 'logs'
+    if (-not (Test-Path $doctorDir)) { New-Item -Path $doctorDir -ItemType Directory -Force | Out-Null }
+    Set-Content -Path (Join-Path $doctorDir 'hardware-doctor.txt') -Value $Text -Encoding utf8
+}
+
 function Get-AirlockFreeRamGiB {
     try {
         $os = Get-CimInstance Win32_OperatingSystem

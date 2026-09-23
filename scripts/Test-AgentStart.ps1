@@ -65,10 +65,16 @@ if (Test-Path $ggufHelper) {
     $defaults = @($ladder | Where-Object { $_.CodingDefault })
     Assert-True ($defaults.Count -eq 1) "ADR-018: exactly one coding-default quant"
 
-    $adaIdle = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 15
+    $adaIdle = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 15 -Vendor 'NVIDIA'
     Assert-True ($adaIdle.Action -eq 'UseDefault') "ADR-018: ThinkPad idle 15 GiB -> UseDefault"
     Assert-True ($adaIdle.Quant -eq 'UD-Q3_K_XL') "ADR-018: ThinkPad idle stays UD-Q3_K_XL"
     Assert-True ($adaIdle.InheritEvidence -eq $true) "ADR-018: Q3_K_XL may inherit the 3/3"
+    Assert-True ($adaIdle.ContextTokens -eq 8192) "ADR-018: NVIDIA 16 GB full floor stays ctx 8192"
+
+    $noVendor = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 15
+    Assert-True ($noVendor.Action -eq 'UseCandidate') "empty vendor is UseCandidate even when the numbers match the ThinkPad"
+    Assert-True ($noVendor.InheritEvidence -eq $false) "empty vendor does not inherit the 3/3"
+    Assert-True ($noVendor.ContextTokens -eq 8192) "empty vendor full floor stays ctx 8192"
 
     $adaTight = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 13
     Assert-True ($adaTight.Action -eq 'StepDown') "ADR-018: 13 GiB free steps down"
@@ -129,6 +135,74 @@ if (Test-Path $ggufHelper) {
 
     $missing = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null
     Assert-True ($missing.Action -eq 'Refuse') "ADR-018: missing nvidia-smi AND missing RAM refuses a quant pick"
+
+    $iq3At13 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 13.0 -Vendor 'NVIDIA'
+    Assert-True ($iq3At13.Quant -eq 'UD-IQ3_XXS') "13.0 GiB free on NVIDIA 16 GB steps down to UD-IQ3_XXS"
+    Assert-True ($iq3At13.ContextTokens -eq 8192) "13.0 GiB free keeps UD-IQ3_XXS at ctx 8192"
+    Assert-True ($iq3At13.InheritEvidence -eq $false) "13.0 GiB IQ3 does not inherit"
+
+    # Q3 half floor is FileGb + (14 - FileGb) / 2 = 13.55. 13.6 clears that
+    # and misses 14. NVIDIA 16 GB so a fail here is half-context, not empty vendor.
+    $halfQ3 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 13.6 -Vendor 'NVIDIA'
+    Assert-True ($halfQ3.Quant -eq 'UD-Q3_K_XL') "13.6 GiB free stays on UD-Q3_K_XL"
+    Assert-True ($halfQ3.ContextTokens -eq 4096) "13.6 GiB free is half context 4096"
+    Assert-True ($halfQ3.InheritEvidence -eq $false) "half-context UD-Q3_K_XL does not inherit"
+    Assert-True ($halfQ3.Action -eq 'UseCandidate') "half-context Q3 is UseCandidate"
+
+    $pool = Resolve-AirlockGpuPool -Gpus @(
+        [pscustomobject]@{ Name = 'smaller-gpu'; Vendor = 'NVIDIA'; TotalGiB = 8; FreeGiB = 8; Unified = $false }
+        [pscustomobject]@{ Name = 'RTX-4090-24'; Vendor = 'NVIDIA'; TotalGiB = 24; FreeGiB = 22; Unified = $false }
+    ) -FreeRamGb 64
+    Assert-True ($pool.Chosen.FreeGiB -eq 22) "GPU pool picks the 22 GiB free GPU only"
+    Assert-True ($pool.Reason -match 'not added') "GPU pool reason says other GPUs were not added"
+    Assert-True ($pool.Reason -match 'smaller-gpu') "GPU pool reason names the smaller GPU"
+    Assert-True ($pool.Reason -notmatch '30') "GPU pool does not report a summed pool"
+    Assert-True (-not ($pool.PSObject.Properties.Name -contains 'SummedFreeGiB')) "GPU pool has no summed-free field"
+
+    $unified = Resolve-AirlockGpuPool -Gpus @(
+        [pscustomobject]@{ Name = 'unified-gpu'; Vendor = 'Apple'; TotalGiB = 16; FreeGiB = 12; Unified = $true }
+    ) -FreeRamGb 24
+    Assert-True ($unified.UseRam -eq $true) "a unified-memory device alone uses RAM"
+    Assert-True ($null -eq $unified.Chosen) "a unified-memory device is not a chosen VRAM GPU"
+    Assert-True ($unified.Reason -match 'unified memory is not VRAM') "unified memory is not VRAM"
+
+    $amdPool = Resolve-AirlockGpuPool -Gpus @(
+        [pscustomobject]@{ Name = 'RX 7800 XT'; Vendor = 'AMD'; TotalGiB = 16; FreeGiB = 15; Unified = $false }
+    ) -FreeRamGb 32
+    Assert-True ($amdPool.AmdNote -match 'Vulkan') "AMD note mentions Vulkan"
+    Assert-True ($amdPool.AmdNote -match 'not CUDA') "AMD note says not CUDA"
+    Assert-True ($amdPool.AmdNote -match 'live Pi') "AMD note requires live Pi"
+    $amdProfile = Resolve-AirlockUnslothQuantForProfile -Name 'rx-7800-xt-16'
+    Assert-True ($amdProfile.InheritEvidence -eq $false) "rx-7800-xt-16 strategy still does not inherit"
+    $amdDoc = Format-AirlockHardwareDoctor -Pool $amdPool -Pick $amdProfile -SpeedLine 'speed unknown'
+    Assert-True ($amdDoc.Contains([string]$amdPool.AmdNote)) "doctor includes the AMD note sentence"
+
+    Assert-True ($null -eq (Get-AirlockSpeedEstimate -FileGb 13.1 -BandwidthGiBps $null -Offload 'gpu-all')) "missing bandwidth returns null"
+    Assert-True ($null -eq (Get-AirlockSpeedEstimate -FileGb 13.1 -BandwidthGiBps '' -Offload 'gpu-all')) "blank bandwidth returns null"
+    Assert-True ($null -eq (Get-AirlockSpeedEstimate -FileGb 0 -BandwidthGiBps 100 -Offload 'gpu-all')) "FileGb 0 returns null"
+    $gpuSpeed = Get-AirlockSpeedEstimate -FileGb 13.1 -BandwidthGiBps 100 -Offload 'gpu-all'
+    Assert-True ($gpuSpeed.ToksPerSec -eq [math]::Round((100 * 0.5) / 13.1, 2)) "gpu-all tok/s uses efficiency 0.5"
+    Assert-True ($gpuSpeed.Formula -eq 'tok/s ~= bandwidthGiBps * efficiency / fileGiB') "speed formula text is exact"
+    Assert-True (-not ($gpuSpeed.PSObject.Properties.Name -contains 'InheritEvidence')) "speed estimate has no InheritEvidence field"
+    $cpuSpeed = Get-AirlockSpeedEstimate -FileGb 13.1 -BandwidthGiBps 100 -Offload 'cpu'
+    Assert-True ($cpuSpeed.Efficiency -eq 0.15) "cpu efficiency is 0.15"
+    Assert-True ($cpuSpeed.ToksPerSec -eq [math]::Round((100 * 0.15) / 13.1, 2)) "cpu tok/s uses efficiency 0.15"
+    Assert-True (-not ($cpuSpeed.PSObject.Properties.Name -contains 'InheritEvidence')) "cpu speed estimate has no InheritEvidence field"
+
+    $evidencePick = Format-AirlockPickLine -HardwareName 'RTX 5000 Ada' -FreeGb 15 -RamGb 64 -Quant 'UD-Q3_K_XL' -Mode 'gpu' -InheritEvidence $true -ContextTokens 8192 -Fit 'Marginal'
+    $evidenceLines = @($evidencePick -split "`n")
+    Assert-True ($evidenceLines.Count -eq 2) "evidence pick line is exactly two lines"
+    Assert-True ($evidenceLines[0] -eq 'hardware    RTX 5000 Ada    15 GB free    64 GB RAM') "hardware line shape"
+    Assert-True ($evidenceLines[1] -eq 'pick        UD-Q3_K_XL    gpu    evidence    ctx 8192    fit Marginal') "evidence follows InheritEvidence"
+    $candidatePick = Format-AirlockPickLine -HardwareName 'RX 7800 XT' -FreeGb 15 -RamGb 32 -Quant 'UD-Q3_K_XL' -Mode 'cpu' -InheritEvidence $false -ContextTokens 4096 -Fit 'Good'
+    $candidateLines = @($candidatePick -split "`n")
+    Assert-True ($candidateLines.Count -eq 2) "candidate pick line is exactly two lines"
+    Assert-True ($candidateLines[1] -eq 'pick        UD-Q3_K_XL    cpu    candidate    ctx 4096    fit Good') "candidate follows InheritEvidence false"
+
+    $failedDoc = Format-AirlockHardwareDoctor -Pool $null -Pick $null -SpeedLine $null
+    Assert-True ($failedDoc -match 'detection failed') "no GPU and null RAM says detection failed"
+    Assert-True ($failedDoc -match 'certificate: candidate') "detection failure certificate is candidate"
+    Assert-True ($failedDoc -match 'AMD/Intel were not probed') "detection failure says AMD/Intel were not probed"
 } else {
     Assert-True $false "T2: ConvertTo-AirlockGgufFileName unavailable"
     Assert-True $false "T3: skip-download branch unavailable"
@@ -162,6 +236,7 @@ try {
     Assert-True ($LASTEXITCODE -eq 0) "T7: Start-AgentSession -WhatIf -Profile Unsloth -Harness pi-worker exits 0"
     Assert-True ($whatIfOut -match 'openai-direct') "T7: WhatIf prints openai-direct"
     Assert-True (-not (Test-Path (Join-Path $whatIfDir "state" "active-agent.json"))) "T7: WhatIf never publishes a certificate"
+    Assert-True (-not (Test-Path (Join-Path $whatIfDir "logs" "hardware-doctor.txt"))) "T7: WhatIf explicit profile does not write hardware-doctor.txt"
 } finally {
     Remove-Item -Path $whatIfDir -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -170,6 +245,19 @@ try {
 . (Join-Path $ScriptDir "agent-profile-helpers.ps1")
 $cmdOllama = Get-Command Resolve-AirlockOllamaCodingCertificate -ErrorAction SilentlyContinue
 Assert-True ([bool]$cmdOllama) "T8: Resolve-AirlockOllamaCodingCertificate exists"
+$doctorRoot = Join-Path ([System.IO.Path]::GetTempPath()) "airlock-hardware-doctor-$([guid]::NewGuid().ToString('N'))"
+try {
+    Save-AirlockHardwareDoctor -PlatformDir $doctorRoot -Text "hardware-doctor`ndetection failed" -WhatIf
+    Assert-True (-not (Test-Path (Join-Path $doctorRoot 'logs'))) "WhatIf Save-AirlockHardwareDoctor creates no logs directory"
+    Assert-True (-not (Test-Path (Join-Path $doctorRoot 'logs' 'hardware-doctor.txt'))) "WhatIf Save-AirlockHardwareDoctor writes no doctor file"
+    Save-AirlockHardwareDoctor -PlatformDir $doctorRoot -Text "hardware-doctor`ncertificate: candidate" -WhatIf:$false
+    $doctorPath = Join-Path $doctorRoot 'logs' 'hardware-doctor.txt'
+    Assert-True (Test-Path $doctorPath) "Save-AirlockHardwareDoctor writes logs/hardware-doctor.txt when WhatIf is false"
+    $doctorBody = Get-Content -Path $doctorPath -Raw
+    Assert-True ($doctorBody -match 'certificate: candidate') "written doctor text is the text that was passed"
+} finally {
+    Remove-Item -Path $doctorRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 if ($cmdOllama) {
     $refused = Resolve-AirlockOllamaCodingCertificate -LiveContractPassedThisRun $false
     Assert-True (-not $refused.Allow) "T8: Ollama path does not publish a certificate without a live pass this run"
@@ -182,6 +270,7 @@ $sessionText = Get-Content $sessionScript -Raw
 Assert-True ($sessionText -match 'Start-LlamaCppRuntime') "G2: Start-AgentSession mentions Start-LlamaCppRuntime"
 Assert-True ($sessionText -notmatch 'is not automated in this pass') "G2: the manual-start error string is gone"
 Assert-True ($sessionText -match 'Start-LlamaCppRuntime\s+-ModelPath') "G2: Start-AgentSession has a production Start-LlamaCppRuntime call"
+Assert-True ($sessionText -match 'Save-AirlockHardwareDoctor') "sizing path calls Save-AirlockHardwareDoctor"
 Assert-True ($sessionText -match '\$script:AirlockCertificateTtlHours\s*=\s*24') "certificate TTL named constant is 24 hours"
 Assert-True ($sessionText -match 'AddHours\(\$script:AirlockCertificateTtlHours\)') "expiresAt uses AirlockCertificateTtlHours (24h), not 5 minutes"
 Assert-True ($sessionText -notmatch 'expiresAt\s+=\s+\[DateTime\]::UtcNow\.AddMinutes\(5\)') "expiresAt is not now+5 minutes"
