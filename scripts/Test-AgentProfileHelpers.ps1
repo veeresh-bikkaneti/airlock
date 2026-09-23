@@ -16,7 +16,7 @@ Write-Host "Testing agent-profile-helpers.ps1..." -ForegroundColor Cyan
 # --- Get-AirlockProfileCatalogue / Test-AirlockProfileSchema against the real catalogue ---
 
 $catalogue = Get-AirlockProfileCatalogue -Path (Join-Path $ScriptDir "..\config\agent-profiles.json")
-Assert-True ($catalogue.Count -eq 5) "config/agent-profiles.json parses with Q3 coding default plus IQ3/Q2/IQ2 rungs"
+Assert-True ($catalogue.Count -eq 9) "config/agent-profiles.json parses with Q3 plus step-down and step-up rungs"
 foreach ($p in $catalogue) {
     $schema = Test-AirlockProfileSchema -Profile $p
     Assert-True $schema.Valid "profile '$($p.profileId)' in the real catalogue passes schema validation"

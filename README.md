@@ -7,7 +7,7 @@ Two doors. One at a time. Not GLM, not Grok, not cloud Qwen.
 - **`ai-start`** — chat, sized for *this* PC (Ollama or vLLM on port 12345). Talk. Don't expect bash/read/write loops.
 - **`ai-agent-start`** — the coding door. Sizes Unsloth Dynamic 3.0 (Qwen3.8-27B GGUF) to *this* machine's free VRAM, starts llama-server, then a live Pi 3/3. First run needs no `-Profile`. A 3/3 on someone else's box is not your certificate.
 
-On a 16 GB class card the coding quant is **UD-Q3_K_XL**. Smaller cards step down the Unsloth ladder (`UD-IQ3_XXS`, `UD-Q2_K_XL`) — those are **candidate-only** and do not inherit the 3/3. If VRAM is too small but system RAM can hold the GGUF, we mmap it on CPU (`--n-gpu-layers 0`): slow (often 1–5 tok/s), still llama-server + Pi, live contract on this PC. Tiny RAM still refuses.
+On a 16 GB NVIDIA-class card the coding quant is **UD-Q3_K_XL**, and that is the only quant that may inherit the recorded 3/3. Smaller free-VRAM steps down the Unsloth ladder (`UD-IQ3_XXS`, `UD-Q2_K_XL`). Larger free-VRAM steps up (`UD-Q4_K_XL` around 22 GiB free, then Q5, Q6, Q8) — those are **candidate-only** and do not inherit the 3/3. An AMD card that fits Q3 is still a candidate. If VRAM is too small but system RAM can hold the GGUF, we mmap it on CPU (`--n-gpu-layers 0`): slow (often 1–5 tok/s), still llama-server + Pi, live contract on this PC. Tiny RAM still refuses.
 
 One local backend at a time, walled off from the outside, everything logged.
 
