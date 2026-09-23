@@ -28,6 +28,9 @@ param(
 # Published worker-certificate TTL. Capability-registry pass/fail cache stays 5 min.
 $script:AirlockCertificateTtlHours = 24
 $script:AirlockSizedOffload = 'gpu-all'
+$script:AirlockHardwareSized = $false
+$script:AirlockChosenGpuIndex = $null
+$script:AirlockChosenFreeGiB = $null
 
 # $PSScriptRoot (not a hand-assigned $ScriptDir) - immune to being clobbered
 # by any of these dot-sourced files reassigning the same variable name.
@@ -74,6 +77,12 @@ $TransactionDir = Join-Path $PlatformDir "state" "config-transactions"
 # candidate). Empty -Profile is the any-PC coding door: size the Unsloth
 # ladder to this machine's VRAM, then live-prove. Step-downs ForceVerify.
 function Resolve-SessionProfile {
+    # Explicit -Profile is not hardware-sized and must not inherit a previous
+    # pick's GPU index or free-GiB figure.
+    $script:AirlockHardwareSized = $false
+    $script:AirlockChosenGpuIndex = $null
+    $script:AirlockChosenFreeGiB = $null
+    $script:AirlockSizedOffload = 'gpu-all'
     $catalogue = Get-AirlockProfileCatalogue -Path $ProfileCataloguePath
     foreach ($p in $catalogue) {
         $schema = Test-AirlockProfileSchema -Profile $p
@@ -93,6 +102,13 @@ function Resolve-SessionProfile {
     $inventory = @(Get-AirlockNvidiaGpuList)
     $freeRam = Get-AirlockFreeRamGiB
     $pool = Resolve-AirlockGpuPool -Gpus $inventory -FreeRamGb $freeRam
+    if ($pool.Chosen) {
+        $script:AirlockChosenFreeGiB = $pool.Chosen.FreeGiB
+        # Index 0 is a real CUDA device. Do not treat it as "no index".
+        if ($null -ne $pool.Chosen.Index) {
+            $script:AirlockChosenGpuIndex = $pool.Chosen.Index
+        }
+    }
     if ($pool.UseRam) {
         $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null -FreeRamGb $pool.FreeRamGb -Vendor ''
     } else {
@@ -289,7 +305,7 @@ try {
                 $runtimeArgs = @($selectedProfile.runtimeArgs)
                 $cpuOffload = ($script:AirlockSizedOffload -eq 'cpu') -or ((($runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($runtimeArgs -contains '0'))
                 if (-not $cpuOffload) {
-                    $freeForGate = $freeVramGiB
+                    $freeForGate = Resolve-AirlockSizedVramGateInput -HardwareSized ([bool]$script:AirlockHardwareSized) -ChosenFreeGiB $script:AirlockChosenFreeGiB -ProbeFreeGiB $freeVramGiB
                     $floorForGate = [double]$selectedProfile.minimumFreeVramGiB
                     if (-not $script:AirlockHardwareSized) {
                         $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogueForFit -FreeVramGiB $freeVramGiB
@@ -317,8 +333,13 @@ try {
 
                 Stop-LlamaCppIfOwned -PlatformDir $PlatformDir | Out-Null
                 $cpuTimeout = if ($cpuOffload) { 600 } else { 300 }
+                # One GGUF uses the one GPU the pool picked. Pass that CUDA
+                # index only on the sized GPU path. CPU mmap and an explicit
+                # -Profile pass $null so llama-server is not pinned here.
+                $pinChosenGpu = $script:AirlockHardwareSized -and -not $cpuOffload -and ($null -ne $script:AirlockChosenGpuIndex)
                 $started = Start-LlamaCppRuntime -ModelPath $gguf.Path -Context $effectiveContext `
-                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout -BinaryPath $llamaBin.Path
+                    -RuntimeArgs $runtimeArgs -PlatformDir $PlatformDir -HealthTimeoutSec $cpuTimeout -BinaryPath $llamaBin.Path `
+                    -CudaDeviceIndex $(if ($pinChosenGpu) { $script:AirlockChosenGpuIndex } else { $null })
                 if (-not $started.Started) {
                     Write-Host "FAILED: $($started.Reason)" -ForegroundColor Red
                     exit 1

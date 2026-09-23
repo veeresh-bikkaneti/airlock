@@ -86,10 +86,14 @@ function Get-AirlockNvidiaGpuList {
         $raw = & nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $raw) { return @() }
         $rows = @()
-        foreach ($line in @($raw)) {
-            $parts = @($line -split ',' | ForEach-Object { $_.Trim() })
+        # Row order is the CUDA device index. Do not renumber after a skip,
+        # and do not sum these rows into one pool.
+        $lines = @($raw)
+        for ($index = 0; $index -lt $lines.Count; $index++) {
+            $parts = @($lines[$index] -split ',' | ForEach-Object { $_.Trim() })
             if ($parts.Count -lt 3) { continue }
             $rows += [pscustomobject]@{
+                Index    = $index
                 Name     = $parts[0]
                 Vendor   = 'NVIDIA'
                 TotalGiB = ([double]$parts[1]) / 1024
@@ -271,6 +275,19 @@ function Resolve-AirlockLlamaCppNeedsStart {
         [Parameter(Mandatory)][bool]$PortReachable
     )
     return -not ($SnapshotModelPath -eq $RequestedModelPath -and $PortReachable)
+}
+
+# Hardware-sized sessions already picked one GPU. Gate on that GPU's free
+# GiB. The first nvidia-smi row is a different device and must not stand in
+# for it. An explicit -Profile (not hardware-sized) keeps the first-row probe.
+function Resolve-AirlockSizedVramGateInput {
+    param(
+        [bool]$HardwareSized = $false,
+        [AllowNull()]$ChosenFreeGiB,
+        [AllowNull()]$ProbeFreeGiB
+    )
+    if ($HardwareSized) { return $ChosenFreeGiB }
+    return $ProbeFreeGiB
 }
 
 # AIR-016 D9: cheap VRAM gate before llama-server start. Full residency

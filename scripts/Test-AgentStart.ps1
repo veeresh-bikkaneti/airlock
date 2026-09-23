@@ -276,6 +276,37 @@ Assert-True ($sessionText -match 'AddHours\(\$script:AirlockCertificateTtlHours\
 Assert-True ($sessionText -notmatch 'expiresAt\s+=\s+\[DateTime\]::UtcNow\.AddMinutes\(5\)') "expiresAt is not now+5 minutes"
 Assert-True ($sessionText -match 'Write-Host \$fitState\.Message') "portable-fit fail-fast prints Resolve-AirlockPortableFitState.Message (Unsloth ladder / live Pi 3/3 / do-not-inherit)"
 
+# --- One GGUF, the one GPU the pool picked (not the first nvidia-smi row) ---
+$profileHelperText = Get-Content (Join-Path $ScriptDir "agent-profile-helpers.ps1") -Raw
+Assert-True ($profileHelperText -match 'Index\s+=\s+\$index') "Get-AirlockNvidiaGpuList sets Index from nvidia-smi row order (CUDA device index)"
+$twoGpu = Resolve-AirlockGpuPool -Gpus @(
+    [pscustomobject]@{ Index = 0; Name = 'gpu0'; Vendor = 'NVIDIA'; TotalGiB = 8; FreeGiB = 4; Unified = $false }
+    [pscustomobject]@{ Index = 1; Name = 'gpu1'; Vendor = 'NVIDIA'; TotalGiB = 24; FreeGiB = 22; Unified = $false }
+) -FreeRamGb 64
+Assert-True ($twoGpu.Chosen.Index -eq 1) "GPU pool picks Index 1 when that device has 22 GiB free and Index 0 has 4"
+Assert-True ($twoGpu.Chosen.FreeGiB -eq 22) "GPU pool's chosen free GiB is 22, not a sum and not the first row"
+$gateSized = Resolve-AirlockSizedVramGateInput -HardwareSized $true -ChosenFreeGiB $twoGpu.Chosen.FreeGiB -ProbeFreeGiB 4
+Assert-True ($gateSized -eq 22) "Resolve-AirlockSizedVramGateInput returns the chosen GPU's 22 GiB when hardware-sized, even if the first-row probe is 4"
+$gateExplicit = Resolve-AirlockSizedVramGateInput -HardwareSized $false -ChosenFreeGiB $twoGpu.Chosen.FreeGiB -ProbeFreeGiB 4
+Assert-True ($gateExplicit -eq 4) "Resolve-AirlockSizedVramGateInput returns the first-row probe when not hardware-sized"
+$pinnedEnv = Get-AirlockLlamaCppProcessEnvironment -CudaDeviceIndex 1
+Assert-True ($pinnedEnv.ContainsKey('CUDA_VISIBLE_DEVICES') -and ($pinnedEnv['CUDA_VISIBLE_DEVICES'] -eq '1')) "Get-AirlockLlamaCppProcessEnvironment returns CUDA_VISIBLE_DEVICES=1 for index 1"
+$unpinnedEnv = Get-AirlockLlamaCppProcessEnvironment -CudaDeviceIndex $null
+Assert-True (-not $unpinnedEnv.ContainsKey('CUDA_VISIBLE_DEVICES')) "Get-AirlockLlamaCppProcessEnvironment returns no CUDA key when the index is null"
+$zeroEnv = Get-AirlockLlamaCppProcessEnvironment -CudaDeviceIndex 0
+Assert-True ($zeroEnv.ContainsKey('CUDA_VISIBLE_DEVICES') -and ($zeroEnv['CUDA_VISIBLE_DEVICES'] -eq '0')) "CUDA index 0 still returns CUDA_VISIBLE_DEVICES=0"
+Assert-True ($sessionText -match '\$pinChosenGpu = \$script:AirlockHardwareSized -and -not \$cpuOffload -and \(\$null -ne \$script:AirlockChosenGpuIndex\)') "Start-AgentSession passes the chosen index only on the sized GPU path"
+Assert-True ($sessionText -match '-CudaDeviceIndex \$\(if \(\$pinChosenGpu\) \{ \$script:AirlockChosenGpuIndex \} else \{ \$null \}\)') "Start-LlamaCppRuntime receives the chosen index only when pinChosenGpu is set"
+Assert-True ($sessionText -match 'Resolve-AirlockSizedVramGateInput -HardwareSized') "the VRAM gate input is the sized-GPU helper, not a raw first-row probe"
+$llamaText = Get-Content $llamaPath -Raw
+$envCallAt = $llamaText.IndexOf('Get-AirlockLlamaCppProcessEnvironment -CudaDeviceIndex')
+$assignAt = $llamaText.IndexOf('$env:CUDA_VISIBLE_DEVICES = [string]$processEnv[''CUDA_VISIBLE_DEVICES'']')
+$startProcAt = $llamaText.IndexOf('Start-Process -FilePath $BinaryPath')
+$restoreAt = $llamaText.IndexOf("Remove-Item -Path 'Env:CUDA_VISIBLE_DEVICES'")
+Assert-True (($envCallAt -ge 0) -and ($assignAt -gt $envCallAt) -and ($startProcAt -gt $assignAt) -and ($restoreAt -gt $startProcAt)) "adapter assigns `$env:CUDA_VISIBLE_DEVICES from Get-AirlockLlamaCppProcessEnvironment before Start-Process and restores it afterward"
+Assert-True ($llamaText -match '-match ''n-gpu-layers''\) -and \(\$RuntimeArgs -contains ''0''\)') "adapter does not pin CUDA when runtime args are --n-gpu-layers 0"
+Assert-True ($llamaText -match '\$cudaDeviceIndexForLaunch = \$null') "CPU mmap clears the CUDA index before building the process environment"
+
 # --- D9: VRAM start gate ---
 $cmdVram = Get-Command Resolve-AirlockVramStartGate -ErrorAction SilentlyContinue
 Assert-True ([bool]$cmdVram) "D9: Resolve-AirlockVramStartGate exists"

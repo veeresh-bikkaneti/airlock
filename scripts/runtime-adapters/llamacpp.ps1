@@ -216,6 +216,23 @@ function Get-AirlockLlamaServerBinary {
     }
 }
 
+# Process environment for one llama-server launch. A CUDA index pins that
+# process to one device (the pool's chosen row). Null means do not set
+# CUDA_VISIBLE_DEVICES — explicit -Profile, CPU mmap, or the embedding
+# runtime. Index 0 is valid and must still return the key.
+function Get-AirlockLlamaCppProcessEnvironment {
+    param(
+        [AllowNull()]
+        $CudaDeviceIndex = $null
+    )
+    $map = @{}
+    if ($null -ne $CudaDeviceIndex -and "$CudaDeviceIndex" -ne '') {
+        $map['CUDA_VISIBLE_DEVICES'] = [string]$CudaDeviceIndex
+    }
+    # Hashtable is enumerable; without this the pipeline unwraps it into entries.
+    return ,$map
+}
+
 function Start-LlamaCppRuntime {
     param(
         # Optional (not Mandatory): PENDING item 9's embedding runtime has no
@@ -231,7 +248,11 @@ function Start-LlamaCppRuntime {
         [string]$BinaryPath = 'llama-server',
         [string]$PlatformDir = "$env:USERPROFILE\.ai-platform",
         [int]$HealthTimeoutSec = 300,
-        [string]$InstanceStateFileName = "llamacpp-instance.json"
+        [string]$InstanceStateFileName = "llamacpp-instance.json",
+        # Null: do not pin. Set only for the hardware-sized GPU path.
+        # --n-gpu-layers 0 must not pin even if a caller passes an index.
+        [AllowNull()]
+        $CudaDeviceIndex = $null
     )
     $LogDir = Join-Path $PlatformDir "logs"
     $StateDir = Join-Path $PlatformDir "state"
@@ -250,11 +271,32 @@ function Start-LlamaCppRuntime {
 
     Write-LlamaCppAuditLog -LogFile $LogFile -Action "LlamaCppStart" -Result "STARTED" -Message "Launching llama-server" -Detail "Args: $($effectiveArgs -join ' ')"
 
+    # CPU mmap (--n-gpu-layers 0) must not set CUDA_VISIBLE_DEVICES.
+    $cudaDeviceIndexForLaunch = $CudaDeviceIndex
+    if ((($RuntimeArgs -join ' ') -match 'n-gpu-layers') -and ($RuntimeArgs -contains '0')) {
+        $cudaDeviceIndexForLaunch = $null
+    }
+    $processEnv = Get-AirlockLlamaCppProcessEnvironment -CudaDeviceIndex $cudaDeviceIndexForLaunch
+    $cudaDevicesWasSet = Test-Path -LiteralPath 'Env:CUDA_VISIBLE_DEVICES'
+    $previousCudaVisibleDevices = $env:CUDA_VISIBLE_DEVICES
     try {
+        if ($processEnv.ContainsKey('CUDA_VISIBLE_DEVICES')) {
+            $env:CUDA_VISIBLE_DEVICES = [string]$processEnv['CUDA_VISIBLE_DEVICES']
+        }
         $proc = Start-Process -FilePath $BinaryPath -ArgumentList $effectiveArgs -WindowStyle Hidden -PassThru
     } catch {
         Write-LlamaCppAuditLog -LogFile $LogFile -Action "LlamaCppStart" -Result "FAILED" -Message "Failed to launch $BinaryPath" -Detail $_.Exception.Message
         return [pscustomobject]@{ Started = $false; Reason = "Failed to launch $BinaryPath : $($_.Exception.Message)" }
+    } finally {
+        # Restore before the health wait so the embedding runtime, started
+        # later in this same process, is not left pinned to the coding GPU.
+        if ($processEnv.ContainsKey('CUDA_VISIBLE_DEVICES')) {
+            if ($cudaDevicesWasSet) {
+                $env:CUDA_VISIBLE_DEVICES = $previousCudaVisibleDevices
+            } else {
+                Remove-Item -Path 'Env:CUDA_VISIBLE_DEVICES' -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     $baseUrl = "http://127.0.0.1:$TargetPort"
