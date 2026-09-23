@@ -75,6 +75,11 @@ function Get-AirlockFreeVramGiB {
     }
 }
 
+function Get-AirlockGpuVendor {
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) { return 'NVIDIA' }
+    return $null
+}
+
 function Get-AirlockFreeRamGiB {
     try {
         $os = Get-CimInstance Win32_OperatingSystem
@@ -108,6 +113,10 @@ function ConvertTo-AirlockUnslothProfileId {
         'UD-IQ3_XXS' { return 'llamacpp-qwen38-ud-iq3-xxs' }
         'UD-Q2_K_XL' { return 'llamacpp-qwen38-ud-q2-k-xl' }
         'UD-IQ2_XXS' { return 'llamacpp-qwen38-ud-iq2-xxs' }
+        'UD-Q4_K_XL' { return 'llamacpp-qwen38-ud-q4-k-xl' }
+        'UD-Q5_K_XL' { return 'llamacpp-qwen38-ud-q5-k-xl' }
+        'UD-Q6_K_XL' { return 'llamacpp-qwen38-ud-q6-k-xl' }
+        'UD-Q8_K_XL' { return 'llamacpp-qwen38-ud-q8-k-xl' }
         default { return $null }
     }
 }

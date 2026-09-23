@@ -93,7 +93,7 @@ function Resolve-SessionProfile {
     $freeVram = Get-AirlockFreeVramGiB
     $gpuTotal = Get-AirlockGpuTotalGiB
     $freeRam = Get-AirlockFreeRamGiB
-    $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $gpuTotal -FreeVramGiB $freeVram -FreeRamGb $freeRam
+    $strategy = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $gpuTotal -FreeVramGiB $freeVram -FreeRamGb $freeRam -Vendor (Get-AirlockGpuVendor)
     $sized = Resolve-AirlockHardwareSizedCodingProfile -AvailableProfiles $catalogue -QuantStrategy $strategy
     if (-not $sized.Selected) {
         $fitState = Resolve-AirlockPortableFitState -AvailableProfiles $catalogue -FreeVramGiB $freeVram

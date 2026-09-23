@@ -94,8 +94,38 @@ if (Test-Path $ggufHelper) {
     $tinyRam = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null -FreeRamGb 6
     Assert-True ($tinyRam.Action -eq 'Refuse') "6 GiB RAM cannot mmap a Unsloth 27B GGUF"
 
-    $card24 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 24 -FreeVramGiB 22
-    Assert-True ($card24.Quant -eq 'UD-Q3_K_XL') "ADR-018: 24 GB card still defaults to proven Q3_K_XL, not unverified Q4"
+    $card24 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 24 -FreeVramGiB 22 -Vendor 'NVIDIA'
+    Assert-True ($card24.Action -eq 'StepUp') "24 GB card steps up off the ThinkPad Q3 default"
+    Assert-True ($card24.Quant -eq 'UD-Q4_K_XL') "22 GiB free picks UD-Q4_K_XL (17.6 GB), not Q3"
+    Assert-True ($card24.InheritEvidence -eq $false) "step-up does not inherit the 16 GB Q3 3/3"
+    Assert-True ($card24.Fit -eq 'Good') "17.6/22 is Good, not Perfect"
+    Assert-True ($card24.Reason -notmatch 'RTX-class') "a 24 GB pick is not described as the RTX 5000 class"
+
+    $card32 = Resolve-AirlockUnslothQuantForProfile -Name 'rtx-5090-32'
+    Assert-True ($card32.Quant -eq 'UD-Q6_K_XL') "30 GiB free steps up to UD-Q6_K_XL"
+    Assert-True ($card32.InheritEvidence -eq $false) "32 GB class does not inherit the ThinkPad certificate"
+
+    $card48 = Resolve-AirlockUnslothQuantForProfile -Name 'rtx-a6000-48'
+    Assert-True ($card48.Quant -eq 'UD-Q8_K_XL') "44 GiB free steps up to UD-Q8_K_XL"
+    Assert-True ($card48.Offload -eq 'gpu-all') "a large NVIDIA card stays gpu-all"
+
+    $adaNamed = Resolve-AirlockUnslothQuantForProfile -Name 'thinkpad-rtx-5000-ada-16'
+    Assert-True ($adaNamed.Quant -eq 'UD-Q3_K_XL') "named ThinkPad profile stays UD-Q3_K_XL"
+    Assert-True ($adaNamed.InheritEvidence -eq $true) "named 16 GB NVIDIA profile may inherit the evidence quant"
+    Assert-True ($adaNamed.Fit -eq 'Marginal') "13.1 GB weights in 15 GiB free is Marginal, not Perfect"
+
+    $amd = Resolve-AirlockUnslothQuantForProfile -Name 'rx-7800-xt-16'
+    Assert-True ($amd.Quant -eq 'UD-Q3_K_XL') "16 GB AMD card still fits Q3"
+    Assert-True ($amd.Action -eq 'UseCandidate') "AMD is not the NVIDIA evidence class"
+    Assert-True ($amd.InheritEvidence -eq $false) "an AMD 16 GB card does not inherit the Ada 3/3"
+    Assert-True ($amd.Reason -match 'AMD') "the reason names the vendor it measured"
+
+    $full16 = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb 16 -FreeVramGiB 16 -Vendor 'NVIDIA'
+    Assert-True ($full16.Quant -eq 'UD-Q3_K_XL') "a full 16 GB card does not step up into UD-IQ4_XS (spills at 8k)"
+
+    $cpuNamed = Resolve-AirlockUnslothQuantForProfile -Name 'cpu-32gb'
+    Assert-True ($cpuNamed.Action -eq 'CpuOffload') "cpu-32gb profile is a RAM mmap"
+    Assert-True ($cpuNamed.Fit -eq 'Good') "CPU fit is capped at Good even when RAM headroom looks Perfect"
 
     $missing = Resolve-AirlockUnslothQuantStrategy -GpuTotalGb $null -FreeVramGiB $null
     Assert-True ($missing.Action -eq 'Refuse') "ADR-018: missing nvidia-smi AND missing RAM refuses a quant pick"
