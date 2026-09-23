@@ -31,6 +31,8 @@ state/
 # copy showed up under memory-service/.ai-context/ mid-session).
 **/.ai-context/SESSION_STATE.md
 **/.ai-context/.SESSION_STATE.md.tmp
+# Derived resume packet (latest user turn). Same rule as SESSION_STATE: do not commit.
+**/.ai-context/RESUME_PACKET.md
 
 # Logs
 logs/
@@ -106,6 +108,8 @@ docker-compose.override.yml
 # Documentation build
 docs/_build/
 site/
+# Per-machine reports from docs/E2E-AGENT-TEST-STRATEGY.md. Not evidence.
+docs/e2e-reports/
 
 # Scripts local config
 scripts/*.local.ps1

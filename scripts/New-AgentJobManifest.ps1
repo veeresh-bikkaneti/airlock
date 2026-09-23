@@ -32,6 +32,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'agent-state-helpers.ps1')
 . (Join-Path $PSScriptRoot 'agent-capability-registry.ps1')
 . (Join-Path $PSScriptRoot 'agent-job-helpers.ps1')
+. (Join-Path $PSScriptRoot 'session-resume.ps1')
 
 $CertificatePath = Join-Path $PlatformDir 'state' 'active-agent.json'
 $RegistryPath = Join-Path $PlatformDir 'state' 'capability-registry.json'
@@ -72,6 +73,13 @@ if (-not (Test-Path $RepoPath)) {
 if (-not (Test-Path (Join-Path $RepoPath '.git'))) {
     Write-Host "FAILED: $RepoPath is not a git repo - the worker job builds an isolated git worktree." -ForegroundColor Red
     exit 1
+}
+
+# Existing task string only. No new manifest fields. Absent snapshot -> unchanged.
+$sessionStatePath = Join-Path (Join-Path $RepoPath '.ai-context') 'SESSION_STATE.md'
+if (Test-Path -LiteralPath $sessionStatePath) {
+    $sessionText = Get-Content -LiteralPath $sessionStatePath -Raw
+    $Task = Resolve-AirlockWorkerTaskText -Task $Task -SessionText $sessionText
 }
 
 # --- 4. author the manifest with secure defaults ---

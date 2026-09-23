@@ -11,6 +11,7 @@
 # clobbered by a dot-sourced file elsewhere in the chain reassigning the
 # same name.
 . (Join-Path $PSScriptRoot "Invoke-WorkspaceContract.ps1")
+. (Join-Path $PSScriptRoot "session-resume.ps1")
 
 # Builds the `docker run` argument list for one Pi capability trial. Pure -
 # kept separate from the actual invocation so the exact endpoint/model
@@ -25,7 +26,11 @@ function Get-PiContainerRunArgs {
         [Parameter(Mandatory)][string]$EndpointUrl,
         [Parameter(Mandatory)][string]$WorkspacePath,
         [Parameter(Mandatory)][string]$Instruction,
-        [string]$ImageName = "hermes-container-hermes-agent"
+        [string]$ImageName = "hermes-container-hermes-agent",
+        # Empty (the capability-contract default) leaves the positional
+        # `pi ... -- <instruction>` argument unchanged. A disposable proof
+        # workspace does not pass a packet.
+        [AllowEmptyString()][string]$ResumePacket = ''
     )
     $uri = [uri]$EndpointUrl
     $port = $uri.Port
@@ -39,6 +44,10 @@ function Get-PiContainerRunArgs {
     # existing direct caller and becomes "/v1/coding" only when routed.
     $path = $uri.AbsolutePath.TrimEnd('/')
     if (-not $path) { $path = '/v1' }
+    $positional = $Instruction
+    if (-not [string]::IsNullOrWhiteSpace($ResumePacket)) {
+        $positional = Format-AirlockPiResumeInstruction -ResumePacket $ResumePacket -Instruction $Instruction
+    }
     return @(
         "run", "--rm",
         "-v", "${WorkspacePath}:/workspace",
@@ -53,7 +62,7 @@ function Get-PiContainerRunArgs {
         # positional arg after `--`, and structured per-line JSON events
         # (what Resolve-AirlockPiTrialObservations parses) require
         # `--mode json` - plain text mode emits prose, not JSON lines.
-        "pi", "--provider", "ollama-local", "--model", $ModelRef, "--print", "--mode", "json", "--", $Instruction
+        "pi", "--provider", "ollama-local", "--model", $ModelRef, "--print", "--mode", "json", "--", $positional
     )
 }
 
