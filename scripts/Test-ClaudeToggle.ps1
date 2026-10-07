@@ -37,7 +37,7 @@ Write-Host "Testing Resolve-ClaudeOffRestore..." -ForegroundColor Cyan
 $offCases = @(
     @{ name = "was active, real prior key -> Restored"; active = $true; prevBase = $null; prevKey = "sk-ant-real"; expectMode = "Restored"; expectKey = "sk-ant-real" }
     @{ name = "was active, no prior key -> ClearedNoPriorKey"; active = $true; prevBase = $null; prevKey = $null; expectMode = "ClearedNoPriorKey"; expectKey = $null }
-    @{ name = "never activated this shell -> PlainClear"; active = $false; prevBase = $null; prevKey = $null; expectMode = "PlainClear"; expectKey = $null }
+    @{ name = "never activated this shell -> LeaveAlone"; active = $false; prevBase = $null; prevKey = $null; expectMode = "LeaveAlone"; expectKey = $null }
 )
 foreach ($c in $offCases) {
     $r = Resolve-ClaudeOffRestore -WasActive $c.active -PrevBaseUrl $c.prevBase -PrevApiKey $c.prevKey

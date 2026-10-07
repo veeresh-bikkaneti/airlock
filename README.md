@@ -166,7 +166,8 @@ A translation layer (`tool-proxy/`, port `12347`) that grammar-constrains Ollama
   ai-claude-off   # or just close the shell — either way it doesn't outlive the session
   ```
 
-  **Alternative — permanent, via `settings.json`'s `env` block:**
+  **Do not put this in `settings.json`.** A permanent `env` block applies to every Claude Code session on the machine, including the one you pay for, and `ai-claude-off` cannot undo it:
+
   ```json
   {
     "env": {
@@ -175,7 +176,8 @@ A translation layer (`tool-proxy/`, port `12347`) that grammar-constrains Ollama
     }
   }
   ```
-  ⚠️ **This has no off switch of its own.** It applies to *every* Claude Code session on the machine — including ones with nothing to do with this platform — and stays in effect after `ai-stop`, a reboot, or a port change, until manually removed. With the platform down, Claude Code fails with `Connection refused — a firewall or proxy may be blocking it`, which points at the wrong subsystem entirely. Hit that error? Run `ai-doctor` — it detects exactly this and prints the fix — or use `ai-claude-on`/`ai-claude-off` instead so it can't happen.
+
+  An empty `ANTHROPIC_AUTH_TOKEN` has the same effect: it overrides the Pro login. The installer never writes these. If Claude stops working after Airlock, delete those keys from `~/.claude/settings.json` and from User environment variables.
 
   Ollama doesn't check the API key — any non-empty string works. Anthropic's own docs say they don't *support* routing Claude Code to non-Claude models through a gateway; that's a support-policy statement, not a technical block, and this repo's earlier "Claude Code cannot be pointed at this platform" claim was wrong — it was written against Ollama's documented API surface, which stops at Chat Completions, before testing found the undocumented `/v1/messages` route above. The repo previously also shipped a `claude-settings.json.template` inventing a fake settings schema (`api.ollama.baseUrl`/etc.); that's what caused the original base-url/token error and it's been deleted. This platform's own cloud-fallback path (`ai-auth-set anthropic <key>` + `cloudFallbackEnabled: true` in `provider-policy.json`) is unrelated — that talks to Anthropic's real API for genuine Claude models, unaffected either way.
 

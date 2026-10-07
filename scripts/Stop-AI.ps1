@@ -141,14 +141,17 @@ if (Test-Path $codingPortFile) { Remove-Item $codingPortFile -Force -ErrorAction
 $env:OLLAMA_HOST     = ""
 $env:OPENAI_API_KEY  = ""
 $env:OPENAI_BASE_URL = ""
-# Undo ai-claude-on's session-scoped redirect too, if it was used — restore whatever
-# ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN this shell had before rather than deleting a real token.
-if ($env:AI_CLAUDE_ON_ACTIVE) {
-    if ($env:AI_CLAUDE_PREV_BASE_URL) { $env:ANTHROPIC_BASE_URL = $env:AI_CLAUDE_PREV_BASE_URL } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
-    if ($env:AI_CLAUDE_PREV_API_KEY) { $env:ANTHROPIC_AUTH_TOKEN = $env:AI_CLAUDE_PREV_API_KEY } else { Remove-Item Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue }
+# Undo ai-claude-on only if this shell opted in. Otherwise leave ANTHROPIC_*
+# alone — those variables override a paid Claude Code login.
+. (Join-Path $PSScriptRoot "profile-helpers.ps1")
+$restore = Resolve-ClaudeOffRestore -WasActive ([bool]$env:AI_CLAUDE_ON_ACTIVE) -PrevBaseUrl $env:AI_CLAUDE_PREV_BASE_URL -PrevApiKey $env:AI_CLAUDE_PREV_API_KEY
+if ($restore.Mode -eq 'Restored') {
+    if ($restore.BaseUrl) { $env:ANTHROPIC_BASE_URL = $restore.BaseUrl } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
+    if ($restore.ApiKey) { $env:ANTHROPIC_AUTH_TOKEN = $restore.ApiKey } else { Remove-Item Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue }
     Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
-} else {
+} elseif ($restore.Mode -eq 'ClearedNoPriorKey') {
     Remove-Item Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:\AI_CLAUDE_PREV_BASE_URL, Env:\AI_CLAUDE_PREV_API_KEY, Env:\AI_CLAUDE_ON_ACTIVE -ErrorAction SilentlyContinue
 }
 # AIR-H2: a shell that ran ai-claude-on before this rename may still carry the old
 # ANTHROPIC_API_KEY = "ollama" sentinel it used to set. Clear only that exact leftover
