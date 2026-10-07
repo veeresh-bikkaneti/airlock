@@ -457,6 +457,50 @@ function global:ai-auth-set {
     Write-Host "NEVER commit auth.json to git!" -ForegroundColor Red
 }
 
+# Paid fallback decision. Does not call a provider. A 402/429 stays local.
+function global:ai-cloud {
+    . (Join-Path $PSScriptRoot "cloud-guard.ps1")
+    $policyPath = "$env:USERPROFILE\.ai-platform\config\policies\provider-policy.json"
+    if (-not (Test-Path $policyPath)) {
+        Write-Host "phase  cloud        no policy file; stay local" -ForegroundColor Yellow
+        return
+    }
+    $policy = Get-Content $policyPath -Raw | ConvertFrom-Json
+    $guard = $policy.cloudGuard
+    $maxAttempts = if ($guard.maxAttempts) { [int]$guard.maxAttempts } else { 0 }
+    $maxCost = if ($guard.maxCostUsd) { [double]$guard.maxCostUsd } else { 0 }
+    $timeout = if ($guard.timeoutSec) { [int]$guard.timeoutSec } else { 0 }
+    $costs = @{}
+    if ($guard.attemptCostUsd) {
+        foreach ($p in $guard.attemptCostUsd.PSObject.Properties) { $costs[$p.Name] = [double]$p.Value }
+    }
+    $order = @($costs.GetEnumerator() | Sort-Object Value | ForEach-Object { $_.Key })
+    $circuitPath = "$env:USERPROFILE\.ai-platform\state\cloud-circuit.json"
+    $circuitOpen = $false
+    $spent = 0.0
+    $attempts = 0
+    $status = ''
+    if (Test-Path $circuitPath) {
+        try {
+            $saved = Get-Content $circuitPath -Raw | ConvertFrom-Json
+            $circuitOpen = [bool]$saved.circuitOpen
+            $spent = [double]$saved.spentUsd
+            $attempts = [int]$saved.attemptsMade
+            $status = [string]$saved.lastHttpStatus
+        } catch { }
+    }
+    $decision = Resolve-AirlockCloudDecision -Enabled ([bool]$policy.cloudFallbackEnabled) `
+        -AllowSensitive ([bool]$policy.allowSensitiveDataToCloud) -Sensitive:$false `
+        -MaxAttempts $maxAttempts -MaxCostUsd $maxCost -TimeoutSec $timeout `
+        -AttemptsMade $attempts -SpentUsd $spent -LastHttpStatus $status -CircuitOpen $circuitOpen `
+        -ProvidersInCostOrder $order -AttemptCostUsd $costs
+    if ($decision.Allow) {
+        Write-Host "phase  cloud        allowed $($decision.Provider) once, ceiling `$$($decision.EstimatedUsd), timeout $($decision.TimeoutSec)s. No client is wired, so nothing was called." -ForegroundColor Yellow
+    } else {
+        Write-Host "phase  cloud        $($decision.Reason)" -ForegroundColor Green
+    }
+}
+
 function global:ai-cache {
     param([switch]$Clear)
     $cacheDir = "$env:USERPROFILE\.ai-platform\cache"
