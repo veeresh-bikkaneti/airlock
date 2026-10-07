@@ -1,9 +1,12 @@
 # install.ps1 — one-line installer for Airlock
 # Usage: irm https://raw.githubusercontent.com/veeresh-bikkaneti/airlock/main/install.ps1 | iex
 #
-# Runs via `iex`, so it cannot rely on its own file path ($PSScriptRoot is empty
-# when executed this way). It clones the repo to a fixed location and hands off
-# to setup.ps1, which does the actual deployment — one codepath, not two.
+#   AIRLOCK_CODING=1                 also size the coding door (no download yet)
+#   AIRLOCK_DOWNLOAD_CONFIRMED=1    with AIRLOCK_CODING, download the GGUF and run Pi
+#   AIRLOCK_NO_START=1               deploy, inspect, and print the next command only
+#
+# Does not write ~/.claude/settings.json and does not set ANTHROPIC_* for the
+# Windows user. A paid Claude Code login keeps working.
 $ErrorActionPreference = "Stop"
 
 # Cold-machine fix: the old code hard-failed when PowerShell 7 or git was
@@ -91,3 +94,9 @@ if (Test-Path "$SrcDir\.git") {
 Write-Host ""
 Write-Host "Running setup..." -ForegroundColor Yellow
 & "$SrcDir\setup.ps1"
+
+$bootstrapArgs = @{}
+if ($env:AIRLOCK_CODING -eq '1') { $bootstrapArgs.Coding = $true }
+if ($env:AIRLOCK_DOWNLOAD_CONFIRMED -eq '1') { $bootstrapArgs.DownloadConfirmed = $true }
+if ($env:AIRLOCK_NO_START -eq '1') { $bootstrapArgs.NoStart = $true }
+& "$SrcDir\scripts\Invoke-AirlockBootstrap.ps1" @bootstrapArgs -ScriptsRoot "$SrcDir\scripts"

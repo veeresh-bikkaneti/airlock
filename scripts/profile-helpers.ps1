@@ -679,9 +679,10 @@ function Resolve-ClaudeOffRestore {
         [string]$PrevApiKey
     )
     if (-not $WasActive) {
-        # ai-claude-off called without a matching ai-claude-on this shell (e.g. leftover
-        # habit, or a fresh shell) - nothing was stashed, so just clear.
-        return [pscustomobject]@{ Mode = 'PlainClear'; BaseUrl = $null; ApiKey = $null }
+        # This shell never ran ai-claude-on. Do not delete ANTHROPIC_*.
+        # A paid Claude Code login lives behind those variables, and wiping
+        # them (or an empty token) is what made `ai-stop` look like it killed Claude.
+        return [pscustomobject]@{ Mode = 'LeaveAlone'; BaseUrl = $null; ApiKey = $null }
     }
     if ($PrevApiKey) {
         return [pscustomobject]@{ Mode = 'Restored'; BaseUrl = $PrevBaseUrl; ApiKey = $PrevApiKey }
@@ -748,6 +749,11 @@ function global:ai-claude-on {
 # before (a real cloud token, or nothing) instead of unconditionally deleting them.
 function global:ai-claude-off {
     $restore = Resolve-ClaudeOffRestore -WasActive ([bool]$env:AI_CLAUDE_ON_ACTIVE) -PrevBaseUrl $env:AI_CLAUDE_PREV_BASE_URL -PrevApiKey $env:AI_CLAUDE_PREV_API_KEY
+
+    if ($restore.Mode -eq 'LeaveAlone') {
+        Write-Host "Claude Code was not redirected in this shell. ANTHROPIC_* left untouched." -ForegroundColor Green
+        return
+    }
 
     if ($restore.BaseUrl) { $env:ANTHROPIC_BASE_URL = $restore.BaseUrl } else { Remove-Item Env:\ANTHROPIC_BASE_URL -ErrorAction SilentlyContinue }
     if ($restore.ApiKey) { $env:ANTHROPIC_AUTH_TOKEN = $restore.ApiKey } else { Remove-Item Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue }

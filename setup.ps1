@@ -74,6 +74,7 @@ if (-not $profileContent.Contains($dotSourceLine)) {
 }
 
 Write-Host ""
-Write-Host "Done. Open a new PowerShell terminal (or run '. `$PROFILE') and try 'ai-start'." -ForegroundColor Cyan
-Write-Host "To add cloud fallback keys, run: ai-auth-set <provider> <api-key>  (e.g. ai-auth-set openrouter sk-or-...)" -ForegroundColor Gray
+Write-Host "Deployed to $PlatformDir." -ForegroundColor Cyan
+Write-Host "install.ps1 continues in this window. You do not need a new terminal." -ForegroundColor Cyan
+Write-Host "To add a cloud fallback key later: ai-auth-set <provider> <api-key>" -ForegroundColor Gray
 Write-Host ""
