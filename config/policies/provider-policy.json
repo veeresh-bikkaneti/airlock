@@ -5,6 +5,18 @@
   "preferredLocalModel": "devstral-small-2:24b",
   "localFallbackModels": ["qwen3-coder:30b", "qwen2.5-coder:7b"],
   "cloudProviderPriority": ["openrouter", "openai", "anthropic", "google", "azure-openai"],
+  "cloudGuard": {
+    "maxAttempts": 2,
+    "maxCostUsd": 0.05,
+    "timeoutSec": 20,
+    "attemptCostUsd": {
+      "openrouter": 0.01,
+      "openai": 0.01,
+      "azure-openai": 0.01,
+      "google": 0.05,
+      "anthropic": 0.05
+    }
+  },
   "defaultCloudModels": {
     "openrouter": "openai/gpt-4.1-mini",
     "openai": "gpt-4.1-mini",
