@@ -7,10 +7,11 @@ A sandboxed AI agent that helps you apply for jobs using the [career-ops](https:
 ## What this does
 
 - Runs the pi.dev Hermes agent inside a locked-down Docker container
-- Uses your local Ollama models (devstral-small-2, qwen3-coder, deepseek-r1, etc.)
+- Uses your local Ollama models (devstral-small-2, qwen3-coder, deepseek-r1, etc.) via Airlock's proven endpoint (port 12345)
 - Optionally uses NVIDIA NIM cloud models for heavier tasks
 - Gets read-only access to your career-ops repo
 - Writes output to a Docker volume, not mixed with your source files
+- **Health-checked** — container health endpoint monitored by Docker
 
 ## Security guarantees
 
@@ -19,8 +20,9 @@ A sandboxed AI agent that helps you apply for jobs using the [career-ops](https:
 | Your Desktop, Documents, Photos | None (container can't reach them) |
 | Career-ops repo | Read-only, can't modify your source |
 | Generated output | Docker volume only, you choose when to extract |
-| Other containers / host processes | Blocked by network policy |
-| System privileges | All capabilities dropped |
+| Other containers / host processes | Blocked by network policy (`icc: false`) |
+| System privileges | All capabilities dropped (`cap_drop: ALL`, only `NET_BIND_SERVICE` added) |
+| New privileges | Blocked (`no-new-privileges: true`) |
 
 ## Prerequisites
 

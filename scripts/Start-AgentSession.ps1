@@ -552,6 +552,28 @@ try {
                 $contractPassed = $false
             }
         }
+        elseif ($selectedProfile.runtime -eq 'llama-server') {
+            # FIT-ADAPTERS-001: llama-server VRAM residency gate.
+            # Query llama-server's /props for actual GPU memory usage of the loaded model.
+            $freeVramGiB = Get-LlamaCppFreeVramGiB -BaseUrl $baseUrl
+            $residency = if ((($selectedProfile.runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($selectedProfile.runtimeArgs -contains 'all')) { 'Full' } elseif ((($selectedProfile.runtimeArgs -join ' ') -match 'n-gpu-layers') -and ($selectedProfile.runtimeArgs -contains '0')) { 'CpuOnly' } else { 'PartialOffload' }
+            if ($null -ne $freeVramGiB) {
+                $fitState = Resolve-AirlockFitState -FreeVramGiB $freeVramGiB -MinimumFreeVramGiB $selectedProfile.minimumFreeVramGiB `
+                    -Residency $residency -TransportReturnedValidToolEvents $transportReturnedValidToolEvents `
+                    -HarnessContractPassed $contractPassed
+                if (-not $fitState.CodingReady) {
+                    $dims = @()
+                    if (-not $fitState.ArtifactFit) { $dims += "artifact (${freeVramGiB}GiB free vs $($selectedProfile.minimumFreeVramGiB)GiB required, residency=$residency)" }
+                    if (-not $fitState.TransportFit) { $dims += "transport (no valid structured tool events)" }
+                    if (-not $fitState.HarnessFit) { $dims += "harness (capability contract failed)" }
+                    $failureReasons += "Transport '$($next.Transport)' is not coding-ready: $($dims -join '; ')."
+                    $contractPassed = $false
+                }
+            } else {
+                $failureReasons += "Transport '$($next.Transport)': cannot measure llama-server VRAM residency (is /props reachable?)."
+                $contractPassed = $false
+            }
+        }
 
         $attempted[$next.Transport] = if ($contractPassed) { 'Pass' } else { 'Fail' }
         if (-not $contractPassed) {

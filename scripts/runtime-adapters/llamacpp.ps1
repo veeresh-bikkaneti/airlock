@@ -60,6 +60,42 @@ function Resolve-LlamaCppTemplateVerification {
 
 # --- I/O wrappers (require a real llama-server install; not exercised by the unit suite) ---
 
+# §6.2.1: llama-server VRAM residency query for FIT-ADAPTERS-001.
+# Queries llama-server's /props for the loaded model's GPU memory usage.
+# Returns free VRAM in GiB on the device serving the model, or $null if
+# unavailable. Pure I/O wrapper - decision logic stays in Resolve-AirlockFitState.
+function Get-LlamaCppFreeVramGiB {
+    param([Parameter(Mandatory)][string]$BaseUrl)
+    try {
+        $c = [System.Net.Http.HttpClient]::new()
+        $c.Timeout = [TimeSpan]::FromSeconds(10)
+        $resp = $c.GetAsync("$BaseUrl/props").Result
+        if (-not $resp.IsSuccessStatusCode) { return $null }
+        $props = $resp.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        # llama.cpp /props returns memory info under gpu_info array or mem_* fields
+        # Prefer gpu_info[].mem_free if present (per-device), else fall back to nvidia-smi
+        if ($props.gpu_info -and $props.gpu_info.Count -gt 0) {
+            $gpu = $props.gpu_info | Select-Object -First 1
+            if ($gpu.mem_free -and $gpu.mem_free -gt 0) {
+                return [math]::Round([double]$gpu.mem_free / 1024, 2)
+            }
+            if ($gpu.mem_total -and $gpu.mem_used) {
+                return [math]::Round(([double]$gpu.mem_total - [double]$gpu.mem_used) / 1024, 2)
+            }
+        }
+        # Fallback: check if mem_free/mem_total are at root level
+        if ($props.mem_free -and $props.mem_free -gt 0) {
+            return [math]::Round([double]$props.mem_free / 1024, 2)
+        }
+        if ($props.mem_total -and $props.mem_used) {
+            return [math]::Round(([double]$props.mem_total - [double]$props.mem_used) / 1024, 2)
+        }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
 # Same snapshot-file convention Get-AirlockOllamaBaseUrl/Get-AirlockToolProxyBaseUrl
 # use in ollama.ps1, except llama.cpp has no sensible fixed default: §6.2
 # requires an Airlock-selected port per start (see Get-AirlockFreeLoopbackPort),
