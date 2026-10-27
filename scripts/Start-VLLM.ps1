@@ -150,7 +150,7 @@ Write-Host "Launching vLLM container (model: $DefaultModel)..." -ForegroundColor
 docker run -d --name $ContainerName --gpus all `
     -p "127.0.0.1:${TargetPort}:8000" `
     $ImageName `
-    --model $DefaultModel --quantization awq --max-model-len 32768 --host 0.0.0.0 --port 8000 `
+    --model $DefaultModel --quantization awq --max-model-len 32768 --host 0.0.0.0 --port 8000 --enable-auto-tool-choice `
     2>$null | Out-Null
 
 if ($LASTEXITCODE -ne 0) {

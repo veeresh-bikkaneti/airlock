@@ -51,6 +51,91 @@ function global:ai-agent-start {
     & $session @sessionArgs
 }
 
+# AIR-016 coding door — opencode harness variant. Same profile sizing,
+# same live contract, but targets opencode instead of pi-worker.
+function global:ai-opencode {
+    param(
+        [string]$Profile,
+        [switch]$WhatIf,
+        [switch]$ForceVerify,
+        [switch]$NoCache,
+        [switch]$DownloadConfirmed
+    )
+    $session = Join-Path $PSScriptRoot "Start-AgentSession.ps1"
+    if (-not (Test-Path $session)) {
+        $session = "$env:USERPROFILE\.ai-platform\scripts\Start-AgentSession.ps1"
+    }
+    $sessionArgs = @{
+        Harness            = 'opencode'
+        WhatIf             = $WhatIf
+        ForceVerify        = $ForceVerify
+        NoCache            = $NoCache
+        DownloadConfirmed  = $DownloadConfirmed
+    }
+    if ($Profile) { $sessionArgs.Profile = $Profile }
+    & $session @sessionArgs
+}
+
+# Interactive first-run setup: asks which harnesses to configure,
+# supports multiple selections, runs setup for each.
+function global:ai-setup {
+    $harnesses = @(
+        @{ Name = 'pi-worker';      Label = 'Pi (primary coding agent, live 3/3 contract)';     Command = 'ai-agent-start' },
+        @{ Name = 'opencode';       Label = 'OpenCode (file-based agent, auto-configures)';     Command = 'ai-opencode' },
+        @{ Name = 'aider';          Label = 'Aider (pair programming, requires ai-code)';       Command = 'ai-code' },
+        @{ Name = 'openclaw';       Label = 'OpenClaw (Claude Code via custom provider)';       Command = '(not yet live)' },
+        @{ Name = 'memory-service'; Label = 'Memory Service (RAG + session persistence)';       Command = 'ai-memory-start' },
+        @{ Name = 'tool-proxy';     Label = 'Tool-Call Proxy (fixes Ollama tool-calling)';      Command = 'ai-tool-proxy-start' },
+        @{ Name = 'hermes';         Label = 'Hermes Container (career-ops sandboxed agent)';    Command = 'ai-hermes-start' }
+    )
+
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  Airlock Interactive Setup" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Select which capabilities to configure (comma-separated numbers, e.g. 1,2,4):" -ForegroundColor White
+    for ($i = 0; $i -lt $harnesses.Count; $i++) {
+        $h = $harnesses[$i]
+        $status = if ($h.Command -eq '(not yet live)') { " [NOT LIVE]" } else { "" }
+        Write-Host "  [$($i+1)] $($h.Label)$status" -ForegroundColor Gray
+    }
+    Write-Host ""
+
+    $input = Read-Host "Choices"
+    if (-not $input) { Write-Host "No selection made." -ForegroundColor Yellow; return }
+
+    $choices = $input -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
+    $selected = @()
+    foreach ($c in $choices) {
+        $idx = [int]$c - 1
+        if ($idx -ge 0 -and $idx -lt $harnesses.Count) { $selected += $harnesses[$idx] }
+    }
+    if (-not $selected) { Write-Host "No valid choices." -ForegroundColor Red; return }
+
+    Write-Host ""
+    Write-Host "Will configure:" -ForegroundColor Green
+    $selected | ForEach-Object { Write-Host "  - $($_.Label)" }
+    $confirm = Read-Host "Proceed? [y/N]"
+    if ($confirm -notin @('y','Y')) { Write-Host "Cancelled." -ForegroundColor Yellow; return }
+
+    foreach ($h in $selected) {
+        Write-Host ""
+        Write-Host "--- Configuring: $($h.Label) ---" -ForegroundColor Cyan
+        if ($h.Command -eq '(not yet live)') {
+            Write-Host "Not yet implemented — skipping." -ForegroundColor Yellow
+            continue
+        }
+        try {
+            & $h.Command
+        } catch {
+            Write-Host "Failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+    Write-Host ""
+    Write-Host "Setup complete. Run ai-health to verify." -ForegroundColor Green
+}
+
 # Shortcut to gracefully stop the platform and clean up state.
 function global:ai-stop {
     & "$env:USERPROFILE\.ai-platform\scripts\Stop-AI.ps1" @args

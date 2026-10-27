@@ -430,7 +430,8 @@ function Select-BestCuratedModel {
     param(
         [Parameter(Mandatory)][double]$AvailableGB,
         [Parameter(Mandatory)][object]$ModelsConfig,
-        [string[]]$InstalledModels = @()
+        [string[]]$InstalledModels = @(),
+        [switch]$RequireAgentic
     )
     $candidates = foreach ($candidate in $ModelsConfig.fallbackOrder) {
         $sizeGB = [double]($ModelsConfig.localModels.$candidate.size -replace '[^0-9.]', '')
@@ -444,6 +445,7 @@ function Select-BestCuratedModel {
             Installed         = $InstalledModels -contains $candidate
             ReliabilityNote   = $ModelsConfig.localModels.$candidate.agenticReliabilityNote
             AgenticRank       = if ($verdict -eq 'fail') { 0 } else { 1 }
+            AgenticVerdict    = $verdict
         }
     }
     $candidateSummary = ($candidates | ForEach-Object {
@@ -452,6 +454,13 @@ function Select-BestCuratedModel {
     # Fit first. Known-failed agentic loops lose to unproven/pass (AGENT-001).
     # Then already-pulled over a same-class download, then largest.
     $fitting = $candidates | Where-Object { $_.Fits }
+    if ($RequireAgentic) {
+        $fitting = $fitting | Where-Object { $_.AgenticRank -eq 1 }
+        if (-not $fitting) {
+            # No agentic-capable model fits; fall back to any fitting model with warning
+            $fitting = $candidates | Where-Object { $_.Fits }
+        }
+    }
     $winner = $fitting |
         Sort-Object -Property @{Expression = 'AgenticRank'; Descending = $true }, @{Expression = 'Installed'; Descending = $true }, @{Expression = 'SizeGB'; Descending = $true } |
         Select-Object -First 1
@@ -495,7 +504,7 @@ function Select-BestModel {
         try {
             $modelsConfig = Get-Content $modelsConfigPath -Raw | ConvertFrom-Json
             $installedModels = Get-InstalledModelNames -LivePort $LivePort
-            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig -InstalledModels $installedModels
+            $selection = Select-BestCuratedModel -AvailableGB $AvailableGB -ModelsConfig $modelsConfig -InstalledModels $installedModels -RequireAgentic
             $candidateSummary = $selection.Summary
 
             if ($selection.Model) {
