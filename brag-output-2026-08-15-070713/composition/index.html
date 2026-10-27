@@ -11,7 +11,6 @@
       html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
       body { font-family: "Inter", -apple-system, "Segoe UI", sans-serif; }
       .mono { font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace; }
-
       #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
 
       .scene { position: absolute; inset: 0; background: #0c100e; }
@@ -44,7 +43,7 @@
       #layer1 { top: 225px; }
       #layer2 { top: 355px; }
       #layer3 { top: 485px; }
-      #layer4 { top: 615px; border-style: dashed; }
+      #layer4 { top: 615px; }
       #layer5 { top: 745px; border-color: #e8a23c; }
       #layer5 .layer-title { color: #e8a23c; }
 
@@ -87,6 +86,26 @@
       #cap-row2 { top: 490px; }
       #cap-row3 { top: 614px; }
 
+      /* ---- scene 4b (new features) ---- */
+      .feat-grid {
+        position: absolute; left: 240px; top: 360px; width: 1440px; height: 480px;
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+        opacity: 1;
+      }
+      .feat-card {
+        background: #111412; border: 1px solid #39433c; border-radius: 8px;
+        padding: 24px; display: flex; flex-direction: column; gap: 12px;
+        opacity: 1;
+      }
+      .feat-card .feat-icon { font-size: 48px; }
+      .feat-card .feat-title { font-size: 28px; font-weight: 700; color: #4fc3b8; }
+      .feat-card .feat-desc { font-size: 20px; color: #8a9089; line-height: 1.4; }
+      .feat-badge { font-size: 14px; font-weight: 700; padding: 4px 12px; border-radius: 99px; text-transform: uppercase; }
+      .feat-badge.new { color: #e8a23c; border: 1px solid #e8a23c; background: rgba(232,162,60,0.1); }
+      .feat-badge.live { color: #4fc3b8; border: 1px solid #4fc3b8; background: rgba(79,195,184,0.1); }
+      #feat-row1 { top: 360px; }
+      #feat-row2 { top: 504px; }
+
       /* ---- scene 5 (outro) ---- */
       #wordmark { font-size: 128px; font-weight: 700; color: #dcd8c9; letter-spacing: 8px; opacity: 0; }
       #tagline { font-size: 34px; color: #e8a23c; opacity: 0; }
@@ -104,7 +123,7 @@
       data-start="0"
       data-width="1920"
       data-height="1080"
-      data-duration="20"
+      data-duration="28"
     >
       <!-- Scene 1: Hook (0-3s) -->
       <section id="scene1" class="scene clip" data-start="0" data-duration="3" data-track-index="1">
@@ -165,8 +184,62 @@
         </div>
       </section>
 
-      <!-- Scene 5: Outro (16-20s) -->
-      <section id="scene5" class="scene clip" data-start="16" data-duration="4" data-track-index="1">
+      <!-- Scene 4b: New features showcase (16-22s) -->
+      <section id="scene4b" class="scene clip" data-start="16" data-duration="6" data-track-index="1">
+        <div class="feat-grid">
+          <div id="feat-row1" class="feat-card">
+            <div class="feat-icon">⚡</div>
+            <div class="feat-title">ai-opencode Wrapper</div>
+            <div class="feat-desc">Coding door for opencode harness — same live Pi contract, opencode-native</div>
+            <span class="feat-badge new">NEW</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🎯</div>
+            <div class="feat-title">ai-setup Interactive</div>
+            <div class="feat-desc">Multi-select menu — pick Pi, opencode, aider, memory, tool-proxy, Hermes</div>
+            <span class="feat-badge new">NEW</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🛡️</div>
+            <div class="feat-title">Agentic Model Filter</div>
+            <div class="feat-desc">Chat door now filters out failed agentic models (agenticLoopVerdict: fail)</div>
+            <span class="feat-badge new">NEW</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🧠</div>
+            <div class="feat-title">llama-server VRAM Gate</div>
+            <div class="feat-desc">FIT-ADAPTERS-001: real VRAM residency check via llama-server /props</div>
+            <span class="feat-badge new">NEW</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">⚡</div>
+            <div class="feat-title">vLLM Tool-Calling</div>
+            <div class="feat-desc">--enable-auto-tool-choice enabled for OpenAI-compatible tool calling</div>
+            <span class="feat-badge new">NEW</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🔧</div>
+            <div class="feat-title">Hermes Container Fixes</div>
+            <div class="feat-desc">Healthcheck, port 12345, removed invalid GGUF from Ollama provider</div>
+            <span class="feat-badge new">FIXED</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">🐧</div>
+            <div class="feat-title">proot-distro + PowerShell 7.6</div>
+            <div class="feat-desc">Ubuntu in Termux with working pwsh — cross-platform development ready</div>
+            <span class="feat-badge live">LIVE</div>
+          </div>
+          <div class="feat-card">
+            <div class="feat-icon">📦</div>
+            <div class="feat-title">47 Skills Installed</div>
+            <div class="feat-desc">anthropics/skills, obra/superpowers, LUNARTECH-X/superpowers — planning, debugging, TDD, code review</div>
+            <span class="feat-badge live">LIVE</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Scene 5: Outro (22-28s) -->
+      <section id="scene5" class="scene clip" data-start="22" data-duration="6" data-track-index="1">
         <div class="center-col">
           <h1 id="wordmark" class="mono">AIRLOCK</h1>
           <p id="tagline" class="mono">One door open at a time.</p>
@@ -194,7 +267,16 @@
       <audio id="sfx-row2" data-start="12.7" data-track-index="20" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
       <audio id="sfx-row3" data-start="14.0" data-track-index="21" data-volume="0.55" src="assets/sfx/switch_007.ogg"></audio>
 
-      <audio id="sfx-outro" data-start="16.2" data-track-index="22" data-volume="0.7" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+      <audio id="sfx-feat1" data-start="16.5" data-track-index="22" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat2" data-start="17.0" data-track-index="23" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat3" data-start="17.5" data-track-index="24" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat4" data-start="18.0" data-track-index="25" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat5" data-start="18.5" data-track-index="26" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat6" data-start="19.0" data-track-index="27" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat7" data-start="19.5" data-track-index="28" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx-feat8" data-start="20.0" data-track-index="29" data-volume="0.5" src="assets/sfx/click_003.ogg"></audio>
+
+      <audio id="sfx-outro" data-start="22.2" data-track-index="30" data-volume="0.7" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
     </div>
 
     <script>
@@ -247,17 +329,22 @@
       tl.fromTo("#cap-row2", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.4 }, 12.7);
       tl.fromTo("#cap-row3", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.4, ease: "power4.out" }, 14.0);
 
-      // ---------- Scene 5: Outro (16-20s) ----------
-      tl.set("#wordmark, #tagline, #finalline, #footer5", { opacity: 0 }, 16.0);
+      // ---------- Scene 4b: New features showcase (16-22s) ----------
+      tl.set(".feat-card", { opacity: 0, scale: 0.9, y: 20 }, 16.0);
+      tl.fromTo(".feat-card", { opacity: 0, scale: 0.9, y: 20 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.5, stagger: 0.15, ease: "power3.out" }, 16.5);
+
+      // ---------- Scene 5: Outro (22-28s) ----------
+      tl.set("#wordmark, #tagline, #finalline, #footer5", { opacity: 0 }, 22.0);
       tl.fromTo(
         "#wordmark",
         { opacity: 0, scale: 0.85 },
-        { opacity: 1, scale: 1, duration: 0.4, ease: "power4.out" },
-        16.2,
+        { opacity: 1, scale: 1, duration: 0.5, ease: "power4.out" },
+        22.2,
       );
-      tl.fromTo("#tagline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 17.0);
-      tl.fromTo("#finalline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 17.8);
-      tl.fromTo("#footer5", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 18.6);
+      tl.fromTo("#tagline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 23.0);
+      tl.fromTo("#finalline", { opacity: 0, y: -10 }, { opacity: 1, y: 0, duration: 0.4 }, 23.8);
+      tl.fromTo("#footer5", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 24.6);
 
       window.__timelines["main"] = tl;
     </script>
