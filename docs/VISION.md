@@ -1,5 +1,59 @@
 # Airlock Vision, Mission & Goals
 
+```mermaid
+flowchart TB
+    subgraph VISION["VISION"]
+        V["Every developer deserves a local AI\nthat works on THEIR hardware,\nnot someone else's"]
+    end
+    
+    subgraph MISSION["MISSION\nBuild the most reliable, transparent\nlocal AI platform for Windows"]
+        M1["Respects your hardware\nSizes models to YOUR VRAM/RAM"]
+        M2["Earns your trust\nProves tool-calling on YOUR machine"]
+        M3["Stays out of your way\nTwo commands: ai-start, ai-agent-start"]
+        M4["Tells the truth\nNo hidden failures"]
+    end
+    
+    subgraph USER_GOALS["USER GOALS"]
+        UG1["Zero-config startup\nai-start works everywhere"]
+        UG2["Honest capabilities\nNo pretending on weak hardware"]
+        UG3["Portable skills\nLaptop → Workstation → DGX"]
+        UG4["No vendor lock-in\nYour models, data, hardware"]
+    end
+    
+    subgraph PLATFORM_GOALS["PLATFORM GOALS"]
+        PG1["Single source of truth\nOne endpoint, one config, one log"]
+        PG2["Fail closed\nNo silent fallbacks, no surprise bills"]
+        PG3["Observable by default\nEvery call logged, every state audited"]
+        PG4["Extensible without chaos\nNew harnesses/runtimes/models via contract"]
+    end
+    
+    V --> M1
+    V --> M2
+    V --> M3
+    V --> M4
+    
+    M1 --> UG1
+    M1 --> UG3
+    M2 --> UG2
+    M2 --> UG4
+    M3 --> UG1
+    M4 --> UG2
+    M4 --> UG4
+    
+    M1 --> PG1
+    M2 --> PG3
+    M3 --> PG1
+    M4 --> PG2
+    M4 --> PG3
+    
+    style V fill:#0c100e,stroke:#e8a23c,stroke-width:3px
+    style MISSION fill:#0c100e,stroke:#4fc3b8,stroke-width:2px
+    style USER_GOALS fill:#1a1f1d,stroke:#4fc3b8
+    style PLATFORM_GOALS fill:#1a1f1d,stroke:#e8a23c
+```
+
+---
+
 ## Vision
 
 **Every developer deserves a local AI that works on their hardware, not someone else's.**

@@ -4,6 +4,54 @@
 
 ---
 
+## Agent-to-Endpoint Map
+
+```mermaid
+flowchart LR
+    subgraph AIRLOCK["Airlock Platform"]
+        ENDPOINT["OpenAI-Compatible Endpoint\nhttp://127.0.0.1:12345/v1\nAuth: ollama (dummy)"]
+        CHAT_DOOR["Chat Door\nOllama / vLLM\nPort 12345"]
+        CODING_DOOR["Coding Door\nllama-server (Unsloth)\nDynamic Port"]
+        RESPONSES["/v1/responses\nOpenAI API"]
+        MESSAGES["/v1/messages\nAnthropic API"]
+    end
+    
+    subgraph AGENTS["Agent CLIs"]
+        AIDER["aider\n(ai-code)"]
+        OPENCODE["opencode\n(ai-opencode)"]
+        CLAUDE["Claude Code\n(ai-claude-on)"]
+        COPILOT["GitHub Copilot CLI"]
+        CODEX["Codex CLI"]
+        JCODE["jcode"]
+        PI["Pi.dev"]
+        GEMINI["Gemini CLI ✗"]
+    end
+    
+    CHAT_DOOR --> ENDPOINT
+    CODING_DOOR --> ENDPOINT
+    ENDPOINT --> RESPONSES
+    ENDPOINT --> MESSAGES
+    
+    ENDPOINT -.->|Chat door| AIDER
+    ENDPOINT -.->|Coding door + Pi contract| OPENCODE
+    MESSAGES -.->|Session env vars| CLAUDE
+    ENDPOINT -.->|Env vars| COPILOT
+    RESPONSES -.->|Config file| CODEX
+    ENDPOINT -.->|CLI provider add| JCODE
+    ENDPOINT -.->|Config file + Pi harness| PI
+    GEMINI -.->|❌ Wire format mismatch| ENDPOINT
+    
+    style ENDPOINT fill:#1a1f1d,stroke:#e8a23c,stroke-width:2px
+    style CHAT_DOOR fill:#0c100e,stroke:#4fc3b8
+    style CODING_DOOR fill:#0c100e,stroke:#e8a23c
+    style AIDER fill:#1a1f1d,stroke:#4fc3b8
+    style OPENCODE fill:#1a1f1d,stroke:#e8a23c
+    style CLAUDE fill:#1a1f1d,stroke:#e8a23c
+    style GEMINI fill:#1a1f1d,stroke:#e0665a,stroke-dasharray: 5 5
+```
+
+---
+
 ## The Endpoint
 
 Airlock exposes an OpenAI-compatible endpoint at:

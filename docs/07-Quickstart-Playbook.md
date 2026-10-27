@@ -4,6 +4,32 @@
 
 ---
 
+## Quick Flow Overview
+
+```mermaid
+flowchart TD
+    START([Start]) --> INSTALL["1. Install Airlock\n`irm ... | iex`"]
+    INSTALL --> RESTART["2. Restart PowerShell"]
+    RESTART --> SETUP["3. Interactive Setup\n`ai-setup`\nPick: 1,2,5"]
+    SETUP --> CHAT["4. Start Chat Door\n`ai-start`"]
+    CHAT --> HEALTH["5. Verify Health\n`ai-health`"]
+    HEALTH --> TEST_CHAT["6. Test Chat\n`curl` or `ai-code`"]
+    TEST_CHAT --> CODING["7. Start Coding Door\n`ai-agent-start -DownloadConfirmed`"]
+    CODING --> TEST_CODING["8. Test Coding\n`ai-code` / `ai-opencode` / `ai-claude-on`"]
+    TEST_CODING --> DAILY["9. Daily Workflow\n`ai-start` → `ai-agent-start` → work → `ai-stop`"]
+    DAILY --> END([Done])
+    
+    style START fill:#0c100e,stroke:#4fc3b8
+    style END fill:#0c100e,stroke:#4fc3b8
+    style INSTALL fill:#1a1f1d,stroke:#39433c
+    style SETUP fill:#1a1f1d,stroke:#e8a23c
+    style CHAT fill:#1a1f1d,stroke:#4fc3b8
+    style CODING fill:#1a1f1d,stroke:#e8a23c
+    style DAILY fill:#1a1f1d,stroke:#39433c
+```
+
+---
+
 ## Before You Start
 
 **You need:**
